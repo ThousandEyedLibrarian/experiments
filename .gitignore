@@ -1,1 +1,5 @@
 /outputs
+CLAUDE.md
+.claude/
+.venv*
+.python-version
