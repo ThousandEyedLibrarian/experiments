@@ -173,30 +173,34 @@ def test_cosine_similarity():
 
 def generate_all_asm_embeddings():
     """Generate embeddings for all ASMs in database."""
+    import os
     print(f"GENERATING EMBEDDINGS FOR ALL ASMs")
     print(f"  Number of drugs: {len(ASM_SMILES)}")
-    
+
     drug_names = list(ASM_SMILES.keys())
     smiles_list = list(ASM_SMILES.values())
-    
+
     # Generate embeddings
     embeddings = get_smiles_embeddings(smiles_list).numpy()
-    
+
     print(f"\tEmbeddings shape: {embeddings.shape}")
     print(f"\tMean norm: {np.linalg.norm(embeddings, axis=1).mean():.4f}")
-    
-    # Save embeddings
-    np.save('asm_smiles_embeddings.npy', embeddings)
-    print(f"\tSaved to: asm_smiles_embeddings.npy")
-    
+
+    # Ensure outputs directory exists
+    os.makedirs('outputs', exist_ok=True)
+
+    # Save embeddings to outputs folder
+    np.save('outputs/chemberta_asm_embeddings.npy', embeddings)
+    print(f"\tSaved to: outputs/chemberta_asm_embeddings.npy")
+
     # Save drug name mapping
-    with open('asm_drug_names.txt', 'w') as f:
+    with open('outputs/asm_drug_names.txt', 'w') as f:
         for name in drug_names:
             f.write(f"{name}\n")
-    print(f"\tDrug names saved to: asm_drug_names.txt")
-    
+    print(f"\tDrug names saved to: outputs/asm_drug_names.txt")
+
     print(f"\tComplete\n")
-    
+
     return drug_names, embeddings
 
 

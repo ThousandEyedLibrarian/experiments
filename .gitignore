@@ -1,5 +1,7 @@
-/outputs
 CLAUDE.md
 .claude/
 .venv*
 .python-version
+OBJECTIVES.md
+__pycache__
+outputs/
