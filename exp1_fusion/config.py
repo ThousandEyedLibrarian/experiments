@@ -6,7 +6,7 @@ import os
 # PATHS
 # =============================================================================
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-DATA_DIR = '/home/carter/carter_massive/asm_data'
+DATA_DIR = os.path.join(BASE_DIR, '..', 'asm_data')
 OUTPUT_DIR = os.path.join(BASE_DIR, 'outputs')
 RESULTS_DIR = os.path.join(OUTPUT_DIR, 'exp1_results')
 

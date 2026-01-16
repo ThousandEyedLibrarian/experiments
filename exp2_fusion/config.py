@@ -4,7 +4,7 @@ from pathlib import Path
 
 # Paths
 BASE_DIR = Path(__file__).parent.parent
-DATA_DIR = Path("/home/carter/carter_massive/asm_data")
+DATA_DIR = BASE_DIR.parent / "asm_data"
 EEG_DIR = DATA_DIR / "Alfred" / "EEG"
 CSV_PATH = DATA_DIR / "alfred_1st_regimen.csv"
 OUTPUTS_DIR = BASE_DIR / "outputs"
