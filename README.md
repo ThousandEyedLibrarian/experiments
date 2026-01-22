@@ -77,31 +77,39 @@ The CSV should contain columns: `pid`, `outcome` (1=failure, 2=success), `ASM`, 
 
 On HPC systems, experiments must run on GPU compute nodes, not login nodes.
 
-**Interactive session:**
-```bash
-# Request a GPU node (adjust partition/time for your system)
-srun --gres=gpu:1 --partition=gpu --mem=32G --time=4:00:00 --pty bash
+**Using the submission script (recommended):**
 
-# Then activate environment and run
-source .venv-others/bin/activate
-python -m exp1_fusion.run_experiments
+A pre-configured SLURM script `submit_job.sh` is included for M3/Monash HPC:
+
+```bash
+# 1. Edit configuration in submit_job.sh:
+#    - EXPERIMENT="exp1" or "exp2"
+#    - EXTRA_ARGS for additional flags
+#    - SBATCH directives (time, memory, GPU type)
+
+# 2. Test without running (dry-run mode):
+DRY_RUN=true bash submit_job.sh
+
+# 3. Submit the job:
+sbatch submit_job.sh
+
+# 4. Monitor:
+squeue -u $USER
+
+# 5. Check logs:
+cat logs/asm_<jobid>.out
 ```
 
-**Batch job (recommended for long runs):**
-```bash
-# Create a job script: run_exp1.sh
-#!/bin/bash
-#SBATCH --job-name=exp1_fusion
-#SBATCH --gres=gpu:1
-#SBATCH --partition=gpu
-#SBATCH --mem=32G
-#SBATCH --time=8:00:00
-#SBATCH --output=exp1_%j.log
+**Script configuration options:**
+- Default: 4 hours, 32GB RAM, 1 GPU (any type)
+- For specific GPU: edit `#SBATCH --gres=gpu:A100:1` or `--gres=gpu:A40:1`
+- For email alerts: uncomment `--mail-user` and `--mail-type` lines
 
+**Interactive session (alternative):**
+```bash
+srun --gres=gpu:1 --partition=gpu --mem=32G --time=4:00:00 --pty bash
 source .venv-others/bin/activate
 python -m exp1_fusion.run_experiments
-
-# Submit with: sbatch run_exp1.sh
 ```
 
 ### Experiment 1: LLM + SMILES Fusion
