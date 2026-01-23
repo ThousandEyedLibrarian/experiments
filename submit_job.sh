@@ -3,15 +3,19 @@
 # M3 HPC Job Submission Script for ASM Experiments
 #==============================================================================
 # Usage:
-#   1. Edit the CONFIGURATION section below
-#   2. Edit SBATCH directives if needed (time, memory, GPU type)
-#   3. Test with: DRY_RUN=true bash submit_job.sh
-#   4. Submit with: sbatch submit_job.sh
-#   5. Monitor with: squeue -u $USER
+#   sbatch submit_job.sh -e exp2                    # Run experiment 2
+#   sbatch submit_job.sh -e exp1 -a "--dry-run"    # Exp 1 dry run
+#   bash submit_job.sh -e exp2 -d                   # Local dry run test
+#
+# Options:
+#   -e, --experiment EXP   Experiment to run: exp1 or exp2 (default: exp1)
+#   -a, --args ARGS        Extra arguments for the experiment script
+#   -d, --dry-run          Test mode - show config without executing
+#   -h, --help             Show help message
 #
 # Override SBATCH settings via command line:
-#   sbatch --time=8:00:00 submit_job.sh
-#   sbatch --gres=gpu:A40:1 submit_job.sh
+#   sbatch --time=8:00:00 submit_job.sh -e exp2
+#   sbatch --gres=gpu:A40:1 submit_job.sh -e exp2
 #==============================================================================
 
 #==============================================================================
@@ -35,23 +39,70 @@
 ##SBATCH --mail-type=BEGIN,END,FAIL
 
 #==============================================================================
-# CONFIGURATION - Edit these values
+# CLI ARGUMENT PARSING
 #==============================================================================
 
-# Experiment to run: "exp1" or "exp2"
-EXPERIMENT="exp1"
-
-# Extra arguments for the experiment script
-# exp1: "--dry-run", "--exp1a", "--exp1b", "--quiet"
-# exp2: "--dry-run", "--eeg-encoder simplecnn", "--smiles-model chemberta"
-EXTRA_ARGS=""
-
-# Dry run mode: set to "true" to test without running experiments
-# Usage: DRY_RUN=true bash submit_job.sh
+# Default values (can also be set via environment variables)
+EXPERIMENT="${EXPERIMENT:-exp1}"
+EXTRA_ARGS="${EXTRA_ARGS:-}"
 DRY_RUN="${DRY_RUN:-false}"
 
+# Help function
+show_help() {
+    echo "Usage: $0 [OPTIONS]"
+    echo ""
+    echo "Options:"
+    echo "  -e, --experiment EXP   Experiment to run: exp1 or exp2 (default: exp1)"
+    echo "  -a, --args ARGS        Extra arguments for the experiment script"
+    echo "  -d, --dry-run          Test mode - show config without executing"
+    echo "  -h, --help             Show this help message"
+    echo ""
+    echo "Extra args examples:"
+    echo "  exp1: --dry-run, --exp1a, --exp1b, --quiet"
+    echo "  exp2: --dry-run, --eeg-encoder simplecnn, --smiles-model chemberta"
+    echo ""
+    echo "Examples:"
+    echo "  sbatch $0 -e exp2"
+    echo "  sbatch $0 -e exp2 -a '--eeg-encoder simplecnn'"
+    echo "  bash $0 -e exp1 -d"
+    echo "  EXPERIMENT=exp2 sbatch $0"
+    exit 0
+}
+
+# Parse arguments
+while [[ $# -gt 0 ]]; do
+    case $1 in
+        -e|--experiment)
+            EXPERIMENT="$2"
+            shift 2
+            ;;
+        -a|--args)
+            EXTRA_ARGS="$2"
+            shift 2
+            ;;
+        -d|--dry-run)
+            DRY_RUN="true"
+            shift
+            ;;
+        -h|--help)
+            show_help
+            ;;
+        *)
+            echo "Unknown option: $1"
+            echo "Use -h or --help for usage information"
+            exit 1
+            ;;
+    esac
+done
+
+# Validate experiment choice
+if [[ "$EXPERIMENT" != "exp1" && "$EXPERIMENT" != "exp2" ]]; then
+    echo "ERROR: Invalid experiment '$EXPERIMENT'. Must be 'exp1' or 'exp2'."
+    exit 1
+fi
+
 #==============================================================================
-# JOB EXECUTION - No need to edit below
+# JOB EXECUTION
 #==============================================================================
 
 # Get the directory where this script is located
@@ -134,7 +185,7 @@ if [ "$DRY_RUN" = "true" ]; then
     echo "Would execute: ${CMD}"
     echo ""
     echo "Environment check complete. To run for real:"
-    echo "  sbatch submit_job.sh"
+    echo "  sbatch submit_job.sh -e ${EXPERIMENT}"
     EXIT_CODE=0
 else
     echo "Starting ${EXPERIMENT}..."
