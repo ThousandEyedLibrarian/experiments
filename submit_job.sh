@@ -27,7 +27,7 @@
 #SBATCH --error=logs/asm_%j.err
 
 # Uncomment for specific GPU type:
-##SBATCH --gres=gpu:A100:1
+SBATCH --gres=gpu:A100:1
 ##SBATCH --gres=gpu:A40:1
 
 # Uncomment for email notifications:
