@@ -1,10 +1,25 @@
 """EEG encoder wrappers for extracting embeddings from EEG windows."""
 
+import logging
 from typing import Optional, Tuple
 
 import torch
 import torch.nn as nn
-from braindecode.models import Labram
+
+# Import guard for braindecode (may fail due to CUDA library issues)
+LABRAM_AVAILABLE = False
+LABRAM_IMPORT_ERROR = None
+
+try:
+    from braindecode.models import Labram
+    LABRAM_AVAILABLE = True
+except ImportError as e:
+    LABRAM_IMPORT_ERROR = str(e)
+except Exception as e:
+    # Catch other errors like OSError for missing CUDA libraries
+    LABRAM_IMPORT_ERROR = f"{type(e).__name__}: {e}"
+
+logger = logging.getLogger(__name__)
 
 
 class LaBraMEncoder(nn.Module):
@@ -35,7 +50,20 @@ class LaBraMEncoder(nn.Module):
             patch_size: Size of temporal patches.
             att_num_heads: Number of attention heads.
             dropout: Dropout probability.
+
+        Raises:
+            ImportError: If braindecode is not available.
         """
+        if not LABRAM_AVAILABLE:
+            error_msg = (
+                f"LaBraM encoder requires braindecode, but it failed to import.\n"
+                f"Error: {LABRAM_IMPORT_ERROR}\n"
+                f"Try: pip install braindecode\n"
+                f"Or use --eeg-encoder simplecnn instead."
+            )
+            logger.error(error_msg)
+            raise ImportError(error_msg)
+
         super().__init__()
 
         self.n_channels = n_channels
@@ -158,8 +186,21 @@ def get_eeg_encoder(
 
     Returns:
         EEG encoder module.
+
+    Raises:
+        ValueError: If encoder_type is unknown.
+        ImportError: If encoder dependencies are not available.
     """
+    logger.info(f"Creating EEG encoder: {encoder_type}")
+
     if encoder_type == "labram":
+        if not LABRAM_AVAILABLE:
+            logger.error(f"LaBraM requested but braindecode not available: {LABRAM_IMPORT_ERROR}")
+            raise ImportError(
+                f"LaBraM encoder requires braindecode.\n"
+                f"Import error: {LABRAM_IMPORT_ERROR}\n"
+                f"Use --eeg-encoder simplecnn as an alternative."
+            )
         return LaBraMEncoder(
             n_channels=n_channels,
             n_times=n_times,
@@ -174,12 +215,25 @@ def get_eeg_encoder(
             **kwargs,
         )
     else:
-        raise ValueError(f"Unknown encoder type: {encoder_type}")
+        raise ValueError(f"Unknown encoder type: {encoder_type}. Available: labram, simplecnn")
+
+
+def is_labram_available() -> bool:
+    """Check if LaBraM encoder is available."""
+    return LABRAM_AVAILABLE
+
+
+def get_labram_import_error() -> Optional[str]:
+    """Get the LaBraM import error message if it failed to import."""
+    return LABRAM_IMPORT_ERROR
 
 
 def test_encoders():
     """Test EEG encoder implementations."""
     print("Testing EEG encoders...")
+    print(f"LaBraM available: {LABRAM_AVAILABLE}")
+    if not LABRAM_AVAILABLE:
+        print(f"LaBraM import error: {LABRAM_IMPORT_ERROR}")
 
     n_channels = 27
     n_times = 2000
@@ -187,12 +241,18 @@ def test_encoders():
 
     x = torch.randn(batch_size, n_channels, n_times)
 
-    # Test LaBraM encoder
-    print("\nTesting LaBraM encoder:")
-    labram = LaBraMEncoder(n_channels=n_channels, n_times=n_times, emb_size=200)
-    out = labram(x)
-    print(f"  Input shape: {x.shape}")
-    print(f"  Output shape: {out.shape}")
+    # Test LaBraM encoder (if available)
+    if LABRAM_AVAILABLE:
+        print("\nTesting LaBraM encoder:")
+        try:
+            labram = LaBraMEncoder(n_channels=n_channels, n_times=n_times, emb_size=200)
+            out = labram(x)
+            print(f"  Input shape: {x.shape}")
+            print(f"  Output shape: {out.shape}")
+        except Exception as e:
+            print(f"  LaBraM test failed: {e}")
+    else:
+        print("\nSkipping LaBraM encoder test (not available)")
 
     # Test SimpleCNN encoder
     print("\nTesting SimpleCNN encoder:")
@@ -200,6 +260,8 @@ def test_encoders():
     out = cnn(x)
     print(f"  Input shape: {x.shape}")
     print(f"  Output shape: {out.shape}")
+
+    print("\nEncoder tests complete.")
 
 
 if __name__ == "__main__":

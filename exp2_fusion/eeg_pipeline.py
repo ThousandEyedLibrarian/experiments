@@ -1,5 +1,6 @@
 """EEG data loading, preprocessing, and windowing pipeline."""
 
+import logging
 import re
 import warnings
 from pathlib import Path
@@ -19,6 +20,8 @@ from .config import (
 # Suppress MNE verbose output
 mne.set_log_level("ERROR")
 warnings.filterwarnings("ignore", category=RuntimeWarning)
+
+logger = logging.getLogger("exp2")
 
 
 def extract_patient_id(filename: str) -> Optional[str]:
@@ -76,6 +79,7 @@ def load_edf(filepath: Path, target_sr: int = 200) -> Tuple[np.ndarray, float, L
     # Try different encodings for annotation channels
     encodings = ["utf-8", "latin1", "iso-8859-1"]
     raw = None
+    successful_encoding = None
 
     for encoding in encodings:
         try:
@@ -85,24 +89,30 @@ def load_edf(filepath: Path, target_sr: int = 200) -> Tuple[np.ndarray, float, L
                 verbose=False,
                 encoding=encoding,
             )
+            successful_encoding = encoding
             break
-        except Exception:
+        except Exception as e:
+            logger.debug(f"Failed to load {filepath.name} with encoding {encoding}: {e}")
             continue
 
     if raw is None:
+        logger.error(f"Could not load EDF file with any encoding: {filepath}")
         raise ValueError(f"Could not load EDF file: {filepath}")
+
+    if successful_encoding != "utf-8":
+        logger.debug(f"Loaded {filepath.name} with fallback encoding: {successful_encoding}")
 
     # Pick only EEG channels (exclude ECG, EOG, EMG, etc.)
     try:
         raw.pick_types(eeg=True, exclude=[])
-    except Exception:
-        # If pick_types fails, try to keep all channels
-        pass
+    except Exception as e:
+        logger.debug(f"Could not filter EEG channels for {filepath.name}: {e}, keeping all channels")
 
     original_sr = raw.info["sfreq"]
 
     # Resample if needed
     if original_sr != target_sr:
+        logger.debug(f"Resampling {filepath.name} from {original_sr}Hz to {target_sr}Hz")
         raw.resample(target_sr, verbose=False)
 
     data = raw.get_data()  # Shape: (n_channels, n_samples)
@@ -273,9 +283,13 @@ class EEGPreprocessor:
             - padding_mask: [max_windows] boolean, True for padded
             - n_channels: Number of EEG channels
         """
+        logger.debug(f"Processing EDF: {edf_path.name}")
+
         # Load EDF
         data, sr, ch_names = load_edf(edf_path, self.target_sr)
         n_channels = data.shape[0]
+        total_duration_sec = data.shape[1] / sr
+        logger.debug(f"  Loaded: {n_channels} channels, {total_duration_sec:.1f}s duration")
 
         # Apply filters
         data = apply_filters(
@@ -284,6 +298,7 @@ class EEGPreprocessor:
             highcut=self.highcut,
             notch_freq=self.notch_freq,
         )
+        logger.debug(f"  Applied filters: {self.lowcut}-{self.highcut}Hz bandpass, {self.notch_freq}Hz notch")
 
         # Extract time window
         data = extract_time_window(
@@ -294,7 +309,11 @@ class EEGPreprocessor:
         )
 
         if data is None:
+            logger.debug(f"  Rejected: duration {total_duration_sec:.1f}s < minimum {self.min_duration_sec}s")
             return None
+
+        extracted_duration = data.shape[1] / sr
+        logger.debug(f"  Extracted: {extracted_duration:.1f}s after skipping first {self.skip_start_sec}s")
 
         # Create windows
         windows, padding_mask = create_windows(
@@ -302,6 +321,9 @@ class EEGPreprocessor:
             window_sec=self.window_sec,
             max_windows=self.max_windows,
         )
+
+        n_valid_windows = (~padding_mask).sum()
+        logger.debug(f"  Windows: {n_valid_windows}/{len(padding_mask)} valid ({self.window_sec}s each)")
 
         return windows, padding_mask, n_channels
 

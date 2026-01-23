@@ -1,5 +1,6 @@
 """Training utilities for Experiment 2: EEG + SMILES fusion."""
 
+import logging
 from typing import Dict, List, Optional, Tuple
 
 import numpy as np
@@ -12,6 +13,8 @@ from torch.utils.data import DataLoader
 from .config import BATCH_SIZE_BY_ENCODER, CHUNK_SIZE_BY_ENCODER, MODEL_CONFIG, TRAIN_CONFIG
 from .data_pipeline import EEGSMILESDataset, create_datasets, get_max_channels, prepare_data
 from .models.fusion import get_fusion_model
+
+logger = logging.getLogger("exp2")
 
 
 def train_epoch(
@@ -220,6 +223,14 @@ def train_fold(
 
         scheduler.step(val_metrics["auc"])
 
+        # Log progress at intervals
+        if epoch % 20 == 0 or epoch == config["epochs"] - 1:
+            logger.debug(
+                f"Epoch {epoch+1}/{config['epochs']}: "
+                f"train_loss={train_loss:.4f}, val_loss={val_loss:.4f}, "
+                f"val_auc={val_metrics['auc']:.3f}"
+            )
+
         if val_metrics["auc"] > best_auc:
             best_auc = val_metrics["auc"]
             best_metrics = val_metrics.copy()
@@ -228,6 +239,7 @@ def train_fold(
             patience_counter += 1
 
         if patience_counter >= config["patience"]:
+            logger.debug(f"Early stopping at epoch {epoch+1} (patience={config['patience']})")
             break
 
     return best_metrics, model
@@ -282,7 +294,7 @@ def run_cross_validation(
 
     for fold, (train_idx, val_idx) in enumerate(kfold.split(df, labels)):
         if verbose:
-            print(f"  Fold {fold + 1}/{config['n_folds']}...")
+            logger.info(f"  Fold {fold + 1}/{config['n_folds']} (train={len(train_idx)}, val={len(val_idx)})")
 
         # Create datasets (pass max_channels for consistent padding)
         train_ds, val_ds = create_datasets(
@@ -292,21 +304,26 @@ def run_cross_validation(
         )
 
         # Train
-        metrics, _ = train_fold(
-            train_ds, val_ds,
-            fusion_type=fusion_type,
-            eeg_encoder_type=eeg_encoder_type,
-            smiles_embed_dim=smiles_embed_dim,
-            n_eeg_channels=n_eeg_channels,
-            device=device,
-            config=config,
-        )
+        try:
+            metrics, _ = train_fold(
+                train_ds, val_ds,
+                fusion_type=fusion_type,
+                eeg_encoder_type=eeg_encoder_type,
+                smiles_embed_dim=smiles_embed_dim,
+                n_eeg_channels=n_eeg_channels,
+                device=device,
+                config=config,
+            )
 
-        for key in fold_metrics:
-            fold_metrics[key].append(metrics[key])
+            for key in fold_metrics:
+                fold_metrics[key].append(metrics[key])
 
-        if verbose:
-            print(f"    Acc: {metrics['accuracy']:.3f}, AUC: {metrics['auc']:.3f}, F1: {metrics['f1']:.3f}")
+            if verbose:
+                logger.info(f"    Fold {fold + 1} results: Acc={metrics['accuracy']:.3f}, AUC={metrics['auc']:.3f}, F1={metrics['f1']:.3f}")
+
+        except Exception as e:
+            logger.error(f"    Fold {fold + 1} failed: {type(e).__name__}: {e}")
+            raise
 
     # Aggregate results
     results = {
@@ -331,11 +348,16 @@ def run_cross_validation(
 
 
 if __name__ == "__main__":
-    # Quick test
-    print("Testing training pipeline...")
+    # Quick test with logging
+    from .utils.logging_utils import setup_logging, log_environment_info
+
+    logger = setup_logging("exp2_training_test", log_dir="logs")
+    log_environment_info(logger)
+
+    logger.info("Testing training pipeline...")
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    print(f"Using device: {device}")
+    logger.info(f"Using device: {device}")
 
     # Prepare data
     eeg_data, smiles_embeddings, smiles_indices, df = prepare_data(
@@ -353,7 +375,7 @@ if __name__ == "__main__":
         verbose=True,
     )
 
-    print(f"\nResults:")
-    print(f"  Accuracy: {results['accuracy']['mean']:.3f} +/- {results['accuracy']['std']:.3f}")
-    print(f"  AUC: {results['auc']['mean']:.3f} +/- {results['auc']['std']:.3f}")
-    print(f"  F1: {results['f1']['mean']:.3f} +/- {results['f1']['std']:.3f}")
+    logger.info(f"Results:")
+    logger.info(f"  Accuracy: {results['accuracy']['mean']:.3f} +/- {results['accuracy']['std']:.3f}")
+    logger.info(f"  AUC: {results['auc']['mean']:.3f} +/- {results['auc']['std']:.3f}")
+    logger.info(f"  F1: {results['f1']['mean']:.3f} +/- {results['f1']['std']:.3f}")

@@ -91,6 +91,29 @@ if command -v nvidia-smi &> /dev/null; then
     nvidia-smi --query-gpu=name,memory.total,memory.free --format=csv
 fi
 
+# Run environment validation
+echo ""
+echo "============================================================"
+echo "Environment Validation"
+echo "============================================================"
+if [ "$EXPERIMENT" = "exp1" ]; then
+    python check_environment.py --exp1
+    ENV_CHECK=$?
+elif [ "$EXPERIMENT" = "exp2" ]; then
+    python check_environment.py --exp2
+    ENV_CHECK=$?
+else
+    python check_environment.py --all
+    ENV_CHECK=$?
+fi
+
+if [ $ENV_CHECK -ne 0 ]; then
+    echo ""
+    echo "WARNING: Environment check reported issues (exit code $ENV_CHECK)"
+    echo "The experiment may fail. Check the output above for details."
+    echo ""
+fi
+
 # Determine the command to run
 if [ "$EXPERIMENT" = "exp1" ]; then
     CMD="python -m exp1_fusion.run_experiments ${EXTRA_ARGS}"
