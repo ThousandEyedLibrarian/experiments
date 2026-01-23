@@ -1,0 +1,127 @@
+2026-01-23 14:48:22 | INFO     | exp2 | Logging to: /fs04/scratch2/he12/carter/experiments/logs/exp2_20260123_144822.log
+2026-01-23 14:48:22 | INFO     | exp2 | ============================================================
+2026-01-23 14:48:22 | INFO     | exp2 | ENVIRONMENT INFORMATION
+2026-01-23 14:48:22 | INFO     | exp2 | ============================================================
+2026-01-23 14:48:22 | INFO     | exp2 | Hostname: m3n101
+2026-01-23 14:48:22 | INFO     | exp2 | Platform: Linux-5.14.0-570.52.1.el9_6.x86_64-x86_64-with-glibc2.34
+2026-01-23 14:48:22 | INFO     | exp2 | Python: 3.10.19 (main, Jan 14 2026, 19:36:24) [Clang 21.1.4 ]
+2026-01-23 14:48:22 | INFO     | exp2 | SLURM Job ID: 50356366
+2026-01-23 14:48:22 | INFO     | exp2 | SLURM Job Name: bash
+2026-01-23 14:48:22 | INFO     | exp2 | SLURM Nodes: m3n101
+2026-01-23 14:48:22 | INFO     | exp2 | PyTorch: 2.7.1+cu118
+2026-01-23 14:48:22 | INFO     | exp2 | CUDA available: True
+2026-01-23 14:48:22 | INFO     | exp2 | CUDA version: 11.8
+2026-01-23 14:48:22 | INFO     | exp2 | cuDNN version: 90100
+2026-01-23 14:48:22 | INFO     | exp2 | GPU 0: NVIDIA A100 80GB PCIe (79.3 GB)
+2026-01-23 14:48:22 | INFO     | exp2 | numpy: 2.2.6
+2026-01-23 14:48:24 | INFO     | exp2 | sklearn: 1.7.2
+2026-01-23 14:48:24 | INFO     | exp2 | mne: 1.11.0
+2026-01-23 14:48:24 | INFO     | exp2 | pandas: 2.3.3
+2026-01-23 14:48:33 | WARNING  | exp2 | braindecode: IMPORT ERROR - libcudart.so.12: cannot open shared object file: No such file or directory
+2026-01-23 14:48:33 | INFO     | exp2 | ============================================================
+2026-01-23 14:48:33 | INFO     | exp2 | Using device: cuda
+2026-01-23 14:48:33 | INFO     | exp2 | Running 4 experiments
+2026-01-23 14:48:33 | INFO     | exp2 | [1/4] Starting: simplecnn + chemberta (mlp)
+2026-01-23 14:48:33 | INFO     | exp2 | Loading data for SMILES model: chemberta
+2026-01-23 14:48:33 | INFO     | exp2 | Preparing data...
+2026-01-23 14:48:33 | INFO     | exp2 | Found 151 patients with valid EEG files and outcomes
+2026-01-23 14:48:33 | INFO     | exp2 | Loading SMILES embeddings for model: chemberta
+2026-01-23 14:48:33 | INFO     | exp2 | Loaded SMILES embeddings: shape=(15, 768)
+2026-01-23 14:48:33 | INFO     | exp2 | Loading cached EEG data from /fs04/scratch2/he12/carter/experiments/outputs/eeg_cache/processed_eeg.pkl
+2026-01-23 14:48:36 | INFO     | exp2 | Loaded 147 patients from cache
+2026-01-23 14:48:36 | INFO     | exp2 | Final dataset: 151 patients
+2026-01-23 14:48:36 | INFO     | exp2 | Outcome distribution: {1: np.int64(78), 0: np.int64(73)}
+2026-01-23 14:48:36 | INFO     | exp2 | Loaded 151 patients with EEG data
+2026-01-23 14:48:36 | INFO     | exp2 | Starting cross-validation...
+2026-01-23 14:48:36 | INFO     | exp2 |   Fold 1/5 (train=120, val=31)
+2026-01-23 14:49:50 | INFO     | exp2 |     Fold 1 results: Acc=0.484, AUC=0.600, F1=0.000
+2026-01-23 14:49:50 | INFO     | exp2 |   Fold 2/5 (train=121, val=30)
+2026-01-23 14:53:11 | INFO     | exp2 |     Fold 2 results: Acc=0.500, AUC=0.484, F1=0.667
+2026-01-23 14:53:11 | INFO     | exp2 |   Fold 3/5 (train=121, val=30)
+2026-01-23 14:54:23 | INFO     | exp2 |     Fold 3 results: Acc=0.600, AUC=0.631, F1=0.455
+2026-01-23 14:54:23 | INFO     | exp2 |   Fold 4/5 (train=121, val=30)
+2026-01-23 14:55:53 | INFO     | exp2 |     Fold 4 results: Acc=0.600, AUC=0.661, F1=0.571
+2026-01-23 14:55:53 | INFO     | exp2 |   Fold 5/5 (train=121, val=30)
+2026-01-23 14:57:26 | INFO     | exp2 |     Fold 5 results: Acc=0.533, AUC=0.665, F1=0.696
+2026-01-23 14:57:26 | INFO     | exp2 | [1/4] Complete: Acc=0.543, AUC=0.608, F1=0.478
+2026-01-23 14:57:26 | INFO     | exp2 | [2/4] Starting: simplecnn + chemberta (fusemoe)
+2026-01-23 14:57:26 | INFO     | exp2 | Loading data for SMILES model: chemberta
+2026-01-23 14:57:26 | INFO     | exp2 | Preparing data...
+2026-01-23 14:57:26 | INFO     | exp2 | Found 151 patients with valid EEG files and outcomes
+2026-01-23 14:57:26 | INFO     | exp2 | Loading SMILES embeddings for model: chemberta
+2026-01-23 14:57:26 | INFO     | exp2 | Loaded SMILES embeddings: shape=(15, 768)
+2026-01-23 14:57:26 | INFO     | exp2 | Loading cached EEG data from /fs04/scratch2/he12/carter/experiments/outputs/eeg_cache/processed_eeg.pkl
+2026-01-23 14:57:27 | INFO     | exp2 | Loaded 147 patients from cache
+2026-01-23 14:57:27 | INFO     | exp2 | Final dataset: 151 patients
+2026-01-23 14:57:27 | INFO     | exp2 | Outcome distribution: {1: np.int64(78), 0: np.int64(73)}
+2026-01-23 14:57:27 | INFO     | exp2 | Loaded 151 patients with EEG data
+2026-01-23 14:57:27 | INFO     | exp2 | Starting cross-validation...
+2026-01-23 14:57:27 | INFO     | exp2 |   Fold 1/5 (train=120, val=31)
+2026-01-23 14:58:31 | INFO     | exp2 |     Fold 1 results: Acc=0.548, AUC=0.571, F1=0.696
+2026-01-23 14:58:31 | INFO     | exp2 |   Fold 2/5 (train=121, val=30)
+2026-01-23 14:59:28 | INFO     | exp2 |     Fold 2 results: Acc=0.367, AUC=0.353, F1=0.424
+2026-01-23 14:59:28 | INFO     | exp2 |   Fold 3/5 (train=121, val=30)
+2026-01-23 15:00:28 | INFO     | exp2 |     Fold 3 results: Acc=0.500, AUC=0.582, F1=0.000
+2026-01-23 15:00:28 | INFO     | exp2 |   Fold 4/5 (train=121, val=30)
+2026-01-23 15:01:50 | INFO     | exp2 |     Fold 4 results: Acc=0.567, AUC=0.600, F1=0.667
+2026-01-23 15:01:50 | INFO     | exp2 |   Fold 5/5 (train=121, val=30)
+2026-01-23 15:02:47 | INFO     | exp2 |     Fold 5 results: Acc=0.633, AUC=0.661, F1=0.718
+2026-01-23 15:02:47 | INFO     | exp2 | [2/4] Complete: Acc=0.523, AUC=0.554, F1=0.501
+2026-01-23 15:02:47 | INFO     | exp2 | [3/4] Starting: simplecnn + smilestrf (mlp)
+2026-01-23 15:02:47 | INFO     | exp2 | Loading data for SMILES model: smilestrf
+2026-01-23 15:02:47 | INFO     | exp2 | Preparing data...
+2026-01-23 15:02:47 | INFO     | exp2 | Found 151 patients with valid EEG files and outcomes
+2026-01-23 15:02:47 | INFO     | exp2 | Loading SMILES embeddings for model: smilestrf
+2026-01-23 15:02:47 | INFO     | exp2 | Loaded SMILES embeddings: shape=(15, 256)
+2026-01-23 15:02:47 | INFO     | exp2 | Loading cached EEG data from /fs04/scratch2/he12/carter/experiments/outputs/eeg_cache/processed_eeg.pkl
+2026-01-23 15:02:48 | INFO     | exp2 | Loaded 147 patients from cache
+2026-01-23 15:02:48 | INFO     | exp2 | Final dataset: 151 patients
+2026-01-23 15:02:48 | INFO     | exp2 | Outcome distribution: {1: np.int64(78), 0: np.int64(73)}
+2026-01-23 15:02:48 | INFO     | exp2 | Loaded 151 patients with EEG data
+2026-01-23 15:02:48 | INFO     | exp2 | Starting cross-validation...
+2026-01-23 15:02:48 | INFO     | exp2 |   Fold 1/5 (train=120, val=31)
+2026-01-23 15:03:40 | INFO     | exp2 |     Fold 1 results: Acc=0.548, AUC=0.558, F1=0.588
+2026-01-23 15:03:40 | INFO     | exp2 |   Fold 2/5 (train=121, val=30)
+2026-01-23 15:05:51 | INFO     | exp2 |     Fold 2 results: Acc=0.500, AUC=0.720, F1=0.667
+2026-01-23 15:05:51 | INFO     | exp2 |   Fold 3/5 (train=121, val=30)
+2026-01-23 15:08:02 | INFO     | exp2 |     Fold 3 results: Acc=0.600, AUC=0.636, F1=0.455
+2026-01-23 15:08:02 | INFO     | exp2 |   Fold 4/5 (train=121, val=30)
+2026-01-23 15:08:55 | INFO     | exp2 |     Fold 4 results: Acc=0.633, AUC=0.658, F1=0.522
+2026-01-23 15:08:55 | INFO     | exp2 |   Fold 5/5 (train=121, val=30)
+2026-01-23 15:09:43 | INFO     | exp2 |     Fold 5 results: Acc=0.533, AUC=0.768, F1=0.696
+2026-01-23 15:09:43 | INFO     | exp2 | [3/4] Complete: Acc=0.563, AUC=0.668, F1=0.585
+2026-01-23 15:09:43 | INFO     | exp2 | [4/4] Starting: simplecnn + smilestrf (fusemoe)
+2026-01-23 15:09:43 | INFO     | exp2 | Loading data for SMILES model: smilestrf
+2026-01-23 15:09:43 | INFO     | exp2 | Preparing data...
+2026-01-23 15:09:43 | INFO     | exp2 | Found 151 patients with valid EEG files and outcomes
+2026-01-23 15:09:43 | INFO     | exp2 | Loading SMILES embeddings for model: smilestrf
+2026-01-23 15:09:43 | INFO     | exp2 | Loaded SMILES embeddings: shape=(15, 256)
+2026-01-23 15:09:43 | INFO     | exp2 | Loading cached EEG data from /fs04/scratch2/he12/carter/experiments/outputs/eeg_cache/processed_eeg.pkl
+2026-01-23 15:09:44 | INFO     | exp2 | Loaded 147 patients from cache
+2026-01-23 15:09:44 | INFO     | exp2 | Final dataset: 151 patients
+2026-01-23 15:09:44 | INFO     | exp2 | Outcome distribution: {1: np.int64(78), 0: np.int64(73)}
+2026-01-23 15:09:44 | INFO     | exp2 | Loaded 151 patients with EEG data
+2026-01-23 15:09:44 | INFO     | exp2 | Starting cross-validation...
+2026-01-23 15:09:44 | INFO     | exp2 |   Fold 1/5 (train=120, val=31)
+2026-01-23 15:10:32 | INFO     | exp2 |     Fold 1 results: Acc=0.548, AUC=0.571, F1=0.588
+2026-01-23 15:10:32 | INFO     | exp2 |   Fold 2/5 (train=121, val=30)
+2026-01-23 15:11:18 | INFO     | exp2 |     Fold 2 results: Acc=0.500, AUC=0.620, F1=0.667
+2026-01-23 15:11:18 | INFO     | exp2 |   Fold 3/5 (train=121, val=30)
+2026-01-23 15:12:03 | INFO     | exp2 |     Fold 3 results: Acc=0.567, AUC=0.551, F1=0.667
+2026-01-23 15:12:03 | INFO     | exp2 |   Fold 4/5 (train=121, val=30)
+2026-01-23 15:13:11 | INFO     | exp2 |     Fold 4 results: Acc=0.600, AUC=0.614, F1=0.647
+2026-01-23 15:13:11 | INFO     | exp2 |   Fold 5/5 (train=121, val=30)
+2026-01-23 15:14:01 | INFO     | exp2 |     Fold 5 results: Acc=0.667, AUC=0.683, F1=0.722
+2026-01-23 15:14:01 | INFO     | exp2 | [4/4] Complete: Acc=0.576, AUC=0.608, F1=0.658
+2026-01-23 15:14:02 | INFO     | exp2 | Results saved to /fs04/scratch2/he12/carter/experiments/outputs/exp2_results
+2026-01-23 15:14:02 | INFO     | exp2 | 
+2026-01-23 15:14:02 | INFO     | exp2 | ======================================================================
+2026-01-23 15:14:02 | INFO     | exp2 | SUMMARY
+2026-01-23 15:14:02 | INFO     | exp2 | ======================================================================
+2026-01-23 15:14:02 | INFO     | exp2 | Experiment                               Acc        AUC        F1        
+2026-01-23 15:14:02 | INFO     | exp2 | ----------------------------------------------------------------------
+2026-01-23 15:14:02 | INFO     | exp2 | exp2_simplecnn_smilestrf_mlp             0.563      0.668      0.585     
+2026-01-23 15:14:02 | INFO     | exp2 | exp2_simplecnn_chemberta_mlp             0.543      0.608      0.478     
+2026-01-23 15:14:02 | INFO     | exp2 | exp2_simplecnn_smilestrf_fusemoe         0.576      0.608      0.658     
+2026-01-23 15:14:02 | INFO     | exp2 | exp2_simplecnn_chemberta_fusemoe         0.523      0.554      0.501     
+2026-01-23 15:14:02 | INFO     | exp2 | Experiment 2 completed successfully

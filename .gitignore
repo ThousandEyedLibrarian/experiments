@@ -1,4 +1,5 @@
 CLAUDE.md
+sync_from_m3.sh
 .claude/
 .venv*
 .python-version
