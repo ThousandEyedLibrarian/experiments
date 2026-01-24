@@ -64,10 +64,12 @@ Combined EEG signal embeddings with molecular structure embeddings.
 | exp2b | ChemBERTa | FuseMoE | 0.554 | 0.523 | 0.501 |
 
 ### Key Observations
+
 - SMILES Transformer embeddings consistently outperformed ChemBERTa for EEG fusion
 - Simple MLP fusion achieved higher AUC than FuseMoE
-- FuseMoE achieved better F1 score, suggesting more balanced predictions
+- FuseMoE achieved better F1 score, maybe suggesting more balanced/robust predictions?
 - EEG + SMILES-Trf + MLP achieved the overall best AUC (0.668)
+
 
 ---
 
@@ -84,10 +86,11 @@ EEG-based models showed marginally better discriminative performance than text-b
 
 ## Limitations
 
-- Relatively small sample size (n=151)
+- Relatively small sample size (n=151) - have we got more data to bring in perhaps?
 - High variance across folds (std up to 0.12 for AUC)
-- LaBraM EEG encoder not tested due to dependency issues
+- LaBraM EEG encoder not tested due to dependency issues with braindecode
 - No hyperparameter tuning performed
+
 
 ---
 
