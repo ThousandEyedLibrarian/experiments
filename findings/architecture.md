@@ -1,19 +1,20 @@
 # ASM Outcome Prediction: Architecture Documentation
 
-**Date:** 24 January 2026
-**Dataset:** 151 patients with EEG recordings and ASM outcomes
+**Date:** 25 January 2026
+**Dataset:** 151 patients with EEG recordings and ASM outcomes (107 with all modalities)
 **Diagrams:** Attached as `.drawio` files (open with [app.diagrams.net](https://app.diagrams.net))
 
 ---
 
 ## Overview
 
-Two experiment sets predict anti-seizure medication (ASM) treatment response using multimodal fusion:
+Three experiment sets predict anti-seizure medication (ASM) treatment response using multimodal fusion:
 
 | Experiment | Inputs | Fusion Methods |
 |------------|--------|----------------|
 | **Exp1** | Text reports (LLM) + Drug structure (SMILES) | (a) ConcatMLP, (b) FuseMoE |
 | **Exp2** | EEG signals + Drug structure (SMILES) | (a) ConcatMLP, (b) FuseMoE |
+| **Exp3** | Text + EEG + SMILES (triple modality) | (a) ConcatMLP, (b) FuseMoE |
 
 ---
 
@@ -83,16 +84,51 @@ Same EEG path → cross-modal MoE fusion instead of concatenation
 
 ---
 
+## Experiment 3: Triple Modality Fusion (LLM + EEG + SMILES)
+
+### Input Embeddings
+
+| Modality | Models | Dimension |
+|----------|--------|-----------|
+| Text Reports | ClinicalBERT, PubMedBERT | 768 |
+| EEG Signals | SimpleCNN + Transformer | 256 |
+| Drug Structure | ChemBERTa, SMILES Transformer | 768 / 256 |
+
+### Exp3a: TripleMLP (~2.5M params)
+Project all modalities → 256D → concatenate → MLP classifier
+**Diagram:** `exp3a_triple_mlp.drawio`
+
+| Component | Configuration |
+|-----------|---------------|
+| Text Projection | 768→256 + LayerNorm |
+| EEG Encoder | SimpleCNN → Transformer(2L, 4H) → 256 |
+| SMILES Projection | dim→256 + LayerNorm |
+| Fusion | Concat (768D) → MLP |
+
+### Exp3b: TripleFuseMoE (~4.7M params)
+Learnable modality tokens → self-attention → 2× MoE layers → classifier
+**Diagram:** `exp3b_triple_fusemoe.drawio`
+
+| Component | Configuration |
+|-----------|---------------|
+| Modality Projections | All → 256D |
+| Learnable Tokens | 3 tokens (text, EEG, SMILES) |
+| Self-Attention | 4 heads, dim=256 |
+| MoE Layers | 2 layers, 4 experts, top-2 routing |
+| Expert FFN | 256→512→256 with GELU |
+
+---
+
 ## Training Configuration
 
-| Parameter | Exp1a | Exp1b | Exp2a | Exp2b |
-|-----------|-------|-------|-------|-------|
-| Learning Rate | 1e-4 | 5e-5 | 1e-4 | 1e-4 |
-| Batch Size | 16 | 16 | 8 | 8 |
-| Max Epochs | 100 | 100 | 100 | 100 |
-| Early Stopping | 15 | 20 | 20 | 20 |
-| Optimizer | AdamW | AdamW | AdamW | AdamW |
-| CV Folds | 5 | 5 | 5 | 5 |
+| Parameter | Exp1a | Exp1b | Exp2a | Exp2b | Exp3a | Exp3b |
+|-----------|-------|-------|-------|-------|-------|-------|
+| Learning Rate | 1e-4 | 5e-5 | 1e-4 | 1e-4 | 1e-4 | 5e-5 |
+| Batch Size | 16 | 16 | 8 | 8 | 8 | 8 |
+| Max Epochs | 100 | 100 | 100 | 100 | 100 | 100 |
+| Early Stopping | 15 | 20 | 20 | 20 | 20 | 20 |
+| Optimizer | AdamW | AdamW | AdamW | AdamW | AdamW | AdamW |
+| CV Folds | 5 | 5 | 5 | 5 | 5 | 5 |
 
 ---
 
@@ -104,8 +140,11 @@ Same EEG path → cross-modal MoE fusion instead of concatenation
 | Exp1b | FuseMoE | 2.6M | 0.658 |
 | **Exp2a** | **Concat+MLP** | **1.2M** | **0.668** |
 | Exp2b | FuseMoE | 2.8M | 0.608 |
+| Exp3a | Concat+MLP | 2.5M | *pending* |
+| Exp3b | FuseMoE | 4.7M | *pending* |
 
-**Best performing model:** Exp2a (EEG + SMILES with MLP fusion) achieved AUC 0.668.
+**Current best:** Exp2a (EEG + SMILES with MLP fusion) achieved AUC 0.668.
+**Exp3 hypothesis:** Triple modality fusion may improve over dual modality baselines.
 
 ---
 
@@ -117,5 +156,7 @@ Same EEG path → cross-modal MoE fusion instead of concatenation
 | Exp1b FuseMoE | `exp1b_fusemoe.drawio` |
 | Exp2a EEG-MLP | `exp2a_eeg_mlp.drawio` |
 | Exp2b EEG-FuseMoE | `exp2b_eeg_fusemoe.drawio` |
+| Exp3a Triple-MLP | `exp3a_triple_mlp.drawio` |
+| Exp3b Triple-FuseMoE | `exp3b_triple_fusemoe.drawio` |
 | EEG Preprocessing | `eeg_preprocessing.drawio` |
 | SimpleCNN Encoder | `simplecnn_encoder.drawio` |
