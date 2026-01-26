@@ -1,4 +1,0 @@
-mkdir: cannot create directory ‘/var/spool/slurmd/job50356082/logs’: Permission denied
-/var/spool/slurmd/job50356082/slurm_script: line 131: .venv-others/bin/activate: No such file or directory
-python: can't open file '/var/spool/slurmd/job50356082/check_environment.py': [Errno 2] No such file or directory
-/fs04/scratch2/he12/carter/experiments/.venv-others/bin/python: Error while finding module specification for 'exp1_fusion.run_experiments' (ModuleNotFoundError: No module named 'exp1_fusion')

@@ -1,16 +1,17 @@
 # ASM Outcome Prediction: Experimental Findings
 
-**Date:** 23 January 2026
+**Date:** 27 January 2026
 **Dataset:** 151 patients with EEG recordings and anti-seizure medication (ASM) outcomes
 
 ---
 
 ## Executive Summary
 
-We evaluated multimodal fusion approaches for predicting ASM treatment outcomes. Two experiment sets were conducted:
+We evaluated multimodal fusion approaches for predicting ASM treatment outcomes. Three experiment sets were conducted:
 
 - **Experiment 1:** Text report embeddings (LLM) + drug structure embeddings (SMILES)
 - **Experiment 2:** EEG signal embeddings + drug structure embeddings (SMILES)
+- **Experiment 3:** LLM + EEG + SMILES embeddings (triple modality) - *results invalid, under investigation*
 
 The best performing model achieved an **AUC of 0.668** using EEG + SMILES Transformer embeddings with MLP fusion.
 
@@ -73,14 +74,49 @@ Combined EEG signal embeddings with molecular structure embeddings.
 
 ---
 
-## Comparison: Exp1 vs Exp2
+## Experiment 3: LLM + EEG + SMILES Fusion 
 
-| Modality | Best Model | AUC | Accuracy |
-|----------|------------|-----|----------|
-| EEG + SMILES | SimpleCNN + SMILES-Trf + MLP | **0.668** | 0.563 |
-| LLM + SMILES | PubMedBERT + ChemBERTa + FuseMoE | 0.658 | 0.546 |
+Combined all three modalities: text report embeddings, EEG signal embeddings, and molecular structure embeddings.
 
-EEG-based models showed marginally better discriminative performance than text-based models.
+### Models Tested
+- **Text encoders:** ClinicalBERT, PubMedBERT
+- **EEG encoder:** SimpleCNN (27 channels, 10s windows)
+- **SMILES encoders:** ChemBERTa, SMILES Transformer
+- **Fusion methods:** Concatenation + MLP (3a), FuseMoE (3b)
+
+### Results (5-fold CV) - INVALID
+
+| Experiment | Text Model | SMILES Model | Fusion | AUC | Accuracy | F1 |
+|------------|------------|--------------|--------|-----|----------|-----|
+| exp3a | ClinicalBERT | ChemBERTa | MLP | 0.500 | 1.000 | 0.000 |
+| exp3a | ClinicalBERT | SMILES-Trf | MLP | 0.500 | 1.000 | 0.000 |
+| exp3a | PubMedBERT | ChemBERTa | MLP | 0.500 | 1.000 | 0.000 |
+| exp3a | PubMedBERT | SMILES-Trf | MLP | 0.500 | 1.000 | 0.000 |
+| exp3b | ClinicalBERT | ChemBERTa | FuseMoE | 0.500 | 1.000 | 0.000 |
+| exp3b | ClinicalBERT | SMILES-Trf | FuseMoE | 0.500 | 1.000 | 0.000 |
+| exp3b | PubMedBERT | ChemBERTa | FuseMoE | 0.500 | 1.000 | 0.000 |
+| exp3b | PubMedBERT | SMILES-Trf | FuseMoE | 0.500 | 1.000 | 0.000 |
+
+### Key Observations
+
+**These results are invalid and require investigation.** The pattern of AUC=0.5 (random chance), Accuracy=1.0, F1=0.0, with zero variance across all folds indicates a critical issue:
+
+- Model is likely predicting a single class for all samples
+- Possible causes: class imbalance handling, label loading bug, or data alignment issue
+- Note: Only 107 patients had all three modalities available (vs 151 for dual-modality experiments)
+
+
+---
+
+## Comparison: Exp1 vs Exp2 vs Exp3
+
+| Modality | Best Model | AUC | Accuracy | Status |
+|----------|------------|-----|----------|--------|
+| EEG + SMILES | SimpleCNN + SMILES-Trf + MLP | **0.668** | 0.563 | Valid |
+| LLM + SMILES | PubMedBERT + ChemBERTa + FuseMoE | 0.658 | 0.546 | Valid |
+| LLM + EEG + SMILES | All configs | 0.500 | 1.000 | Invalid |
+
+EEG-based models showed marginally better discriminative performance than text-based models. Triple-modality results are pending investigation.
 
 ---
 
@@ -90,13 +126,14 @@ EEG-based models showed marginally better discriminative performance than text-b
 - High variance across folds (std up to 0.12 for AUC)
 - LaBraM EEG encoder not tested due to dependency issues with braindecode
 - No hyperparameter tuning performed
+- **Exp3 implementation broken** - triple-modality fusion producing invalid results (likely label/data loading issue)
 
 
 ---
 
 ## Next Steps
 
-1. **Experiment 3:** Combine all three modalities (LLM + EEG + SMILES)
+1. **Debug Exp3:** Investigate triple-modality implementation - check data loading, label alignment, and class balance handling
 2. Test LaBraM encoder once braindecode dependencies are resolved
 3. Hyperparameter optimisation for best-performing models
 4. Investigate high fold variance with stratified analysis
