@@ -28,7 +28,7 @@ This project uses **two separate virtual environments** due to TensorFlow/PyTorc
 
 ### Main Environment (PyTorch-based)
 
-Used for most experiments (Exp 1, Exp 2):
+Used for all experiments (Exp 1, Exp 2, Exp 3):
 
 ```bash
 uv venv --python 3.10 .venv-others
@@ -143,6 +143,39 @@ python -m exp2_fusion.run_experiments --eeg-encoder simplecnn
 python -m exp2_fusion.run_experiments --eeg-encoder simplecnn --smiles-model chemberta
 ```
 
+### Experiment 3: Triple Modality Fusion (LLM + EEG + SMILES)
+
+Combines all three modalities: clinical text, EEG signals, and drug molecular embeddings.
+
+```bash
+source .venv-others/bin/activate
+
+# Run all Experiment 3 combinations (8 experiments, 5-fold CV each)
+python -m exp3_fusion.run_experiments
+
+# Run only MLP fusion experiments (exp3a)
+python -m exp3_fusion.run_experiments --fusion mlp
+
+# Run only FuseMoE experiments (exp3b)
+python -m exp3_fusion.run_experiments --fusion fusemoe
+
+# Run a specific configuration
+python -m exp3_fusion.run_experiments --experiments exp3a_clinicalbert_chemberta
+```
+
+**Experiment matrix (8 configurations):**
+
+| ID | Text Encoder | SMILES Encoder | Fusion |
+|----|--------------|----------------|--------|
+| exp3a-1 | ClinicalBERT | ChemBERTa | MLP |
+| exp3a-2 | ClinicalBERT | SMILES-Trf | MLP |
+| exp3a-3 | PubMedBERT | ChemBERTa | MLP |
+| exp3a-4 | PubMedBERT | SMILES-Trf | MLP |
+| exp3b-1 | ClinicalBERT | ChemBERTa | FuseMoE |
+| exp3b-2 | ClinicalBERT | SMILES-Trf | FuseMoE |
+| exp3b-3 | PubMedBERT | ChemBERTa | FuseMoE |
+| exp3b-4 | PubMedBERT | SMILES-Trf | FuseMoE |
+
 ### Embedding Generation (Optional)
 
 Generate embeddings separately using scripts in `exp1_misc/`:
@@ -173,6 +206,8 @@ outputs/
 ├── exp2_results/                    # Experiment 2 results
 │   ├── summary.json
 │   └── exp2_*.json
+├── exp3_results/                    # Experiment 3 results (triple modality)
+│   └── exp3_results_*.json        # Results with timestamp
 └── eeg_cache/                       # Cached preprocessed EEG data
     └── processed_eeg.pkl
 ```
@@ -258,9 +293,16 @@ experiments/
 │   ├── run_experiments.py
 │   ├── eeg_pipeline.py
 │   └── models/
+├── exp3_fusion/          # Experiment 3: LLM + EEG + SMILES fusion
+│   ├── run_experiments.py
+│   ├── data_pipeline.py
+│   ├── training.py
+│   └── models/
+│       ├── triple_mlp.py      # ~2.5M params
+│       └── triple_fusemoe.py  # ~4.7M params
 ├── exp1_misc/            # Embedding generation scripts
 ├── outputs/              # Generated embeddings and results
-├── findings/             # Analysis and notes
+├── findings/             # Analysis and architecture docs
 ├── smiles-transformer/   # External SMILES transformer code
 └── MoLeR_checkpoint/     # Pre-trained MoLeR model
 ```
