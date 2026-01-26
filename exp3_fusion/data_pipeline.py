@@ -323,8 +323,7 @@ def create_datasets(
 ) -> Tuple[TripleModalityDataset, TripleModalityDataset]:
     """Create train and validation datasets from fold indices."""
     # Build lookup dicts
-    labels = {str(row["pid"]): OUTCOME_MAPPING.get(int(row["outcome"]), int(row["outcome"]))
-              for _, row in df.iterrows()}
+    labels = {str(row["pid"]): int(row["outcome"]) for _, row in df.iterrows()}
     asm_drugs = {str(row["pid"]): row["ASM"] for _, row in df.iterrows()}
 
     # Get patient IDs for each split
