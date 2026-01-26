@@ -6,3 +6,4 @@ sync_from_m3.sh
 OBJECTIVES.md
 __pycache__
 outputs/
+logs/
