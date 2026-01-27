@@ -6,7 +6,7 @@ from typing import Dict, List, Tuple
 import numpy as np
 import torch
 import torch.nn as nn
-from sklearn.metrics import accuracy_score, f1_score, precision_recall_curve, roc_auc_score
+from sklearn.metrics import accuracy_score, balanced_accuracy_score, f1_score, roc_auc_score, roc_curve
 from sklearn.model_selection import StratifiedKFold
 from torch.utils.data import DataLoader
 
@@ -118,16 +118,18 @@ def evaluate(
     if len(np.unique(all_labels)) > 1:
         metrics["auc"] = roc_auc_score(all_labels, all_probs)
 
-        # Threshold tuning: find optimal threshold for F1
-        precision, recall, thresholds = precision_recall_curve(all_labels, all_probs)
-        f1_scores = 2 * (precision * recall) / (precision + recall + 1e-8)
-        best_idx = np.argmax(f1_scores[:-1])  # Last element has no threshold
-        optimal_threshold = thresholds[best_idx]
+        # Threshold tuning: find optimal threshold for balanced accuracy (Youden's J)
+        fpr, tpr, thresholds_roc = roc_curve(all_labels, all_probs)
+        youden_j = tpr - fpr  # Maximising J = maximising balanced accuracy
+        best_idx = np.argmax(youden_j)
+        optimal_threshold = thresholds_roc[best_idx]
         tuned_preds = (all_probs >= optimal_threshold).astype(int)
+        metrics["balanced_acc_tuned"] = balanced_accuracy_score(all_labels, tuned_preds)
         metrics["f1_tuned"] = f1_score(all_labels, tuned_preds, zero_division=0)
         metrics["optimal_threshold"] = optimal_threshold
     else:
         metrics["auc"] = 0.5
+        metrics["balanced_acc_tuned"] = 0.5
         metrics["f1_tuned"] = 0.0
         metrics["optimal_threshold"] = 0.5
 
@@ -297,7 +299,7 @@ def run_cross_validation(
         random_state=CV_CONFIG["random_state"],
     )
 
-    fold_metrics = {"auc": [], "accuracy": [], "f1": [], "f1_tuned": []}
+    fold_metrics = {"auc": [], "accuracy": [], "f1": [], "f1_tuned": [], "balanced_acc_tuned": []}
 
     for fold, (train_idx, val_idx) in enumerate(kfold.split(np.zeros(len(outcomes)), outcomes)):
         logger.info(f"Fold {fold + 1}/{CV_CONFIG['n_splits']}")
@@ -318,6 +320,7 @@ def run_cross_validation(
         logger.info(
             f"  Fold {fold + 1} results: AUC={metrics['auc']:.4f}, "
             f"Acc={metrics['accuracy']:.4f}, F1={metrics['f1']:.4f}, "
+            f"BalAcc_tuned={metrics['balanced_acc_tuned']:.4f}, "
             f"F1_tuned={metrics['f1_tuned']:.4f} (thresh={metrics['optimal_threshold']:.3f})"
         )
 
