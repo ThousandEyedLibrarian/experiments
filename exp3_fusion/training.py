@@ -6,7 +6,7 @@ from typing import Dict, List, Tuple
 import numpy as np
 import torch
 import torch.nn as nn
-from sklearn.metrics import accuracy_score, f1_score, roc_auc_score
+from sklearn.metrics import accuracy_score, f1_score, precision_recall_curve, roc_auc_score
 from sklearn.model_selection import StratifiedKFold
 from torch.utils.data import DataLoader
 
@@ -117,8 +117,19 @@ def evaluate(
     # AUC requires both classes present
     if len(np.unique(all_labels)) > 1:
         metrics["auc"] = roc_auc_score(all_labels, all_probs)
+
+        # Threshold tuning: find optimal threshold for F1
+        precision, recall, thresholds = precision_recall_curve(all_labels, all_probs)
+        f1_scores = 2 * (precision * recall) / (precision + recall + 1e-8)
+        best_idx = np.argmax(f1_scores[:-1])  # Last element has no threshold
+        optimal_threshold = thresholds[best_idx]
+        tuned_preds = (all_probs >= optimal_threshold).astype(int)
+        metrics["f1_tuned"] = f1_score(all_labels, tuned_preds, zero_division=0)
+        metrics["optimal_threshold"] = optimal_threshold
     else:
         metrics["auc"] = 0.5
+        metrics["f1_tuned"] = 0.0
+        metrics["optimal_threshold"] = 0.5
 
     return total_loss / n_batches, metrics
 
@@ -208,13 +219,21 @@ def train_fold(
     n_params = sum(p.numel() for p in model.parameters())
     logger.info(f"  Model parameters: {n_params:,}")
 
+    # Calculate class weights from training data (inverse frequency)
+    train_labels = [train_dataset[i][4].item() for i in range(len(train_dataset))]
+    class_counts = np.bincount(train_labels)
+    class_weights = 1.0 / class_counts
+    class_weights = class_weights / class_weights.sum()
+    class_weights = torch.tensor(class_weights, dtype=torch.float32).to(device)
+    logger.info(f"  Class weights: {class_weights.cpu().numpy()}")
+
     # Optimizer and criterion
     optimizer = torch.optim.AdamW(
         model.parameters(),
         lr=config["learning_rate"],
         weight_decay=config["weight_decay"],
     )
-    criterion = nn.CrossEntropyLoss()
+    criterion = nn.CrossEntropyLoss(weight=class_weights)
 
     # Training loop
     best_val_auc = 0.0
@@ -278,7 +297,7 @@ def run_cross_validation(
         random_state=CV_CONFIG["random_state"],
     )
 
-    fold_metrics = {"auc": [], "accuracy": [], "f1": []}
+    fold_metrics = {"auc": [], "accuracy": [], "f1": [], "f1_tuned": []}
 
     for fold, (train_idx, val_idx) in enumerate(kfold.split(np.zeros(len(outcomes)), outcomes)):
         logger.info(f"Fold {fold + 1}/{CV_CONFIG['n_splits']}")
@@ -298,7 +317,8 @@ def run_cross_validation(
 
         logger.info(
             f"  Fold {fold + 1} results: AUC={metrics['auc']:.4f}, "
-            f"Acc={metrics['accuracy']:.4f}, F1={metrics['f1']:.4f}"
+            f"Acc={metrics['accuracy']:.4f}, F1={metrics['f1']:.4f}, "
+            f"F1_tuned={metrics['f1_tuned']:.4f} (thresh={metrics['optimal_threshold']:.3f})"
         )
 
     # Compute summary statistics
