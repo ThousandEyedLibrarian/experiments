@@ -11,9 +11,9 @@ We evaluated multimodal fusion approaches for predicting ASM treatment outcomes.
 
 - **Experiment 1:** Text report embeddings (LLM) + drug structure embeddings (SMILES)
 - **Experiment 2:** EEG signal embeddings + drug structure embeddings (SMILES)
-- **Experiment 3:** LLM + EEG + SMILES embeddings (triple modality) - *results invalid, under investigation*
+- **Experiment 3:** LLM + EEG + SMILES embeddings (triple modality)
 
-The best performing model achieved an **AUC of 0.668** using EEG + SMILES Transformer embeddings with MLP fusion.
+The best performing model achieved an **AUC of 0.733** using ClinicalBERT + ChemBERTa + MLP fusion (triple modality).
 
 ---
 
@@ -74,7 +74,7 @@ Combined EEG signal embeddings with molecular structure embeddings.
 
 ---
 
-## Experiment 3: LLM + EEG + SMILES Fusion 
+## Experiment 3: LLM + EEG + SMILES Fusion
 
 Combined all three modalities: text report embeddings, EEG signal embeddings, and molecular structure embeddings.
 
@@ -84,56 +84,57 @@ Combined all three modalities: text report embeddings, EEG signal embeddings, an
 - **SMILES encoders:** ChemBERTa, SMILES Transformer
 - **Fusion methods:** Concatenation + MLP (3a), FuseMoE (3b)
 
-### Results (5-fold CV) - INVALID
+### Results (5-fold CV)
 
 | Experiment | Text Model | SMILES Model | Fusion | AUC | Accuracy | F1 |
 |------------|------------|--------------|--------|-----|----------|-----|
-| exp3a | ClinicalBERT | ChemBERTa | MLP | 0.500 | 1.000 | 0.000 |
-| exp3a | ClinicalBERT | SMILES-Trf | MLP | 0.500 | 1.000 | 0.000 |
-| exp3a | PubMedBERT | ChemBERTa | MLP | 0.500 | 1.000 | 0.000 |
-| exp3a | PubMedBERT | SMILES-Trf | MLP | 0.500 | 1.000 | 0.000 |
-| exp3b | ClinicalBERT | ChemBERTa | FuseMoE | 0.500 | 1.000 | 0.000 |
-| exp3b | ClinicalBERT | SMILES-Trf | FuseMoE | 0.500 | 1.000 | 0.000 |
-| exp3b | PubMedBERT | ChemBERTa | FuseMoE | 0.500 | 1.000 | 0.000 |
-| exp3b | PubMedBERT | SMILES-Trf | FuseMoE | 0.500 | 1.000 | 0.000 |
+| exp3a | ClinicalBERT | ChemBERTa | MLP | **0.733** | 0.530 | 0.224 |
+| exp3a | ClinicalBERT | SMILES-Trf | MLP | 0.688 | 0.604 | 0.706 |
+| exp3a | PubMedBERT | ChemBERTa | MLP | 0.675 | 0.541 | 0.698 |
+| exp3b | ClinicalBERT | SMILES-Trf | FuseMoE | 0.656 | 0.603 | 0.580 |
+| exp3b | PubMedBERT | ChemBERTa | FuseMoE | 0.652 | 0.540 | 0.497 |
+| exp3b | PubMedBERT | SMILES-Trf | FuseMoE | 0.638 | 0.513 | 0.529 |
+| exp3b | ClinicalBERT | ChemBERTa | FuseMoE | 0.628 | 0.532 | 0.552 |
+| exp3a | PubMedBERT | SMILES-Trf | MLP | 0.627 | 0.585 | 0.674 |
 
 ### Key Observations
 
-**These results are invalid and require investigation.** The pattern of AUC=0.5 (random chance), Accuracy=1.0, F1=0.0, with zero variance across all folds indicates a critical issue:
-
-- Model is likely predicting a single class for all samples
-- Possible causes: class imbalance handling, label loading bug, or data alignment issue
-- Note: Only 107 patients had all three modalities available (vs 151 for dual-modality experiments)
+- Triple modality achieves highest AUC (0.733) across all experiments
+- MLP fusion outperformed FuseMoE for exp3 (opposite pattern to exp1)
+- ClinicalBERT + ChemBERTa was the best combination for AUC
+- Best AUC model has poor F1 (0.224) - may be biased towards negative class
+- ClinicalBERT + SMILES-Trf offers best balance of AUC (0.688) and F1 (0.706)
+- Only 107 patients had all three modalities (vs 151 for dual-modality)
 
 
 ---
 
 ## Comparison: Exp1 vs Exp2 vs Exp3
 
-| Modality | Best Model | AUC | Accuracy | Status |
-|----------|------------|-----|----------|--------|
-| EEG + SMILES | SimpleCNN + SMILES-Trf + MLP | **0.668** | 0.563 | Valid |
-| LLM + SMILES | PubMedBERT + ChemBERTa + FuseMoE | 0.658 | 0.546 | Valid |
-| LLM + EEG + SMILES | All configs | 0.500 | 1.000 | Invalid |
+| Modality | Best Model | AUC | Accuracy | F1 |
+|----------|------------|-----|----------|-----|
+| LLM + EEG + SMILES | ClinicalBERT + ChemBERTa + MLP | **0.733** | 0.530 | 0.224 |
+| EEG + SMILES | SimpleCNN + SMILES-Trf + MLP | 0.668 | 0.563 | 0.585 |
+| LLM + SMILES | PubMedBERT + ChemBERTa + FuseMoE | 0.658 | 0.546 | 0.612 |
 
-EEG-based models showed marginally better discriminative performance than text-based models. Triple-modality results are pending investigation.
+Triple modality provides a clear AUC improvement (~10%) over dual-modality approaches, though at the cost of reduced sample size (107 vs 151 patients) and lower F1 in the best AUC model.
 
 ---
 
 ## Limitations
 
-- Relatively small sample size (n=151) - have we got more data to bring in perhaps?
-- High variance across folds (std up to 0.12 for AUC)
+- Relatively small sample size (n=151 for dual-modality, n=107 for triple-modality)
+- High variance across folds (std up to 0.10 for AUC)
 - LaBraM EEG encoder not tested due to dependency issues with braindecode
 - No hyperparameter tuning performed
-- **Exp3 implementation broken** - triple-modality fusion producing invalid results (likely label/data loading issue)
+- Best AUC model (exp3) has poor F1 - potential precision/recall trade-off to investigate
 
 
 ---
 
 ## Next Steps
 
-1. **Debug Exp3:** Investigate triple-modality implementation - check data loading, label alignment, and class balance handling
+1. Investigate F1/AUC trade-off in exp3 - consider class weighting or threshold tuning
 2. Test LaBraM encoder once braindecode dependencies are resolved
-3. Hyperparameter optimisation for best-performing models
+3. Hyperparameter optimisation for best-performing models (esp. exp3a ClinicalBERT + ChemBERTa)
 4. Investigate high fold variance with stratified analysis
