@@ -64,6 +64,8 @@ def run_all_experiments(
                     key: {
                         "mean": float(np.mean(values)),
                         "std": float(np.std(values)),
+                        "min": float(np.min(values)),
+                        "max": float(np.max(values)),
                     }
                     for key, values in results.items()
                 },

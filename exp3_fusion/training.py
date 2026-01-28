@@ -329,7 +329,8 @@ def run_cross_validation(
     for key in fold_metrics:
         values = fold_metrics[key]
         mean, std = np.mean(values), np.std(values)
-        logger.info(f"  {key}: {mean:.4f} +/- {std:.4f}")
+        min_val, max_val = np.min(values), np.max(values)
+        logger.info(f"  {key}: {mean:.4f} +/- {std:.4f} (min={min_val:.4f}, max={max_val:.4f})")
 
     return fold_metrics
 
