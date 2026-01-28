@@ -243,13 +243,13 @@ class ClinicalEEGFusion(nn.Module):
             chunk_size = chunk.shape[1]
 
             # Flatten for encoding
-            chunk_flat = chunk.view(batch_size * chunk_size, n_channels, n_times)
+            chunk_flat = chunk.reshape(batch_size * chunk_size, n_channels, n_times)
 
             # Encode
             chunk_emb = self.window_encoder(chunk_flat)
 
             # Reshape back
-            chunk_emb = chunk_emb.view(batch_size, chunk_size, -1)
+            chunk_emb = chunk_emb.reshape(batch_size, chunk_size, -1)
             all_embeddings.append(chunk_emb)
 
         # Concatenate all chunks
