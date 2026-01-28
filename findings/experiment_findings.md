@@ -30,23 +30,23 @@ Combined clinical text report embeddings with molecular structure embeddings.
 - **SMILES encoders:** ChemBERTa, SMILES Transformer
 - **Fusion methods:** Concatenation + MLP (1a), FuseMoE (1b)
 
-### Results (5-fold CV)
+### Results (5-fold CV with Threshold Tuning)
 
-| Experiment | Text Model | SMILES Model | AUC | Accuracy | F1 |
-|------------|------------|--------------|-----|----------|-----|
-| exp1b | PubMedBERT | ChemBERTa | **0.658** | 0.546 | 0.612 |
-| exp1a | ClinicalBERT | ChemBERTa | 0.640 | 0.528 | 0.336 |
-| exp1b | ClinicalBERT | SMILES-Trf | 0.639 | 0.570 | 0.622 |
-| exp1b | PubMedBERT | SMILES-Trf | 0.652 | 0.562 | 0.557 |
-| exp1a | ClinicalBERT | SMILES-Trf | 0.607 | 0.578 | 0.662 |
-| exp1a | PubMedBERT | ChemBERTa | 0.569 | 0.570 | 0.630 |
-| exp1b | ClinicalBERT | ChemBERTa | 0.614 | 0.562 | 0.547 |
-| exp1a | PubMedBERT | SMILES-Trf | 0.506 | 0.545 | 0.629 |
+| Experiment | Text Model | SMILES Model | AUC | Bal Acc Tuned | F1 Tuned |
+|------------|------------|--------------|-----|---------------|----------|
+| exp1b | ClinicalBERT | SMILES-Trf | **0.648 +/- 0.100** | 0.712 +/- 0.074 | 0.701 +/- 0.117 |
+| exp1b | ClinicalBERT | ChemBERTa | 0.643 +/- 0.128 | 0.670 +/- 0.078 | 0.597 +/- 0.142 |
+| exp1a | PubMedBERT | ChemBERTa | 0.641 +/- 0.070 | 0.699 +/- 0.033 | 0.676 +/- 0.082 |
+| exp1b | PubMedBERT | ChemBERTa | 0.641 +/- 0.071 | **0.713 +/- 0.047** | 0.670 +/- 0.125 |
+| exp1a | PubMedBERT | SMILES-Trf | 0.632 +/- 0.106 | 0.676 +/- 0.073 | 0.624 +/- 0.198 |
+| exp1a | ClinicalBERT | SMILES-Trf | 0.623 +/- 0.112 | 0.677 +/- 0.073 | 0.557 +/- 0.110 |
+| exp1a | ClinicalBERT | ChemBERTa | 0.609 +/- 0.099 | 0.669 +/- 0.067 | 0.707 +/- 0.061 |
+| exp1b | PubMedBERT | SMILES-Trf | 0.592 +/- 0.075 | 0.641 +/- 0.047 | 0.635 +/- 0.079 |
 
 ### Key Observations
-- FuseMoE (exp1b) generally outperformed simple concatenation (exp1a) for AUC
-- ChemBERTa embeddings yielded higher AUC than SMILES Transformer in most cases
-- PubMedBERT + ChemBERTa with FuseMoE achieved the best AUC (0.658)
+- Best balanced accuracy: exp1b_pubmedbert_chemberta (0.713) and exp1b_clinicalbert_smilestrf (0.712)
+- FuseMoE slightly outperforms MLP for balanced accuracy
+- High variance across folds (std 0.07-0.13) due to small dataset (n=121)
 
 ---
 
@@ -59,21 +59,21 @@ Combined EEG signal embeddings with molecular structure embeddings.
 - **SMILES encoders:** ChemBERTa, SMILES Transformer
 - **Fusion methods:** Concatenation + MLP (2a), FuseMoE (2b)
 
-### Results (5-fold CV)
+### Results (5-fold CV with Class Weighting and Threshold Tuning)
 
-| Experiment | SMILES Model | Fusion | AUC | Accuracy | F1 |
-|------------|--------------|--------|-----|----------|-----|
-| exp2a | SMILES-Trf | MLP | **0.668** | 0.563 | 0.585 |
-| exp2a | ChemBERTa | MLP | 0.608 | 0.543 | 0.478 |
-| exp2b | SMILES-Trf | FuseMoE | 0.608 | 0.576 | **0.658** |
-| exp2b | ChemBERTa | FuseMoE | 0.554 | 0.523 | 0.501 |
+| Experiment | SMILES Model | Fusion | AUC | Bal Acc Tuned | F1 Tuned |
+|------------|--------------|--------|-----|---------------|----------|
+| exp2a | SMILES-Trf | MLP | **0.634 +/- 0.045** | **0.699 +/- 0.047** | **0.720 +/- 0.056** |
+| exp2a | ChemBERTa | MLP | 0.611 +/- 0.074 | 0.672 +/- 0.045 | 0.632 +/- 0.075 |
+| exp2b | SMILES-Trf | FuseMoE | 0.576 +/- 0.095 | 0.579 +/- 0.051 | 0.537 +/- 0.272 |
+| exp2b | ChemBERTa | FuseMoE | 0.562 +/- 0.084 | 0.583 +/- 0.054 | 0.554 +/- 0.278 |
 
 ### Key Observations
 
-- SMILES Transformer embeddings consistently outperformed ChemBERTa for EEG fusion
-- Simple MLP fusion achieved higher AUC than FuseMoE
-- FuseMoE achieved better F1 score, maybe suggesting more balanced/robust predictions?
-- EEG + SMILES-Trf + MLP achieved the overall best AUC (0.668)
+- MLP fusion significantly outperforms FuseMoE (Bal Acc 0.67-0.70 vs 0.58)
+- SMILES Transformer embeddings consistently outperform ChemBERTa
+- FuseMoE unstable with EEG data (F1 std 0.27-0.28)
+- Class weighting added in re-run (previously missing)
 
 
 ---
