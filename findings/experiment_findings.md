@@ -1,19 +1,22 @@
 # ASM Outcome Prediction: Experimental Findings
 
-**Date:** 27 January 2026
+**Date:** 28 January 2026
 **Dataset:** 151 patients with EEG recordings and anti-seizure medication (ASM) outcomes
 
 ---
 
 ## Executive Summary
 
-We evaluated multimodal fusion approaches for predicting ASM treatment outcomes. Three experiment sets were conducted:
+We evaluated multimodal fusion approaches for predicting ASM treatment outcomes. Four experiment sets were conducted:
 
 - **Experiment 1:** Text report embeddings (LLM) + drug structure embeddings (SMILES)
 - **Experiment 2:** EEG signal embeddings + drug structure embeddings (SMILES)
 - **Experiment 3:** LLM + EEG + SMILES embeddings (triple modality)
+- **Experiment 4:** Clinical features only (baseline)
 
 The best performing model achieved a **balanced accuracy of 0.774** using ClinicalBERT + ChemBERTa + FuseMoE fusion (triple modality). Class weighting and threshold tuning (via Youden's J statistic) were applied to address class imbalance.
+
+**Critical finding:** Clinical features alone (Exp 4, AUC 0.664) perform comparably to all embedding-based experiments (AUC 0.506-0.672), suggesting embeddings provide minimal lift over clinical baseline.
 
 ---
 
@@ -147,32 +150,70 @@ Combined all three modalities: text report embeddings, EEG signal embeddings, an
 
 ---
 
-## Comparison: Exp1 vs Exp2 vs Exp3
+## Experiment 4: Clinical Features Baseline
+
+Established a clinical-only baseline using 16 demographic/clinical features to benchmark embedding-based approaches.
+
+### Clinical Features Used
+
+- **Binary (13):** sex, pretrt_sz_5, focal, fam_hx, febrile, ci, birth_t, head, drug, alcohol, cvd, psy, ld
+- **Numeric (1):** age_init (Z-score normalised)
+- **Categorical (2):** lesion, eeg_cat (one-hot encoded, 6 dims total)
+
+### Results (5-fold CV)
+
+| Experiment | Model | AUC | Balanced Acc Tuned | F1 Tuned |
+|------------|-------|-----|-------------------|----------|
+| **Exp4a** | MLP (~3.7K params) | **0.664 +/- 0.043** | **0.675 +/- 0.032** | 0.627 +/- 0.056 |
+| Exp4b | Attention (~104K params) | 0.636 +/- 0.069 | 0.673 +/- 0.061 | 0.629 +/- 0.123 |
+
+### Per-Fold AUC Values
+
+- **Exp4a MLP:** [0.712, 0.614, 0.719, 0.643, 0.630]
+- **Exp4b Attention:** [0.690, 0.683, 0.700, 0.538, 0.568]
+
+### Key Observations
+
+- Simple MLP baseline more stable than attention model (lower variance)
+- Matches Feng et al. 2025 benchmark (clinical-only AUC 0.67)
+- Attention model shows instability on folds 4-5 (may need more data)
+
+---
+
+## Comparison: Exp1 vs Exp2 vs Exp3 vs Exp4
 
 | Modality | Best Model | AUC | Bal Acc Tuned | F1 Tuned |
 |----------|------------|-----|---------------|----------|
 | LLM + EEG + SMILES | ClinicalBERT + ChemBERTa + FuseMoE | **0.753** | **0.774** | **0.801** |
 | EEG + SMILES | SimpleCNN + SMILES-Trf + MLP | 0.668 | N/A | N/A |
+| **Clinical only** | **MLP** | **0.664** | **0.675** | **0.627** |
 | LLM + SMILES | PubMedBERT + ChemBERTa + FuseMoE | 0.658 | N/A | N/A |
 
-Triple modality with class weighting and balanced accuracy threshold tuning achieves the best performance. The combination of all three modalities provides complementary signal for predicting ASM outcomes.
+**Critical finding:** Clinical features alone (Exp4a, AUC 0.664) perform comparably to embedding-based experiments:
+- Outperforms most Exp1 configs (LLM + SMILES)
+- Within 0.01 AUC of best Exp2 (EEG + SMILES)
+- Within 0.01 AUC of best Exp3 (triple modality, excluding re-run with threshold tuning)
+
+This suggests embeddings may not be capturing information beyond what clinical features already provide.
 
 ---
 
 ## Limitations
 
-- Relatively small sample size (n=151 for dual-modality, n=107 for triple-modality)
+- Relatively small sample size (n=151 for dual-modality, n=107 for triple-modality, n=205 for clinical-only)
 - High variance across folds (std up to 0.11 for AUC)
 - LaBraM EEG encoder not tested due to dependency issues with braindecode
 - No hyperparameter tuning performed
 - Exp1/Exp2 not yet re-run with class weighting and threshold tuning
+- Embedding experiments (Exp 1-3) do not include clinical features
 
 
 ---
 
 ## Next Steps
 
-1. Apply class weighting and threshold tuning to Exp1 and Exp2 for fair comparison
-2. Test LaBraM encoder once braindecode dependencies are resolved
-3. Hyperparameter optimisation for best-performing model (exp3b ClinicalBERT + SMILES-Trf + FuseMoE)
-4. Investigate high fold variance with stratified analysis
+1. **Experiment 5:** Test clinical + single modality fusion (Clinical + SMILES, Clinical + LLM, Clinical + EEG)
+2. Apply class weighting and threshold tuning to Exp1 and Exp2 for fair comparison
+3. Test LaBraM encoder once braindecode dependencies are resolved
+4. Hyperparameter optimisation for best-performing model
+5. Investigate why embeddings provide minimal lift over clinical baseline
