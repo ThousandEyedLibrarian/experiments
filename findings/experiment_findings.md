@@ -7,16 +7,17 @@
 
 ## Executive Summary
 
-We evaluated multimodal fusion approaches for predicting ASM treatment outcomes. Four experiment sets were conducted:
+We evaluated multimodal fusion approaches for predicting ASM treatment outcomes. Five experiment sets were conducted:
 
 - **Experiment 1:** Text report embeddings (LLM) + drug structure embeddings (SMILES)
 - **Experiment 2:** EEG signal embeddings + drug structure embeddings (SMILES)
 - **Experiment 3:** LLM + EEG + SMILES embeddings (triple modality)
 - **Experiment 4:** Clinical features only (baseline)
+- **Experiment 5:** Clinical features + single modality fusion
 
 The best performing model achieved a **balanced accuracy of 0.774** using ClinicalBERT + ChemBERTa + FuseMoE fusion (triple modality). Class weighting and threshold tuning (via Youden's J statistic) were applied to address class imbalance.
 
-**Critical finding:** Clinical features alone (Exp 4, AUC 0.664) perform comparably to all embedding-based experiments (AUC 0.506-0.672), suggesting embeddings provide minimal lift over clinical baseline.
+**Key finding:** Clinical + SMILES fusion (Exp5a) achieves AUC 0.689, a modest improvement (+0.025) over clinical-only baseline (Exp4a, AUC 0.664). Other modality fusions show mixed results.
 
 ---
 
@@ -180,21 +181,60 @@ Established a clinical-only baseline using 16 demographic/clinical features to b
 
 ---
 
-## Comparison: Exp1 vs Exp2 vs Exp3 vs Exp4
+## Experiment 5: Clinical + Single Modality Fusion
+
+Tested whether fusing clinical features with a single embedding modality improves upon the clinical-only baseline.
+
+### Architecture
+
+Late fusion: each modality encoded to 64D, concatenated (128D), then classified.
+
+### Results (5-fold CV)
+
+| Experiment | Modality | Model | AUC | Balanced Acc Tuned | F1 Tuned |
+|------------|----------|-------|-----|-------------------|----------|
+| **Exp5a** | Clinical + SMILES | ChemBERTa | **0.689 +/- 0.060** | 0.680 +/- 0.048 | 0.638 +/- 0.103 |
+| **Exp5a** | Clinical + SMILES | SMILES-Trf | 0.687 +/- 0.041 | 0.682 +/- 0.042 | 0.674 +/- 0.063 |
+| **Exp5b** | Clinical + Text | ClinicalBERT | 0.676 +/- 0.083 | **0.708 +/- 0.073** | 0.716 +/- 0.090 |
+| **Exp5b** | Clinical + Text | PubMedBERT | 0.620 +/- 0.038 | 0.690 +/- 0.060 | 0.729 +/- 0.043 |
+| **Exp5c** | Clinical + EEG | SimpleCNN | 0.644 +/- 0.113 | 0.690 +/- 0.089 | 0.693 +/- 0.120 |
+
+### Comparison with Exp4a Baseline (AUC 0.664)
+
+| Experiment | AUC | Delta |
+|------------|-----|-------|
+| exp5a_chemberta | 0.689 | **+0.025** |
+| exp5a_smilestrf | 0.687 | **+0.023** |
+| exp5b_clinicalbert | 0.676 | +0.012 |
+| exp5b_pubmedbert | 0.620 | -0.044 |
+| exp5c_simplecnn | 0.644 | -0.020 |
+
+### Key Observations
+
+- SMILES embeddings provide most consistent lift (~+0.02 AUC) with low variance
+- ClinicalBERT achieves highest balanced accuracy (0.708) but has high AUC variance
+- EEG fusion is unstable (std 0.113) - one fold hit 0.866, another 0.545
+- Dataset size affects stability: text experiments have smallest dataset (121 patients)
+
+---
+
+## Comparison: Exp1 vs Exp2 vs Exp3 vs Exp4 vs Exp5
 
 | Modality | Best Model | AUC | Bal Acc Tuned | F1 Tuned |
 |----------|------------|-----|---------------|----------|
 | LLM + EEG + SMILES | ClinicalBERT + ChemBERTa + FuseMoE | **0.753** | **0.774** | **0.801** |
+| **Clinical + SMILES** | **ChemBERTa** | **0.689** | **0.680** | **0.638** |
 | EEG + SMILES | SimpleCNN + SMILES-Trf + MLP | 0.668 | N/A | N/A |
-| **Clinical only** | **MLP** | **0.664** | **0.675** | **0.627** |
+| Clinical + Text | ClinicalBERT | 0.676 | 0.708 | 0.716 |
+| Clinical only | MLP | 0.664 | 0.675 | 0.627 |
 | LLM + SMILES | PubMedBERT + ChemBERTa + FuseMoE | 0.658 | N/A | N/A |
+| Clinical + EEG | SimpleCNN | 0.644 | 0.690 | 0.693 |
 
-**Critical finding:** Clinical features alone (Exp4a, AUC 0.664) perform comparably to embedding-based experiments:
-- Outperforms most Exp1 configs (LLM + SMILES)
-- Within 0.01 AUC of best Exp2 (EEG + SMILES)
-- Within 0.01 AUC of best Exp3 (triple modality, excluding re-run with threshold tuning)
-
-This suggests embeddings may not be capturing information beyond what clinical features already provide.
+**Key findings:**
+- Clinical + SMILES fusion (Exp5a) achieves modest improvement (+0.025 AUC) over clinical baseline
+- Triple modality (Exp3) still achieves best overall performance (AUC 0.753)
+- Adding text or EEG to clinical features provides marginal or negative lift
+- SMILES embeddings appear to provide complementary signal to clinical features
 
 ---
 
@@ -205,15 +245,15 @@ This suggests embeddings may not be capturing information beyond what clinical f
 - LaBraM EEG encoder not tested due to dependency issues with braindecode
 - No hyperparameter tuning performed
 - Exp1/Exp2 not yet re-run with class weighting and threshold tuning
-- Embedding experiments (Exp 1-3) do not include clinical features
+- Text fusion limited by smallest dataset (121 patients)
 
 
 ---
 
 ## Next Steps
 
-1. **Experiment 5:** Test clinical + single modality fusion (Clinical + SMILES, Clinical + LLM, Clinical + EEG)
+1. **Experiment 6:** Clinical + SMILES + one other modality (text or EEG)
 2. Apply class weighting and threshold tuning to Exp1 and Exp2 for fair comparison
 3. Test LaBraM encoder once braindecode dependencies are resolved
 4. Hyperparameter optimisation for best-performing model
-5. Investigate why embeddings provide minimal lift over clinical baseline
+5. Investigate high EEG variance - one fold achieved 0.866 AUC

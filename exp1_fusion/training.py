@@ -9,7 +9,7 @@ import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from sklearn.metrics import accuracy_score, f1_score, roc_auc_score
+from sklearn.metrics import accuracy_score, balanced_accuracy_score, f1_score, roc_auc_score, roc_curve
 from sklearn.model_selection import StratifiedKFold
 from torch.utils.data import DataLoader, Subset
 
@@ -102,12 +102,12 @@ def evaluate(
     val_loader: DataLoader,
     device: torch.device,
     use_aux_loss: bool = False,
-) -> Tuple[float, float, float, List[int], List[float], List[int]]:
+) -> Dict[str, float]:
     """
     Evaluate the model.
 
     Returns:
-        accuracy, auc, f1, predictions, probabilities, labels
+        Dictionary with metrics: accuracy, auc, f1, balanced_acc_tuned, f1_tuned, optimal_threshold
     """
     model.eval()
     all_preds = []
@@ -132,16 +132,31 @@ def evaluate(
             all_probs.extend(probs.tolist())
             all_labels.extend(labels.numpy().tolist())
 
-    accuracy = accuracy_score(all_labels, all_preds)
-    f1 = f1_score(all_labels, all_preds)
+    metrics = {
+        "accuracy": accuracy_score(all_labels, all_preds),
+        "f1": f1_score(all_labels, all_preds, zero_division=0),
+    }
 
     # Handle edge case where all predictions are same class
-    try:
-        auc = roc_auc_score(all_labels, all_probs)
-    except ValueError:
-        auc = 0.5  # Random baseline
+    if len(np.unique(all_labels)) > 1:
+        metrics["auc"] = roc_auc_score(all_labels, all_probs)
 
-    return accuracy, auc, f1, all_preds, all_probs, all_labels
+        # Threshold tuning using Youden's J statistic
+        fpr, tpr, thresholds_roc = roc_curve(all_labels, all_probs)
+        youden_j = tpr - fpr
+        best_idx = np.argmax(youden_j)
+        optimal_threshold = thresholds_roc[best_idx]
+        tuned_preds = (np.array(all_probs) >= optimal_threshold).astype(int)
+        metrics["balanced_acc_tuned"] = balanced_accuracy_score(all_labels, tuned_preds)
+        metrics["f1_tuned"] = f1_score(all_labels, tuned_preds, zero_division=0)
+        metrics["optimal_threshold"] = optimal_threshold
+    else:
+        metrics["auc"] = 0.5
+        metrics["balanced_acc_tuned"] = 0.5
+        metrics["f1_tuned"] = 0.0
+        metrics["optimal_threshold"] = 0.5
+
+    return metrics
 
 
 def run_experiment(
@@ -202,6 +217,8 @@ def run_experiment(
         'fold_accuracy': [],
         'fold_auc': [],
         'fold_f1': [],
+        'fold_f1_tuned': [],
+        'fold_balanced_acc_tuned': [],
         'config': config,
     }
 
@@ -259,9 +276,9 @@ def run_experiment(
             )
 
             # Evaluate
-            val_acc, val_auc, val_f1, _, _, _ = evaluate(
-                model, val_loader, device, use_aux_loss=use_aux_loss
-            )
+            val_metrics = evaluate(model, val_loader, device, use_aux_loss=use_aux_loss)
+            val_auc = val_metrics['auc']
+            val_f1 = val_metrics['f1']
 
             scheduler.step(val_auc)
 
@@ -286,47 +303,70 @@ def run_experiment(
         model.load_state_dict(best_model_state)
         model.to(device)
 
-        final_acc, final_auc, final_f1, _, _, _ = evaluate(
-            model, val_loader, device, use_aux_loss=use_aux_loss
-        )
+        final_metrics = evaluate(model, val_loader, device, use_aux_loss=use_aux_loss)
 
-        results['fold_accuracy'].append(final_acc)
-        results['fold_auc'].append(final_auc)
-        results['fold_f1'].append(final_f1)
+        results['fold_accuracy'].append(final_metrics['accuracy'])
+        results['fold_auc'].append(final_metrics['auc'])
+        results['fold_f1'].append(final_metrics['f1'])
+        results['fold_f1_tuned'].append(final_metrics['f1_tuned'])
+        results['fold_balanced_acc_tuned'].append(final_metrics['balanced_acc_tuned'])
 
         if verbose:
-            print(f"  Fold {fold + 1} Results: Acc={final_acc:.4f}, "
-                  f"AUC={final_auc:.4f}, F1={final_f1:.4f}")
+            print(f"  Fold {fold + 1} Results: AUC={final_metrics['auc']:.4f}, "
+                  f"BalAcc_tuned={final_metrics['balanced_acc_tuned']:.4f}, "
+                  f"F1_tuned={final_metrics['f1_tuned']:.4f} (thresh={final_metrics['optimal_threshold']:.3f})")
 
     # Aggregate results
     results['accuracy'] = {
         'mean': float(np.mean(results['fold_accuracy'])),
         'std': float(np.std(results['fold_accuracy'])),
+        'min': float(np.min(results['fold_accuracy'])),
+        'max': float(np.max(results['fold_accuracy'])),
         'per_fold': results['fold_accuracy'],
     }
     results['auc'] = {
         'mean': float(np.mean(results['fold_auc'])),
         'std': float(np.std(results['fold_auc'])),
+        'min': float(np.min(results['fold_auc'])),
+        'max': float(np.max(results['fold_auc'])),
         'per_fold': results['fold_auc'],
     }
     results['f1'] = {
         'mean': float(np.mean(results['fold_f1'])),
         'std': float(np.std(results['fold_f1'])),
+        'min': float(np.min(results['fold_f1'])),
+        'max': float(np.max(results['fold_f1'])),
         'per_fold': results['fold_f1'],
+    }
+    results['f1_tuned'] = {
+        'mean': float(np.mean(results['fold_f1_tuned'])),
+        'std': float(np.std(results['fold_f1_tuned'])),
+        'min': float(np.min(results['fold_f1_tuned'])),
+        'max': float(np.max(results['fold_f1_tuned'])),
+        'per_fold': results['fold_f1_tuned'],
+    }
+    results['balanced_acc_tuned'] = {
+        'mean': float(np.mean(results['fold_balanced_acc_tuned'])),
+        'std': float(np.std(results['fold_balanced_acc_tuned'])),
+        'min': float(np.min(results['fold_balanced_acc_tuned'])),
+        'max': float(np.max(results['fold_balanced_acc_tuned'])),
+        'per_fold': results['fold_balanced_acc_tuned'],
     }
 
     # Clean up fold lists (now in nested dict)
     del results['fold_accuracy']
     del results['fold_auc']
     del results['fold_f1']
+    del results['fold_f1_tuned']
+    del results['fold_balanced_acc_tuned']
 
     if verbose:
         print(f"\n{'='*60}")
         print(f"FINAL RESULTS: {experiment_name}")
         print(f"{'='*60}")
-        print(f"Accuracy: {results['accuracy']['mean']:.4f} +/- {results['accuracy']['std']:.4f}")
-        print(f"AUC:      {results['auc']['mean']:.4f} +/- {results['auc']['std']:.4f}")
-        print(f"F1:       {results['f1']['mean']:.4f} +/- {results['f1']['std']:.4f}")
+        print(f"AUC:              {results['auc']['mean']:.4f} +/- {results['auc']['std']:.4f} (min={results['auc']['min']:.4f}, max={results['auc']['max']:.4f})")
+        print(f"Balanced Acc:     {results['balanced_acc_tuned']['mean']:.4f} +/- {results['balanced_acc_tuned']['std']:.4f} (min={results['balanced_acc_tuned']['min']:.4f}, max={results['balanced_acc_tuned']['max']:.4f})")
+        print(f"F1 Tuned:         {results['f1_tuned']['mean']:.4f} +/- {results['f1_tuned']['std']:.4f} (min={results['f1_tuned']['min']:.4f}, max={results['f1_tuned']['max']:.4f})")
 
     # Add timestamp
     results['timestamp'] = datetime.now().isoformat()

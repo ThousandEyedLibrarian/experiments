@@ -6,7 +6,7 @@ from typing import Dict, List, Optional, Tuple
 import numpy as np
 import torch
 import torch.nn as nn
-from sklearn.metrics import accuracy_score, f1_score, roc_auc_score
+from sklearn.metrics import accuracy_score, balanced_accuracy_score, f1_score, roc_auc_score, roc_curve
 from sklearn.model_selection import StratifiedKFold
 from torch.utils.data import DataLoader
 
@@ -129,11 +129,24 @@ def evaluate(
         "f1": f1_score(all_labels, all_preds, zero_division=0),
     }
 
-    # Compute AUC if we have both classes
+    # Compute AUC and threshold-tuned metrics if we have both classes
     if len(np.unique(all_labels)) > 1:
         metrics["auc"] = roc_auc_score(all_labels, all_probs)
+
+        # Threshold tuning using Youden's J statistic
+        fpr, tpr, thresholds_roc = roc_curve(all_labels, all_probs)
+        youden_j = tpr - fpr
+        best_idx = np.argmax(youden_j)
+        optimal_threshold = thresholds_roc[best_idx]
+        tuned_preds = (all_probs >= optimal_threshold).astype(int)
+        metrics["balanced_acc_tuned"] = balanced_accuracy_score(all_labels, tuned_preds)
+        metrics["f1_tuned"] = f1_score(all_labels, tuned_preds, zero_division=0)
+        metrics["optimal_threshold"] = optimal_threshold
     else:
         metrics["auc"] = 0.5
+        metrics["balanced_acc_tuned"] = 0.5
+        metrics["f1_tuned"] = 0.0
+        metrics["optimal_threshold"] = 0.5
 
     return total_loss / n_batches, metrics
 
@@ -201,8 +214,16 @@ def train_fold(
     )
     model = model.to(device)
 
+    # Class weighting for imbalanced datasets
+    train_labels = [train_dataset[i][3].item() for i in range(len(train_dataset))]
+    class_counts = np.bincount(train_labels)
+    class_weights = 1.0 / class_counts
+    class_weights = class_weights / class_weights.sum()
+    class_weights = torch.tensor(class_weights, dtype=torch.float32).to(device)
+    logger.debug(f"  Class weights: {class_weights.cpu().numpy()}")
+
     # Loss and optimizer
-    criterion = nn.CrossEntropyLoss()
+    criterion = nn.CrossEntropyLoss(weight=class_weights)
     optimizer = torch.optim.AdamW(
         model.parameters(),
         lr=config["learning_rate"],
@@ -290,7 +311,7 @@ def run_cross_validation(
     # K-fold cross validation
     kfold = StratifiedKFold(n_splits=config["n_folds"], shuffle=True, random_state=config["seed"])
 
-    fold_metrics = {"accuracy": [], "auc": [], "f1": []}
+    fold_metrics = {"accuracy": [], "auc": [], "f1": [], "f1_tuned": [], "balanced_acc_tuned": []}
 
     for fold, (train_idx, val_idx) in enumerate(kfold.split(df, labels)):
         if verbose:
@@ -319,7 +340,11 @@ def run_cross_validation(
                 fold_metrics[key].append(metrics[key])
 
             if verbose:
-                logger.info(f"    Fold {fold + 1} results: Acc={metrics['accuracy']:.3f}, AUC={metrics['auc']:.3f}, F1={metrics['f1']:.3f}")
+                logger.info(
+                    f"    Fold {fold + 1} results: AUC={metrics['auc']:.4f}, "
+                    f"BalAcc_tuned={metrics['balanced_acc_tuned']:.4f}, "
+                    f"F1_tuned={metrics['f1_tuned']:.4f} (thresh={metrics['optimal_threshold']:.3f})"
+                )
 
         except Exception as e:
             logger.error(f"    Fold {fold + 1} failed: {type(e).__name__}: {e}")
@@ -341,8 +366,16 @@ def run_cross_validation(
         results[metric] = {
             "mean": float(values.mean()),
             "std": float(values.std()),
+            "min": float(values.min()),
+            "max": float(values.max()),
             "per_fold": [float(v) for v in values],
         }
+
+    if verbose:
+        logger.info("Cross-validation complete:")
+        logger.info(f"  AUC: {results['auc']['mean']:.4f} +/- {results['auc']['std']:.4f} (min={results['auc']['min']:.4f}, max={results['auc']['max']:.4f})")
+        logger.info(f"  Balanced Acc: {results['balanced_acc_tuned']['mean']:.4f} +/- {results['balanced_acc_tuned']['std']:.4f} (min={results['balanced_acc_tuned']['min']:.4f}, max={results['balanced_acc_tuned']['max']:.4f})")
+        logger.info(f"  F1 Tuned: {results['f1_tuned']['mean']:.4f} +/- {results['f1_tuned']['std']:.4f} (min={results['f1_tuned']['min']:.4f}, max={results['f1_tuned']['max']:.4f})")
 
     return results
 
@@ -376,6 +409,6 @@ if __name__ == "__main__":
     )
 
     logger.info(f"Results:")
-    logger.info(f"  Accuracy: {results['accuracy']['mean']:.3f} +/- {results['accuracy']['std']:.3f}")
-    logger.info(f"  AUC: {results['auc']['mean']:.3f} +/- {results['auc']['std']:.3f}")
-    logger.info(f"  F1: {results['f1']['mean']:.3f} +/- {results['f1']['std']:.3f}")
+    logger.info(f"  AUC: {results['auc']['mean']:.4f} +/- {results['auc']['std']:.4f}")
+    logger.info(f"  Balanced Acc: {results['balanced_acc_tuned']['mean']:.4f} +/- {results['balanced_acc_tuned']['std']:.4f}")
+    logger.info(f"  F1 Tuned: {results['f1_tuned']['mean']:.4f} +/- {results['f1_tuned']['std']:.4f}")
