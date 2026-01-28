@@ -253,7 +253,6 @@ Late fusion: each modality encoded to 64D, concatenated (128D), then classified.
 ## Next Steps
 
 1. **Experiment 6:** Clinical + SMILES + one other modality (text or EEG)
-2. Apply class weighting and threshold tuning to Exp1 and Exp2 for fair comparison
 3. Test LaBraM encoder once braindecode dependencies are resolved
 4. Hyperparameter optimisation for best-performing model
 5. Investigate high EEG variance - one fold achieved 0.866 AUC
