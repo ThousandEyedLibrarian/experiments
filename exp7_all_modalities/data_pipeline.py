@@ -29,6 +29,7 @@ from exp4_baseline.data_pipeline import (
     clean_outcome_column,
     clean_psy_column,
 )
+from exp2_fusion.eeg_pipeline import get_valid_patient_eeg_pairs
 
 logger = logging.getLogger("exp7")
 
@@ -236,12 +237,28 @@ def prepare_quad_modality_data(
     """
     logger.info(f"Preparing quad modality data: {text_model}, {smiles_model}")
 
-    # Load clinical data with text-specific filtering (ensures valid EEG reports)
-    df = load_csv_for_text(filter_outcome=True)
+    # Step 1: Get valid patient IDs from EEG files (same base as Exp3)
+    # This ensures fair comparison between experiments
+    eeg_df = get_valid_patient_eeg_pairs()
+    valid_pids = set(eeg_df["pid"].astype(str).tolist())
+    logger.info(f"Found {len(valid_pids)} patients with valid EEG files and outcomes")
+
+    # Step 2: Load full clinical data with all columns
+    df = pd.read_csv(CSV_PATH)
+
+    # Filter to patients with valid EEG files
+    df = df[df["pid"].astype(str).isin(valid_pids)].copy()
+
+    # Filter for valid outcomes and map
+    df["outcome"] = pd.to_numeric(df["outcome"], errors="coerce")
+    df = df[df["outcome"].isin([1, 2])].copy()
+    df["outcome"] = df["outcome"].map(OUTCOME_MAPPING).astype(int)
 
     # Clean clinical columns
     df = clean_psy_column(df)
     df = clean_lesion_column(df)
+    df = df.reset_index(drop=True)
+    logger.info(f"Patients with valid clinical data: {len(df)}")
 
     # Load SMILES embeddings
     smiles_embeddings, smiles_indices = load_smiles_embeddings(smiles_model)
