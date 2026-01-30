@@ -190,16 +190,49 @@ Modality (xD)  → Encoder → 64D ─┘
 
 ---
 
+## Experiment 6: Clinical + SMILES + Third Modality Fusion
+
+### Architecture Pattern (Triple Late Fusion)
+
+All Exp6 variants use three-stream late fusion:
+```
+Clinical (20D) ──→ Encoder → 64D ─┐
+                                   │
+SMILES (xD) ────→ Encoder → 64D ─┼→ Concat (192D) → Classifier → 2
+                                   │
+Third (xD) ─────→ Encoder → 64D ─┘
+```
+
+### Exp6a: Clinical + SMILES + Text (~113K params)
+**Diagram:** `exp6a_clinical_smiles_text.drawio`
+
+| Modality | Input Dim | Encoder | Output |
+|----------|-----------|---------|--------|
+| Clinical | 20 | Linear+ReLU+LN+Dropout | 64D |
+| SMILES | 768/256 | Linear+ReLU+LN+Dropout | 64D |
+| Text | 768 | Linear+ReLU+LN+Dropout | 64D |
+
+### Exp6b: Clinical + SMILES + EEG (~1.96M params)
+**Diagram:** `exp6b_clinical_smiles_eeg.drawio`
+
+| Modality | Input | Encoder | Output |
+|----------|-------|---------|--------|
+| Clinical | 20D | Linear+ReLU+LN+Dropout | 64D |
+| SMILES | 768/256 | Linear+ReLU+LN+Dropout | 64D |
+| EEG | (windows, 27, 2000) | SimpleCNN→Transformer→MeanPool | 64D |
+
+---
+
 ## Training Configuration
 
-| Parameter | Exp1a | Exp1b | Exp2a | Exp2b | Exp3a | Exp3b | Exp4a | Exp4b | Exp5 |
-|-----------|-------|-------|-------|-------|-------|-------|-------|-------|------|
-| Learning Rate | 1e-4 | 5e-5 | 1e-4 | 1e-4 | 1e-4 | 5e-5 | 1e-3 | 5e-4 | 1e-3 |
-| Batch Size | 16 | 16 | 8 | 8 | 8 | 8 | 16 | 8 | 16 |
-| Max Epochs | 100 | 100 | 100 | 100 | 100 | 100 | 100 | 100 | 100 |
-| Early Stopping | 15 | 20 | 20 | 20 | 20 | 20 | 15 | 15 | 15 |
-| Optimizer | AdamW | AdamW | AdamW | AdamW | AdamW | AdamW | AdamW | AdamW | AdamW |
-| CV Folds | 5 | 5 | 5 | 5 | 5 | 5 | 5 | 5 | 5 |
+| Parameter | Exp1a | Exp1b | Exp2a | Exp2b | Exp3a | Exp3b | Exp4a | Exp4b | Exp5 | Exp6 |
+|-----------|-------|-------|-------|-------|-------|-------|-------|-------|------|------|
+| Learning Rate | 1e-4 | 5e-5 | 1e-4 | 1e-4 | 1e-4 | 5e-5 | 1e-3 | 5e-4 | 1e-3 | 1e-3 |
+| Batch Size | 16 | 16 | 8 | 8 | 8 | 8 | 16 | 8 | 16 | 16/8 |
+| Max Epochs | 100 | 100 | 100 | 100 | 100 | 100 | 100 | 100 | 100 | 100 |
+| Early Stopping | 15 | 20 | 20 | 20 | 20 | 20 | 15 | 15 | 15 | 20 |
+| Optimizer | AdamW | AdamW | AdamW | AdamW | AdamW | AdamW | AdamW | AdamW | AdamW | AdamW |
+| CV Folds | 5 | 5 | 5 | 5 | 5 | 5 | 5 | 5 | 5 | 5 |
 
 ---
 
@@ -207,19 +240,21 @@ Modality (xD)  → Encoder → 64D ─┘
 
 | Experiment | Description | Params | Best AUC | Best Bal Acc |
 |------------|-------------|--------|----------|--------------|
-| Exp1a | LLM+SMILES MLP | 953K | 0.640 | - |
-| Exp1b | LLM+SMILES FuseMoE | 2.6M | 0.658 | - |
-| Exp2a | EEG+SMILES MLP | 1.2M | 0.668 | - |
-| Exp2b | EEG+SMILES FuseMoE | 2.8M | 0.608 | - |
-| Exp3a | Triple MLP | 2.5M | 0.672 | 0.706 |
-| Exp3b | Triple FuseMoE | 4.7M | 0.662 | 0.696 |
-| **Exp4a** | **Clinical MLP** | **3.7K** | **0.664** | **0.675** |
-| Exp4b | Clinical Attention | 104K | 0.636 | 0.673 |
-| **Exp5a** | **Clinical+SMILES** | **59K** | **0.689** | **0.682** |
+| **Exp3b** | **Triple FuseMoE** | **4.7M** | **0.753** | **0.774** |
+| **Exp6a** | **Clinical+SMILES+Text** | **113K** | **0.702** | **0.705** |
+| Exp5a | Clinical+SMILES | 59K | 0.689 | 0.682 |
 | Exp5b | Clinical+Text | 59K | 0.676 | 0.708 |
+| Exp3a | Triple MLP | 2.5M | 0.672 | 0.706 |
+| Exp2a | EEG+SMILES MLP | 1.2M | 0.668 | - |
+| Exp4a | Clinical MLP | 3.7K | 0.664 | 0.675 |
+| Exp1b | LLM+SMILES FuseMoE | 2.6M | 0.648 | 0.712 |
+| Exp6b | Clinical+SMILES+EEG | 1.96M | 0.647 | 0.692 |
 | Exp5c | Clinical+EEG | 1.9M | 0.644 | 0.690 |
+| Exp1a | LLM+SMILES MLP | 953K | 0.641 | 0.699 |
+| Exp4b | Clinical Attention | 104K | 0.636 | 0.673 |
+| Exp2b | EEG+SMILES FuseMoE | 2.8M | 0.608 | - |
 
-**Key finding:** Clinical + SMILES fusion (Exp5a) achieves best AUC (0.689), outperforming both clinical-only baseline and embedding-only approaches.
+**Key finding:** Triple modality without clinical (Exp3b) achieves best AUC (0.753). Adding clinical features provides diminishing returns when rich embeddings are available.
 
 ---
 
@@ -238,5 +273,7 @@ Modality (xD)  → Encoder → 64D ─┘
 | Exp5a Clinical+SMILES | `exp5a_clinical_smiles.drawio` |
 | Exp5b Clinical+Text | `exp5b_clinical_llm.drawio` |
 | Exp5c Clinical+EEG | `exp5c_clinical_eeg.drawio` |
+| Exp6a Clinical+SMILES+Text | `exp6a_clinical_smiles_text.drawio` |
+| Exp6b Clinical+SMILES+EEG | `exp6b_clinical_smiles_eeg.drawio` |
 | EEG Preprocessing | `eeg_preprocessing.drawio` |
 | SimpleCNN Encoder | `simplecnn_encoder.drawio` |
