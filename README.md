@@ -28,7 +28,7 @@ This project uses **two separate virtual environments** due to TensorFlow/PyTorc
 
 ### Main Environment (PyTorch-based)
 
-Used for all experiments (Exp 1, Exp 2, Exp 3):
+Used for all experiments (Exp 1-7):
 
 ```bash
 uv venv --python 3.10 .venv-others
@@ -176,6 +176,61 @@ python -m exp3_fusion.run_experiments --experiments exp3a_clinicalbert_chemberta
 | exp3b-3 | PubMedBERT | ChemBERTa | FuseMoE |
 | exp3b-4 | PubMedBERT | SMILES-Trf | FuseMoE |
 
+### Experiment 4: Clinical Features Baseline
+
+Uses only clinical features (demographics, medical history) as a baseline.
+
+```bash
+source .venv-others/bin/activate
+python -m exp4_baseline.run_experiments
+```
+
+### Experiment 5: Clinical + Single Modality
+
+Combines clinical features with one embedding modality.
+
+```bash
+source .venv-others/bin/activate
+
+# Run all Exp5 variants
+python -m exp5_clinical_fusion.run_experiments
+
+# Run specific variant
+python -m exp5_clinical_fusion.run_experiments --exp 5a  # Clinical + SMILES
+python -m exp5_clinical_fusion.run_experiments --exp 5b  # Clinical + Text
+python -m exp5_clinical_fusion.run_experiments --exp 5c  # Clinical + EEG
+```
+
+### Experiment 6: Clinical + SMILES + Third Modality
+
+Combines clinical features, SMILES embeddings, and either text or EEG.
+
+```bash
+source .venv-others/bin/activate
+
+# Run all Exp6 variants
+python -m exp6_clinical_triple.run_experiments
+
+# Run specific variant
+python -m exp6_clinical_triple.run_experiments --exp 6a  # Clinical + SMILES + Text
+python -m exp6_clinical_triple.run_experiments --exp 6b  # Clinical + SMILES + EEG
+```
+
+### Experiment 7: All Four Modalities
+
+Combines all modalities: Clinical + Text + EEG + SMILES.
+
+```bash
+source .venv-others/bin/activate
+
+# Run all Exp7 variants
+python -m exp7_all_modalities.run_experiments
+
+# Run specific variant
+python -m exp7_all_modalities.run_experiments --exp 7a  # MLP fusion
+python -m exp7_all_modalities.run_experiments --exp 7b  # FuseMoE
+```
+
 ### Embedding Generation (Optional)
 
 Generate embeddings separately using scripts in `exp1_misc/`:
@@ -300,6 +355,21 @@ experiments/
 │   └── models/
 │       ├── triple_mlp.py      # ~2.5M params
 │       └── triple_fusemoe.py  # ~4.7M params
+├── exp4_baseline/        # Experiment 4: Clinical features baseline
+│   ├── run_experiments.py
+│   └── data_pipeline.py
+├── exp5_clinical_fusion/ # Experiment 5: Clinical + single modality
+│   ├── run_experiments.py
+│   ├── models.py
+│   └── training.py
+├── exp6_clinical_triple/ # Experiment 6: Clinical + SMILES + third modality
+│   ├── run_experiments.py
+│   ├── models.py
+│   └── training.py
+├── exp7_all_modalities/  # Experiment 7: All four modalities
+│   ├── run_experiments.py
+│   ├── models.py
+│   └── training.py
 ├── exp1_misc/            # Embedding generation scripts
 ├── outputs/              # Generated embeddings and results
 ├── findings/             # Analysis and architecture docs
