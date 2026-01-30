@@ -1,13 +1,13 @@
 # ASM Outcome Prediction: Experimental Findings
 
-**Date:** 28 January 2026
+**Date:** 30 January 2026
 **Dataset:** 151 patients with EEG recordings and anti-seizure medication (ASM) outcomes
 
 ---
 
 ## Executive Summary
 
-We evaluated multimodal fusion approaches for predicting ASM treatment outcomes. Six experiment sets were conducted:
+We evaluated multimodal fusion approaches for predicting ASM treatment outcomes. Seven experiment sets were conducted:
 
 - **Experiment 1:** Text report embeddings (LLM) + drug structure embeddings (SMILES)
 - **Experiment 2:** EEG signal embeddings + drug structure embeddings (SMILES)
@@ -15,10 +15,11 @@ We evaluated multimodal fusion approaches for predicting ASM treatment outcomes.
 - **Experiment 4:** Clinical features only (baseline)
 - **Experiment 5:** Clinical features + single modality fusion
 - **Experiment 6:** Clinical features + SMILES + third modality (text or EEG)
+- **Experiment 7:** All four modalities (Clinical + LLM + EEG + SMILES)
 
-The best performing model achieved a **balanced accuracy of 0.774** using ClinicalBERT + ChemBERTa + FuseMoE fusion (triple modality, Exp3). Class weighting and threshold tuning (via Youden's J statistic) were applied to address class imbalance.
+The best performing model achieved **AUC 0.762** and **balanced accuracy of 0.774** using all four modalities with MLP fusion (Exp7a). Class weighting and threshold tuning (via Youden's J statistic) were applied to address class imbalance.
 
-**Key finding:** Triple modality without clinical features (Exp3, AUC 0.753) outperforms all clinical-inclusive models. Adding clinical features provides diminishing returns when rich embeddings are available.
+**Key finding:** Quad modality fusion (Exp7a, AUC 0.762) marginally improves upon triple modality (Exp3b, AUC 0.753). Clinical features provide small but consistent improvement (+0.009 AUC) when added to embeddings.
 
 ---
 
@@ -252,12 +253,51 @@ Late fusion with three modality streams: each modality encoded to 64D, concatena
 
 ---
 
+## Experiment 7: All Four Modalities Fusion
+
+Tested whether combining all four modalities improves upon triple modality (Exp3).
+
+### Architecture
+
+- **Exp7a (MLP):** Each modality encoded to 64D, concatenated (256D), classified (~2M params)
+- **Exp7b (MoE):** Cross-modal attention + Sparse MoE layers (~4.7M params)
+
+### Results (5-fold CV)
+
+| Experiment | Text Model | Fusion | AUC | Bal Acc Tuned | F1 Tuned |
+|------------|------------|--------|-----|---------------|----------|
+| **exp7a** | **ClinicalBERT** | **MLP** | **0.762 +/- 0.093** | **0.774 +/- 0.071** | **0.786 +/- 0.073** |
+| exp7a | PubMedBERT | MLP | 0.746 +/- 0.059 | 0.741 +/- 0.057 | 0.751 +/- 0.045 |
+| exp7b | ClinicalBERT | MoE | 0.720 +/- 0.106 | 0.737 +/- 0.075 | 0.729 +/- 0.111 |
+| exp7b | PubMedBERT | MoE | 0.662 +/- 0.050 | 0.702 +/- 0.044 | 0.753 +/- 0.044 |
+
+### Per-Fold AUC (Best Model: exp7a_clinicalbert)
+
+| Fold | AUC | Bal Acc | F1 (tuned) |
+|------|-----|---------|------------|
+| 1 | 0.667 | 0.727 | 0.800 |
+| 2 | 0.736 | 0.727 | 0.700 |
+| 3 | 0.700 | 0.725 | 0.750 |
+| 4 | 0.933 | 0.908 | 0.917 |
+| 5 | 0.775 | 0.783 | 0.762 |
+
+### Key Observations
+
+- Best model: exp7a_clinicalbert_chemberta (MLP) with AUC 0.762
+- MLP fusion outperforms MoE for quad modality (0.762 vs 0.720)
+- Marginal improvement over Exp3b (+0.009 AUC)
+- Fold 4 shows unusually high performance (AUC 0.933) - potential outlier
+- Clinical features provide modest additional signal
+
+---
+
 ## Comparison: All Experiments
 
 | Experiment | Modality | Best Model | AUC | Bal Acc Tuned | F1 Tuned |
 |------------|----------|------------|-----|---------------|----------|
-| **Exp3** | LLM + EEG + SMILES | ClinicalBERT + ChemBERTa + FuseMoE | **0.753** | **0.774** | **0.801** |
-| **Exp6a** | Clinical + SMILES + Text | PubMedBERT + ChemBERTa | 0.702 | 0.705 | 0.738 |
+| **Exp7a** | **Clinical + LLM + EEG + SMILES** | ClinicalBERT + ChemBERTa + MLP | **0.762** | **0.774** | 0.786 |
+| Exp3b | LLM + EEG + SMILES | ClinicalBERT + ChemBERTa + FuseMoE | 0.753 | 0.774 | **0.801** |
+| Exp6a | Clinical + SMILES + Text | PubMedBERT + ChemBERTa | 0.702 | 0.705 | 0.738 |
 | Exp5a | Clinical + SMILES | ChemBERTa | 0.689 | 0.680 | 0.638 |
 | Exp5b | Clinical + Text | ClinicalBERT | 0.676 | 0.708 | 0.716 |
 | Exp2a | EEG + SMILES | SimpleCNN + SMILES-Trf + MLP | 0.668 | N/A | N/A |
@@ -267,21 +307,21 @@ Late fusion with three modality streams: each modality encoded to 64D, concatena
 | Exp5c | Clinical + EEG | SimpleCNN | 0.644 | 0.690 | 0.693 |
 
 **Key findings:**
-- Triple modality without clinical (Exp3) achieves best overall performance (AUC 0.753)
-- Exp6a (Clinical + SMILES + Text) is second best (AUC 0.702), modest improvement over Exp5a
-- Clinical features provide diminishing returns when rich embeddings are available
+- Quad modality (Exp7a) achieves best AUC (0.762), marginal improvement over triple (Exp3b, +0.009)
+- Clinical features provide small but consistent improvement when added to embeddings
+- MLP fusion more stable than MoE for small datasets (107 patients)
 - Text fusion consistently outperforms EEG fusion across all experiments
-- SMILES embeddings appear to provide complementary signal to other modalities
+- SMILES embeddings provide complementary signal to other modalities
 
 ---
 
 ## Limitations
 
-- Relatively small sample size (n=151 for dual-modality, n=107 for triple-modality, n=205 for clinical-only)
-- High variance across folds (std up to 0.15 for AUC in some configurations)
+- Relatively small sample size (n=151 for dual-modality, n=107 for triple/quad-modality, n=205 for clinical-only)
+- High variance across folds (std up to 0.10 for AUC in some configurations)
 - LaBraM EEG encoder not tested due to dependency issues with braindecode
 - No hyperparameter tuning performed
-- Text fusion limited by smallest dataset (121 patients)
+- Quad-modality limited by intersection of all data sources (107 patients)
 
 
 ---

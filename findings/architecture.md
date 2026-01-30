@@ -1,6 +1,6 @@
 # ASM Outcome Prediction: Architecture Documentation
 
-**Date:** 28 January 2026
+**Date:** 30 January 2026
 **Dataset:** 205 patients total (varies by modality availability)
 **Diagrams:** Attached as `.drawio` files (open with [app.diagrams.net](https://app.diagrams.net))
 
@@ -8,7 +8,7 @@
 
 ## Overview
 
-Five experiment sets predict anti-seizure medication (ASM) treatment response:
+Seven experiment sets predict anti-seizure medication (ASM) treatment response:
 
 | Experiment | Inputs | Fusion Methods | Dataset |
 |------------|--------|----------------|---------|
@@ -17,6 +17,8 @@ Five experiment sets predict anti-seizure medication (ASM) treatment response:
 | **Exp3** | Text + EEG + SMILES (triple modality) | (a) ConcatMLP, (b) FuseMoE | 107 |
 | **Exp4** | Clinical features only (baseline) | (a) MLP, (b) Attention | 205 |
 | **Exp5** | Clinical + single modality | (a) +SMILES, (b) +Text, (c) +EEG | varies |
+| **Exp6** | Clinical + SMILES + third modality | (a) +Text, (b) +EEG | 121/147 |
+| **Exp7** | Clinical + Text + EEG + SMILES (all four) | (a) MLP, (b) MoE | 107 |
 
 ---
 
@@ -223,16 +225,58 @@ Third (xD) ─────→ Encoder → 64D ─┘
 
 ---
 
+## Experiment 7: All Four Modalities Fusion
+
+### Architecture Pattern (Quad Late Fusion)
+
+Combines all four available modalities:
+```
+Clinical (20D) ──→ Encoder → 64D ─┐
+                                   │
+Text (768D) ─────→ Encoder → 64D ─┼→ Concat (256D) → Classifier → 2
+                                   │
+EEG (windows) ───→ CNN+Trf → 64D ─┤
+                                   │
+SMILES (768D) ───→ Encoder → 64D ─┘
+```
+
+### Exp7a: QuadFusionMLP (~2M params)
+
+| Modality | Input | Encoder | Output |
+|----------|-------|---------|--------|
+| Clinical | 20D | Linear(20→64)+ReLU+LN+Dropout | 64D |
+| Text | 768D | Linear(768→256→64)+ReLU+LN+Dropout | 64D |
+| EEG | (windows, 27, 2000) | SimpleCNN→Transformer→MeanPool | 64D |
+| SMILES | 768D | Linear(768→256→64)+ReLU+LN+Dropout | 64D |
+
+| Classifier | Dims | Activation | Regularisation |
+|------------|------|------------|----------------|
+| FC1 | 256→64 | ReLU | LayerNorm, Dropout(0.3) |
+| Output | 64→2 | - | - |
+
+### Exp7b: QuadFusionMoE (~4.7M params)
+
+| Component | Configuration |
+|-----------|---------------|
+| Modality Projections | All → 256D |
+| Learnable Tokens | 4 tokens (clinical, text, EEG, SMILES) |
+| Self-Attention | 4 heads, dim=256 |
+| MoE Layers | 2 layers, 4 experts, top-2 routing |
+| Expert FFN | 256→512→256 with GELU |
+| Classifier | MeanPool → 256→2 |
+
+---
+
 ## Training Configuration
 
-| Parameter | Exp1a | Exp1b | Exp2a | Exp2b | Exp3a | Exp3b | Exp4a | Exp4b | Exp5 | Exp6 |
-|-----------|-------|-------|-------|-------|-------|-------|-------|-------|------|------|
-| Learning Rate | 1e-4 | 5e-5 | 1e-4 | 1e-4 | 1e-4 | 5e-5 | 1e-3 | 5e-4 | 1e-3 | 1e-3 |
-| Batch Size | 16 | 16 | 8 | 8 | 8 | 8 | 16 | 8 | 16 | 16/8 |
-| Max Epochs | 100 | 100 | 100 | 100 | 100 | 100 | 100 | 100 | 100 | 100 |
-| Early Stopping | 15 | 20 | 20 | 20 | 20 | 20 | 15 | 15 | 15 | 20 |
-| Optimizer | AdamW | AdamW | AdamW | AdamW | AdamW | AdamW | AdamW | AdamW | AdamW | AdamW |
-| CV Folds | 5 | 5 | 5 | 5 | 5 | 5 | 5 | 5 | 5 | 5 |
+| Parameter | Exp1a | Exp1b | Exp2a | Exp2b | Exp3a | Exp3b | Exp4a | Exp4b | Exp5 | Exp6 | Exp7a | Exp7b |
+|-----------|-------|-------|-------|-------|-------|-------|-------|-------|------|------|-------|-------|
+| Learning Rate | 1e-4 | 5e-5 | 1e-4 | 1e-4 | 1e-4 | 5e-5 | 1e-3 | 5e-4 | 1e-3 | 1e-3 | 1e-3 | 5e-4 |
+| Batch Size | 16 | 16 | 8 | 8 | 8 | 8 | 16 | 8 | 16 | 16/8 | 8 | 8 |
+| Max Epochs | 100 | 100 | 100 | 100 | 100 | 100 | 100 | 100 | 100 | 100 | 100 | 100 |
+| Early Stopping | 15 | 20 | 20 | 20 | 20 | 20 | 15 | 15 | 15 | 20 | 20 | 20 |
+| Optimizer | AdamW | AdamW | AdamW | AdamW | AdamW | AdamW | AdamW | AdamW | AdamW | AdamW | AdamW | AdamW |
+| CV Folds | 5 | 5 | 5 | 5 | 5 | 5 | 5 | 5 | 5 | 5 | 5 | 5 |
 
 ---
 
@@ -240,8 +284,10 @@ Third (xD) ─────→ Encoder → 64D ─┘
 
 | Experiment | Description | Params | Best AUC | Best Bal Acc |
 |------------|-------------|--------|----------|--------------|
-| **Exp3b** | **Triple FuseMoE** | **4.7M** | **0.753** | **0.774** |
-| **Exp6a** | **Clinical+SMILES+Text** | **113K** | **0.702** | **0.705** |
+| **Exp7a** | **Quad MLP (All 4 modalities)** | **2M** | **0.762** | **0.774** |
+| Exp3b | Triple FuseMoE | 4.7M | 0.753 | 0.774 |
+| Exp7b | Quad MoE | 4.7M | 0.720 | 0.737 |
+| Exp6a | Clinical+SMILES+Text | 113K | 0.702 | 0.705 |
 | Exp5a | Clinical+SMILES | 59K | 0.689 | 0.682 |
 | Exp5b | Clinical+Text | 59K | 0.676 | 0.708 |
 | Exp3a | Triple MLP | 2.5M | 0.672 | 0.706 |
