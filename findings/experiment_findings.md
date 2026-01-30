@@ -288,7 +288,9 @@ Late fusion with three modality streams: each modality encoded to 64D, concatena
 
 ## Next Steps
 
-1. Test LaBraM encoder once braindecode dependencies are resolved
-2. Hyperparameter optimisation for best-performing model (Exp3b ClinicalBERT+ChemBERTa)
-3. Investigate high EEG variance - potential for improved EEG encoding
-4. External validation on held-out cohort
+1. Look at torch api key padding mask and add to code (makes model look at just real data not padding), ignore padding in mean pooling layer
+    1a. Double check focal column 1 or 0, and any other heavily concentrated data columns to avoid concentration in one stratum when folding
+2. Test LaBraM encoder once braindecode dependencies are resolved
+3. Hyperparameter optimisation for best-performing model (Exp3b ClinicalBERT+ChemBERTa) - Optuna
+4. Investigate high EEG variance - potential for improved EEG encoding
+5. External validation on further data or an additional dataset
