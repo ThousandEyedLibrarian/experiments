@@ -330,7 +330,7 @@ Tested whether combining all four modalities improves upon triple modality (Exp3
 
 1. Look at torch api key padding mask and add to code (makes model look at just real data not padding), ignore padding in mean pooling layer
     1a. Double check focal column 1 or 0, and any other heavily concentrated data columns to avoid concentration in one stratum when folding
-2. Test LaBraM encoder once braindecode dependencies are resolved
-3. Hyperparameter optimisation for best-performing model (Exp3b ClinicalBERT+ChemBERTa) - Optuna
-4. Investigate high EEG variance - potential for improved EEG encoding
+2. Investigate high EEG variance - potential for improved EEG encoding
+3. Test LaBraM encoder once braindecode dependencies are resolved
+4. Hyperparameter optimisation for best-performing model (Exp3b ClinicalBERT+ChemBERTa) - Optuna
 5. External validation on further data or an additional dataset
