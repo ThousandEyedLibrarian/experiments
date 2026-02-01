@@ -2,8 +2,6 @@
 
 Multimodal fusion experiments for predicting anti-seizure medication (ASM) treatment outcomes by combining embeddings from clinical text reports, EEG signals, and drug molecular structures (SMILES).
 
-See `OBJECTIVES.md` for detailed experiment goals and methodology.
-
 ## Prerequisites
 
 - Python 3.10

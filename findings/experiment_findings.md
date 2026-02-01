@@ -349,8 +349,8 @@ Proper confidence intervals accounting for between-fold heterogeneity:
 ## Next Steps
 
 1. Look at torch api key padding mask and add to code (makes model look at just real data not padding), ignore padding in mean pooling layer
-    1a. Double check focal column 1 or 0, and any other heavily concentrated data columns to avoid concentration in one stratum when folding
-2. Investigate high EEG variance - potential for improved EEG encoding
-3. Test LaBraM encoder once braindecode dependencies are resolved
-4. Hyperparameter optimisation for best-performing model (Exp3b ClinicalBERT+ChemBERTa) - Optuna
-5. External validation on further data or an additional dataset
+2. Double check focal column 1 or 0, and any other heavily concentrated data columns to avoid concentration in one stratum when folding
+3. Investigate high EEG variance - potential for improved EEG encoding
+4. Test LaBraM encoder once braindecode dependencies are resolved
+5. Hyperparameter optimisation for best-performing model (Exp3b ClinicalBERT+ChemBERTa) - Optuna
+6. External validation on further data or an additional dataset
