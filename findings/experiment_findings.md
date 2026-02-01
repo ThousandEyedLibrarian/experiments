@@ -333,7 +333,7 @@ The high fold-to-fold variance observed in previous experiments may be partly du
 | `focal` | 79.2% | 42 | OK |
 | `sex` | 62.7% | 76 | OK |
 
-**Recommendation**: Consider dropping severely imbalanced features (`ld`, `birth_t`, `febrile`, `ci`) as they provide minimal discriminative signal.
+**Rationale**: Considering dropping severely imbalanced features (`ld`, `birth_t`, `febrile`, `ci`) as they seem to provide minimal impact/discrimination.
 
 ### Stratification Comparison
 
@@ -413,18 +413,3 @@ Multi-label stratification (outcome + focal + sex) dramatically reduces fold-to-
 4. Test LaBraM encoder once braindecode dependencies are resolved
 5. Hyperparameter optimisation for best-performing model (Exp7a ClinicalBERT+ChemBERTa) - Optuna
 6. External validation on further data or an additional dataset
-
-### Completed: Key Padding Mask (Step 1)
-
-Already implemented:
-- Mask creation: `exp2_fusion/eeg_pipeline.py:236-243`
-- Transformer masking: `exp2_fusion/models/eeg_transformer.py:122`
-- Masked mean pooling: `exp2_fusion/models/eeg_transformer.py:128-134`
-
-### Completed: Stratification Analysis (Step 2)
-
-Feature imbalance analysis (exp8):
-- **Severely imbalanced (>95% majority):** `ld`, `birth_t`, `febrile`, `ci`
-- **Multi-label stratification** reduces fold variance by 5-8x vs outcome-only
-- **Focal:** 10.7% fold_std (baseline) -> 1.3% fold_std (multi-label)
-- **Sex:** 5.8% fold_std (baseline) -> 1.1% fold_std (multi-label)
