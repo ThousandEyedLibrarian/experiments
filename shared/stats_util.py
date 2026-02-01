@@ -97,12 +97,16 @@ def delong_ci(y_true, y_scores, alpha=0.95):
     """
     y_true = np.array(y_true)
     y_scores = np.array(y_scores)
-    order = np.argsort(-y_scores)
-    y_true = y_true[order]
-    y_scores = y_scores[order]
 
-    pos_count = np.sum(y_true == 1)
-    aucs, auc_cov = fastDeLong(y_scores[np.newaxis, :], pos_count)
+    # Group scores by label: positive samples first, then negative
+    # This is the format expected by fastDeLong
+    pos_mask = y_true == 1
+    pos_scores = y_scores[pos_mask]
+    neg_scores = y_scores[~pos_mask]
+    all_scores = np.concatenate([pos_scores, neg_scores])
+    pos_count = len(pos_scores)
+
+    aucs, auc_cov = fastDeLong(all_scores[np.newaxis, :], pos_count)
     auc = aucs[0]
     var = auc_cov[0, 0]
     std = np.sqrt(var)
