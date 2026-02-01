@@ -348,9 +348,24 @@ Proper confidence intervals accounting for between-fold heterogeneity:
 
 ## Next Steps
 
-1. Look at torch api key padding mask and add to code (makes model look at just real data not padding), ignore padding in mean pooling layer
-2. Double check focal column 1 or 0, and any other heavily concentrated data columns to avoid concentration in one stratum when folding
+1. ~~Look at torch api key padding mask and add to code~~ **DONE** - Already implemented in `exp2_fusion/models/eeg_transformer.py`
+2. ~~Double check focal column distribution for stratification~~ **DONE** - Exp8 created with multi-label stratification
 3. Investigate high EEG variance - potential for improved EEG encoding
 4. Test LaBraM encoder once braindecode dependencies are resolved
-5. Hyperparameter optimisation for best-performing model (Exp3b ClinicalBERT+ChemBERTa) - Optuna
+5. Hyperparameter optimisation for best-performing model (Exp7a ClinicalBERT+ChemBERTa) - Optuna
 6. External validation on further data or an additional dataset
+
+### Completed: Key Padding Mask (Step 1)
+
+Already implemented:
+- Mask creation: `exp2_fusion/eeg_pipeline.py:236-243`
+- Transformer masking: `exp2_fusion/models/eeg_transformer.py:122`
+- Masked mean pooling: `exp2_fusion/models/eeg_transformer.py:128-134`
+
+### Completed: Stratification Analysis (Step 2)
+
+Feature imbalance analysis (exp8):
+- **Severely imbalanced (>95% majority):** `ld`, `birth_t`, `febrile`, `ci`
+- **Multi-label stratification** reduces fold variance by 5-8x vs outcome-only
+- **Focal:** 10.7% fold_std (baseline) -> 1.3% fold_std (multi-label)
+- **Sex:** 5.8% fold_std (baseline) -> 1.1% fold_std (multi-label)
