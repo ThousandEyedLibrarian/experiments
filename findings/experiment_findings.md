@@ -289,6 +289,24 @@ Tested whether combining all four modalities improves upon triple modality (Exp3
 - Fold 4 shows unusually high performance (AUC 0.933) - potential outlier
 - Clinical features provide modest additional signal
 
+### Meta-Analysis (Sidik-Jonkman + Knapp-Hartung)
+
+Proper confidence intervals accounting for between-fold heterogeneity:
+
+| Configuration | AUC | 95% CI | I² | τ² |
+|---------------|-----|--------|----|----|
+| exp7a_clinicalbert | 0.762 | [0.633, 0.891] | 80% | 0.0086 |
+| exp7a_pubmedbert | 0.746 | [0.664, 0.829] | 80% | 0.0035 |
+| exp7b_clinicalbert | 0.720 | [0.573, 0.867] | 80% | 0.0112 |
+| exp7b_pubmedbert | 0.662 | [0.593, 0.731] | 80% | 0.0025 |
+
+**Interpretation:**
+- **Wide CIs** (0.14–0.29 range): Limited precision due to small sample (k=5 folds, n=107 patients)
+- **High I² (80%)**: Substantial heterogeneity — fold composition strongly affects performance
+- **Overlapping CIs**: Cannot definitively rank configurations; differences may be due to chance
+- **MoE more variable**: Higher τ² for MoE models indicates less stable training on small data
+- **PubMedBERT more consistent**: Lower τ² but lower point estimates than ClinicalBERT
+
 ---
 
 ## Comparison: All Experiments
@@ -319,6 +337,8 @@ Tested whether combining all four modalities improves upon triple modality (Exp3
 
 - Relatively small sample size (n=151 for dual-modality, n=107 for triple/quad-modality, n=205 for clinical-only)
 - High variance across folds (std up to 0.10 for AUC in some configurations)
+- Wide 95% CIs due to small k (5 folds) and high heterogeneity (I²=80%)
+- Overlapping CIs between best models prevent definitive ranking
 - LaBraM EEG encoder not tested due to dependency issues with braindecode
 - No hyperparameter tuning performed
 - Quad-modality limited by intersection of all data sources (107 patients)
