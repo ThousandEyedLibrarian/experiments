@@ -309,6 +309,65 @@ Proper confidence intervals accounting for between-fold heterogeneity:
 
 ---
 
+## Experiment 8: Stratification Analysis
+
+Investigated whether the high I² (80%) heterogeneity in Exp7 could be reduced through improved cross-validation stratification.
+
+### Motivation
+
+The high fold-to-fold variance observed in previous experiments may be partly due to:
+1. **Outcome-only stratification**: Current CV only balances the target variable
+2. **Imbalanced clinical features**: Some features have >95% majority class
+3. **Unbalanced fold composition**: Key features may cluster in certain folds
+
+### Feature Imbalance Analysis
+
+| Feature | Majority % | Minority n | Status |
+|---------|------------|------------|--------|
+| `ld` | 98.5% | 3 | SEVERE |
+| `birth_t` | 97.5% | 5 | SEVERE |
+| `febrile` | 96.0% | 8 | SEVERE |
+| `ci` | 95.5% | 9 | SEVERE |
+| `fam_hx` | 88.5% | 23 | WARNING |
+| `cvd` | 88.4% | 23 | WARNING |
+| `focal` | 79.2% | 42 | OK |
+| `sex` | 62.7% | 76 | OK |
+
+**Recommendation**: Consider dropping severely imbalanced features (`ld`, `birth_t`, `febrile`, `ci`) as they provide minimal discriminative signal.
+
+### Stratification Comparison
+
+Compared fold balance variance across stratification methods:
+
+| Feature | Outcome-only (fold_std) | Multi-label (fold_std) | Improvement |
+|---------|------------------------|------------------------|-------------|
+| focal | 10.7% | 1.3% | **8x better** |
+| sex | 5.8% | 1.1% | **5x better** |
+| outcome | 0.5% | 0.5% | Same |
+
+Multi-label stratification (outcome + focal + sex) dramatically reduces fold-to-fold variance for clinical features while maintaining outcome balance.
+
+### Data Quality Issues Fixed
+
+- `psy` column: Mixed types ('0', '1', '0.0', '1.0', '?') standardised
+- `lesion` column: Mixed types (1, '1.0', 'NOT AVAILABLE') standardised
+- `outcome` column: String values converted to numeric
+
+### Key Findings
+
+1. **Multi-label stratification reduces fold variance by 5-8x** for key features
+2. **Severely imbalanced features** (ld, birth_t, febrile, ci) have <10 minority samples
+3. **Data cleaning required**: Several columns had mixed types needing standardisation
+4. **Composite stratification** (outcome + focal) also effective but less balanced for sex
+
+### Files
+
+- `exp8_stratification/feature_analysis.py` - Distribution analysis
+- `exp8_stratification/stratified_cv.py` - Multi-label stratification implementation
+- `exp8_stratification/run_experiments.py` - Full experiment runner
+
+---
+
 ## Comparison: All Experiments
 
 | Experiment | Modality | Best Model | AUC | Bal Acc Tuned | F1 Tuned |
