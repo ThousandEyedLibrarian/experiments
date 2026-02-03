@@ -453,4 +453,4 @@ Investigated the sources of high fold-to-fold variance in EEG experiments (Exp5c
 
 ### Expected Impact
 
-Re-running EEG experiments with multi-label stratification should reduce AUC std from ~0.11 to ~0.03-0.04 based on feature balance improvements.
+Re-running EEG experiments with multi-label stratification should reduce AUC std based on feature balance improvements.
