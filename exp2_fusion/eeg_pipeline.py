@@ -4,7 +4,7 @@ import logging
 import re
 import warnings
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple, Union
 
 import mne
 import numpy as np
@@ -23,6 +23,445 @@ warnings.filterwarnings("ignore", category=RuntimeWarning)
 
 logger = logging.getLogger("exp2")
 
+
+# ============================================================================
+# EEG Quality Metrics
+# ============================================================================
+
+def compute_snr(data: np.ndarray, sr: float, noise_band: Tuple[float, float] = (55.0, 65.0)) -> np.ndarray:
+    """Estimate signal-to-noise ratio per channel.
+
+    Uses power spectral density to estimate signal (0.5-40Hz) vs noise (55-65Hz).
+
+    Args:
+        data: EEG data [channels x samples].
+        sr: Sample rate.
+        noise_band: Frequency band for noise estimation.
+
+    Returns:
+        SNR values per channel (in dB).
+    """
+    from scipy import signal as scipy_signal
+
+    n_channels = data.shape[0]
+    snr_values = np.zeros(n_channels)
+
+    for ch in range(n_channels):
+        freqs, psd = scipy_signal.welch(data[ch], sr, nperseg=min(1024, len(data[ch])))
+
+        # Signal power: 0.5-40 Hz (typical EEG range)
+        signal_mask = (freqs >= 0.5) & (freqs <= 40.0)
+        signal_power = np.mean(psd[signal_mask]) if signal_mask.any() else 1e-10
+
+        # Noise power: 55-65 Hz (high-frequency noise)
+        noise_mask = (freqs >= noise_band[0]) & (freqs <= noise_band[1])
+        noise_power = np.mean(psd[noise_mask]) if noise_mask.any() else 1e-10
+
+        # SNR in dB
+        snr_values[ch] = 10 * np.log10(signal_power / max(noise_power, 1e-10))
+
+    return snr_values
+
+
+def detect_artifacts(data: np.ndarray, threshold_uv: float = 500.0) -> Dict:
+    """Detect high-amplitude artifacts in EEG data.
+
+    Args:
+        data: EEG data [channels x samples] in Volts.
+        threshold_uv: Threshold in microvolts for artifact detection.
+
+    Returns:
+        Dict with artifact statistics per channel.
+    """
+    # Convert to microvolts (EDF is typically in Volts)
+    data_uv = data * 1e6
+
+    n_channels, n_samples = data.shape
+    artifact_stats = {
+        "per_channel_artifact_ratio": [],
+        "overall_artifact_ratio": 0.0,
+        "max_amplitude_uv": 0.0,
+        "channels_with_artifacts": 0,
+    }
+
+    total_artifacts = 0
+    for ch in range(n_channels):
+        ch_data = np.abs(data_uv[ch])
+        artifact_mask = ch_data > threshold_uv
+        artifact_ratio = artifact_mask.mean()
+        artifact_stats["per_channel_artifact_ratio"].append(float(artifact_ratio))
+
+        if artifact_ratio > 0.01:  # >1% artifacts
+            artifact_stats["channels_with_artifacts"] += 1
+
+        total_artifacts += artifact_mask.sum()
+
+    artifact_stats["overall_artifact_ratio"] = total_artifacts / (n_channels * n_samples)
+    artifact_stats["max_amplitude_uv"] = float(np.abs(data_uv).max())
+
+    return artifact_stats
+
+
+def detect_flatlines(data: np.ndarray, window_samples: int = 200, std_threshold: float = 0.1) -> Dict:
+    """Detect flatline segments (near-zero variance) in EEG data.
+
+    Args:
+        data: EEG data [channels x samples].
+        window_samples: Window size for variance computation.
+        std_threshold: Threshold for flatline detection (in microvolts).
+
+    Returns:
+        Dict with flatline statistics.
+    """
+    data_uv = data * 1e6  # Convert to microvolts
+    n_channels, n_samples = data.shape
+
+    flatline_stats = {
+        "per_channel_flatline_ratio": [],
+        "overall_flatline_ratio": 0.0,
+        "channels_with_flatlines": 0,
+    }
+
+    total_flatline_samples = 0
+
+    for ch in range(n_channels):
+        ch_data = data_uv[ch]
+        n_windows = n_samples // window_samples
+
+        flatline_windows = 0
+        for i in range(n_windows):
+            start = i * window_samples
+            end = start + window_samples
+            window_std = np.std(ch_data[start:end])
+            if window_std < std_threshold:
+                flatline_windows += 1
+
+        flatline_ratio = flatline_windows / max(n_windows, 1)
+        flatline_stats["per_channel_flatline_ratio"].append(float(flatline_ratio))
+
+        if flatline_ratio > 0.05:  # >5% flatlines
+            flatline_stats["channels_with_flatlines"] += 1
+
+        total_flatline_samples += flatline_windows * window_samples
+
+    flatline_stats["overall_flatline_ratio"] = total_flatline_samples / (n_channels * n_samples)
+
+    return flatline_stats
+
+
+def compute_channel_correlation(data: np.ndarray) -> Dict:
+    """Compute inter-channel correlation statistics.
+
+    High correlation may indicate referencing issues or global artifacts.
+    Low correlation may indicate noisy/disconnected channels.
+
+    Args:
+        data: EEG data [channels x samples].
+
+    Returns:
+        Dict with correlation statistics.
+    """
+    n_channels = data.shape[0]
+
+    if n_channels < 2:
+        return {"mean_correlation": 0.0, "low_correlation_channels": 0}
+
+    # Compute correlation matrix
+    corr_matrix = np.corrcoef(data)
+
+    # Mask diagonal
+    np.fill_diagonal(corr_matrix, np.nan)
+
+    # Mean absolute correlation per channel
+    mean_corr_per_channel = np.nanmean(np.abs(corr_matrix), axis=1)
+
+    # Low correlation channels (may be noisy or disconnected)
+    low_corr_threshold = 0.1
+    low_corr_channels = (mean_corr_per_channel < low_corr_threshold).sum()
+
+    # Overall statistics
+    overall_mean = np.nanmean(np.abs(corr_matrix))
+
+    return {
+        "mean_correlation": float(overall_mean),
+        "per_channel_mean_correlation": mean_corr_per_channel.tolist(),
+        "low_correlation_channels": int(low_corr_channels),
+    }
+
+
+def compute_quality_score(
+    snr_values: np.ndarray,
+    artifact_stats: Dict,
+    flatline_stats: Dict,
+    correlation_stats: Dict,
+) -> Dict:
+    """Compute overall quality score from individual metrics.
+
+    Args:
+        snr_values: SNR per channel.
+        artifact_stats: Artifact detection results.
+        flatline_stats: Flatline detection results.
+        correlation_stats: Correlation statistics.
+
+    Returns:
+        Dict with quality scores and overall score.
+    """
+    # SNR score (0-1, higher is better)
+    mean_snr = np.mean(snr_values)
+    snr_score = np.clip((mean_snr + 10) / 30, 0, 1)  # Map -10dB to 20dB -> 0 to 1
+
+    # Artifact score (0-1, lower artifact ratio is better)
+    artifact_score = 1.0 - min(artifact_stats["overall_artifact_ratio"] * 10, 1.0)
+
+    # Flatline score (0-1, lower flatline ratio is better)
+    flatline_score = 1.0 - min(flatline_stats["overall_flatline_ratio"] * 5, 1.0)
+
+    # Correlation score (moderate correlation is best)
+    mean_corr = correlation_stats["mean_correlation"]
+    # Penalise very low (<0.1) or very high (>0.8) correlation
+    if mean_corr < 0.1:
+        corr_score = mean_corr / 0.1
+    elif mean_corr > 0.8:
+        corr_score = (1.0 - mean_corr) / 0.2
+    else:
+        corr_score = 1.0
+
+    # Overall quality score (weighted average)
+    weights = {"snr": 0.3, "artifact": 0.3, "flatline": 0.2, "correlation": 0.2}
+    overall_score = (
+        weights["snr"] * snr_score +
+        weights["artifact"] * artifact_score +
+        weights["flatline"] * flatline_score +
+        weights["correlation"] * corr_score
+    )
+
+    return {
+        "snr_score": float(snr_score),
+        "artifact_score": float(artifact_score),
+        "flatline_score": float(flatline_score),
+        "correlation_score": float(corr_score),
+        "overall_quality_score": float(overall_score),
+        "mean_snr_db": float(mean_snr),
+    }
+
+
+# ============================================================================
+# EEG Normalisation Functions
+# ============================================================================
+
+def zscore_normalise_global(
+    data: np.ndarray,
+    mean: np.ndarray = None,
+    std: np.ndarray = None,
+) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """Apply global z-score normalisation per channel.
+
+    Args:
+        data: EEG data [channels x samples].
+        mean: Pre-computed channel means (for test data).
+        std: Pre-computed channel stds (for test data).
+
+    Returns:
+        Tuple of (normalised_data, mean, std).
+    """
+    if mean is None:
+        mean = data.mean(axis=1, keepdims=True)
+    if std is None:
+        std = data.std(axis=1, keepdims=True)
+
+    # Avoid division by zero
+    std = np.where(std < 1e-10, 1.0, std)
+
+    normalised = (data - mean) / std
+    return normalised, mean.squeeze(), std.squeeze()
+
+
+def zscore_normalise_window(data: np.ndarray) -> np.ndarray:
+    """Apply per-window z-score normalisation.
+
+    Removes DC offset and scales each window independently.
+    Useful for making the model invariant to absolute amplitude.
+
+    Args:
+        data: EEG data [channels x samples] or windows [n_windows, channels, samples].
+
+    Returns:
+        Normalised data with same shape.
+    """
+    if data.ndim == 2:
+        # Single window or full signal
+        mean = data.mean(axis=1, keepdims=True)
+        std = data.std(axis=1, keepdims=True)
+        std = np.where(std < 1e-10, 1.0, std)
+        return (data - mean) / std
+    elif data.ndim == 3:
+        # Multiple windows: [n_windows, channels, samples]
+        normalised = np.zeros_like(data)
+        for i in range(data.shape[0]):
+            normalised[i] = zscore_normalise_window(data[i])
+        return normalised
+    else:
+        raise ValueError(f"Expected 2D or 3D data, got {data.ndim}D")
+
+
+def robust_normalise(
+    data: np.ndarray,
+    median: np.ndarray = None,
+    iqr: np.ndarray = None,
+) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """Apply robust normalisation using median and IQR.
+
+    More robust to artifacts than z-score normalisation.
+
+    Args:
+        data: EEG data [channels x samples].
+        median: Pre-computed channel medians (for test data).
+        iqr: Pre-computed channel IQRs (for test data).
+
+    Returns:
+        Tuple of (normalised_data, median, iqr).
+    """
+    if median is None:
+        median = np.median(data, axis=1, keepdims=True)
+    if iqr is None:
+        q75 = np.percentile(data, 75, axis=1, keepdims=True)
+        q25 = np.percentile(data, 25, axis=1, keepdims=True)
+        iqr = q75 - q25
+
+    # Avoid division by zero
+    iqr = np.where(iqr < 1e-10, 1.0, iqr)
+
+    normalised = (data - median) / iqr
+    return normalised, median.squeeze(), iqr.squeeze()
+
+
+def clip_amplitude(data: np.ndarray, n_std: float = 5.0) -> np.ndarray:
+    """Clip extreme values to reduce artifact impact.
+
+    Args:
+        data: EEG data [channels x samples].
+        n_std: Number of standard deviations to clip to.
+
+    Returns:
+        Clipped data.
+    """
+    mean = data.mean(axis=1, keepdims=True)
+    std = data.std(axis=1, keepdims=True)
+
+    lower = mean - n_std * std
+    upper = mean + n_std * std
+
+    return np.clip(data, lower, upper)
+
+
+class EEGNormaliser:
+    """EEG normalisation with fit/transform interface.
+
+    Supports global z-score, per-window z-score, and robust normalisation.
+    """
+
+    def __init__(
+        self,
+        method: str = "zscore",
+        clip_std: float = None,
+    ):
+        """Initialise normaliser.
+
+        Args:
+            method: Normalisation method ('zscore', 'window_zscore', 'robust', 'none').
+            clip_std: If set, clip values beyond n standard deviations.
+        """
+        self.method = method
+        self.clip_std = clip_std
+
+        # Fitted statistics (for zscore/robust)
+        self.mean_ = None
+        self.std_ = None
+        self.median_ = None
+        self.iqr_ = None
+        self.is_fitted = False
+
+    def fit(self, data: np.ndarray):
+        """Fit normaliser on training data.
+
+        Args:
+            data: EEG data [channels x samples] or stacked windows.
+        """
+        if data.ndim == 3:
+            # Flatten windows to [channels, total_samples]
+            n_windows, n_channels, n_samples = data.shape
+            data = data.transpose(1, 0, 2).reshape(n_channels, -1)
+
+        if self.method == "zscore":
+            self.mean_ = data.mean(axis=1)
+            self.std_ = data.std(axis=1)
+            self.std_ = np.where(self.std_ < 1e-10, 1.0, self.std_)
+        elif self.method == "robust":
+            self.median_ = np.median(data, axis=1)
+            q75 = np.percentile(data, 75, axis=1)
+            q25 = np.percentile(data, 25, axis=1)
+            self.iqr_ = q75 - q25
+            self.iqr_ = np.where(self.iqr_ < 1e-10, 1.0, self.iqr_)
+
+        self.is_fitted = True
+        return self
+
+    def transform(self, data: np.ndarray) -> np.ndarray:
+        """Transform data using fitted statistics.
+
+        Args:
+            data: EEG data [channels x samples] or windows [n_windows, channels, samples].
+
+        Returns:
+            Normalised data.
+        """
+        original_shape = data.shape
+        is_windows = data.ndim == 3
+
+        if is_windows:
+            # Process each window
+            n_windows, n_channels, n_samples = data.shape
+            normalised = np.zeros_like(data)
+            for i in range(n_windows):
+                normalised[i] = self._transform_single(data[i])
+            return normalised
+        else:
+            return self._transform_single(data)
+
+    def _transform_single(self, data: np.ndarray) -> np.ndarray:
+        """Transform a single 2D array [channels x samples]."""
+        # Optional clipping first
+        if self.clip_std is not None:
+            data = clip_amplitude(data, self.clip_std)
+
+        if self.method == "none":
+            return data
+        elif self.method == "window_zscore":
+            return zscore_normalise_window(data)
+        elif self.method == "zscore":
+            if not self.is_fitted:
+                raise ValueError("Normaliser not fitted. Call fit() first.")
+            mean = self.mean_.reshape(-1, 1)
+            std = self.std_.reshape(-1, 1)
+            return (data - mean) / std
+        elif self.method == "robust":
+            if not self.is_fitted:
+                raise ValueError("Normaliser not fitted. Call fit() first.")
+            median = self.median_.reshape(-1, 1)
+            iqr = self.iqr_.reshape(-1, 1)
+            return (data - median) / iqr
+        else:
+            raise ValueError(f"Unknown method: {self.method}")
+
+    def fit_transform(self, data: np.ndarray) -> np.ndarray:
+        """Fit and transform in one step."""
+        self.fit(data)
+        return self.transform(data)
+
+
+# ============================================================================
+# File Operations
+# ============================================================================
 
 def extract_patient_id(filename: str) -> Optional[str]:
     """Extract patient ID from EEG filename.
@@ -258,7 +697,25 @@ class EEGPreprocessor:
         lowcut: float = EEG_CONFIG["lowcut"],
         highcut: float = EEG_CONFIG["highcut"],
         notch_freq: float = EEG_CONFIG["notch_freq"],
+        compute_quality: bool = False,
+        normalisation: str = "none",
+        clip_std: float = None,
     ):
+        """Initialise EEG preprocessor.
+
+        Args:
+            target_sr: Target sample rate.
+            min_duration_sec: Minimum EEG duration required.
+            skip_start_sec: Seconds to skip at start.
+            use_duration_sec: Maximum duration to use.
+            window_sec: Window size in seconds.
+            lowcut: Low frequency cutoff for bandpass.
+            highcut: High frequency cutoff for bandpass.
+            notch_freq: Notch filter frequency.
+            compute_quality: Whether to compute quality metrics.
+            normalisation: Normalisation method ('none', 'zscore', 'window_zscore', 'robust').
+            clip_std: If set, clip values beyond n standard deviations.
+        """
         self.target_sr = target_sr
         self.min_duration_sec = min_duration_sec
         self.skip_start_sec = skip_start_sec
@@ -267,22 +724,39 @@ class EEGPreprocessor:
         self.lowcut = lowcut
         self.highcut = highcut
         self.notch_freq = notch_freq
+        self.compute_quality = compute_quality
+        self.normalisation = normalisation
+        self.clip_std = clip_std
 
         self.samples_per_window = int(window_sec * target_sr)
         self.max_windows = int(use_duration_sec / window_sec)
 
-    def process(self, edf_path: Path) -> Optional[Tuple[np.ndarray, np.ndarray, int]]:
+        # Normaliser (will be fitted per-patient or globally)
+        self.normaliser = None
+        if normalisation != "none":
+            self.normaliser = EEGNormaliser(method=normalisation, clip_std=clip_std)
+
+    def process(
+        self,
+        edf_path: Path,
+        return_quality: bool = None,
+    ) -> Optional[Union[Tuple[np.ndarray, np.ndarray, int], Tuple[np.ndarray, np.ndarray, int, Dict]]]:
         """Process a single EEG file.
 
         Args:
             edf_path: Path to .edf file.
+            return_quality: Whether to compute and return quality metrics.
+                           Defaults to self.compute_quality.
 
         Returns:
-            Tuple of (windows, padding_mask, n_channels) or None if invalid.
-            - windows: [max_windows, n_channels, samples_per_window]
-            - padding_mask: [max_windows] boolean, True for padded
-            - n_channels: Number of EEG channels
+            If return_quality is False:
+                Tuple of (windows, padding_mask, n_channels) or None if invalid.
+            If return_quality is True:
+                Tuple of (windows, padding_mask, n_channels, quality_metrics) or None.
         """
+        if return_quality is None:
+            return_quality = self.compute_quality
+
         logger.debug(f"Processing EDF: {edf_path.name}")
 
         # Load EDF
@@ -299,6 +773,11 @@ class EEGPreprocessor:
             notch_freq=self.notch_freq,
         )
         logger.debug(f"  Applied filters: {self.lowcut}-{self.highcut}Hz bandpass, {self.notch_freq}Hz notch")
+
+        # Compute quality metrics on filtered data (before time extraction)
+        quality_metrics = None
+        if return_quality:
+            quality_metrics = self._compute_quality_metrics(data, sr)
 
         # Extract time window
         data = extract_time_window(
@@ -325,7 +804,53 @@ class EEGPreprocessor:
         n_valid_windows = (~padding_mask).sum()
         logger.debug(f"  Windows: {n_valid_windows}/{len(padding_mask)} valid ({self.window_sec}s each)")
 
+        # Apply normalisation to valid windows only
+        if self.normaliser is not None and n_valid_windows > 0:
+            valid_windows = windows[~padding_mask]
+            if self.normalisation == "window_zscore":
+                # Per-window normalisation doesn't need fitting
+                windows[~padding_mask] = self.normaliser.transform(valid_windows)
+            else:
+                # Fit on valid windows and transform
+                windows[~padding_mask] = self.normaliser.fit_transform(valid_windows)
+            logger.debug(f"  Applied {self.normalisation} normalisation")
+
+        if return_quality and quality_metrics is not None:
+            quality_metrics["n_valid_windows"] = int(n_valid_windows)
+            quality_metrics["n_channels"] = n_channels
+            quality_metrics["extracted_duration_sec"] = float(extracted_duration)
+            return windows, padding_mask, n_channels, quality_metrics
+
         return windows, padding_mask, n_channels
+
+    def _compute_quality_metrics(self, data: np.ndarray, sr: float) -> Dict:
+        """Compute quality metrics for EEG data.
+
+        Args:
+            data: Filtered EEG data [channels x samples].
+            sr: Sample rate.
+
+        Returns:
+            Dict with quality metrics.
+        """
+        # Compute individual metrics
+        snr_values = compute_snr(data, sr)
+        artifact_stats = detect_artifacts(data)
+        flatline_stats = detect_flatlines(data)
+        correlation_stats = compute_channel_correlation(data)
+
+        # Compute overall quality score
+        quality_score = compute_quality_score(
+            snr_values, artifact_stats, flatline_stats, correlation_stats
+        )
+
+        return {
+            "snr_per_channel": snr_values.tolist(),
+            "artifact_stats": artifact_stats,
+            "flatline_stats": flatline_stats,
+            "correlation_stats": correlation_stats,
+            "quality_scores": quality_score,
+        }
 
 
 def get_valid_patient_eeg_pairs(

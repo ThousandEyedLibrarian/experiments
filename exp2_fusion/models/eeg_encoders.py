@@ -9,6 +9,8 @@ import torch.nn as nn
 # Import guard for braindecode (may fail due to CUDA library issues)
 LABRAM_AVAILABLE = False
 LABRAM_IMPORT_ERROR = None
+EEGNET_AVAILABLE = False
+EEGNET_IMPORT_ERROR = None
 
 try:
     from braindecode.models import Labram
@@ -18,6 +20,18 @@ except ImportError as e:
 except Exception as e:
     # Catch other errors like OSError for missing CUDA libraries
     LABRAM_IMPORT_ERROR = f"{type(e).__name__}: {e}"
+
+try:
+    # Try newer name first, fall back to deprecated EEGNetv4
+    try:
+        from braindecode.models import EEGNet as BraindecodeEEGNet
+    except ImportError:
+        from braindecode.models import EEGNetv4 as BraindecodeEEGNet
+    EEGNET_AVAILABLE = True
+except ImportError as e:
+    EEGNET_IMPORT_ERROR = str(e)
+except Exception as e:
+    EEGNET_IMPORT_ERROR = f"{type(e).__name__}: {e}"
 
 logger = logging.getLogger(__name__)
 
@@ -87,6 +101,104 @@ class LaBraMEncoder(nn.Module):
         # Remove the final classification layer
         # We'll use fc_norm output as embedding
         self.model.final_layer = nn.Identity()
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        """Extract embeddings from EEG windows.
+
+        Args:
+            x: EEG windows of shape (batch, channels, time).
+
+        Returns:
+            Embeddings of shape (batch, emb_size).
+        """
+        return self.model(x)
+
+
+class EEGNetEncoder(nn.Module):
+    """Wrapper for EEGNetv4 model to extract EEG embeddings.
+
+    EEGNet is a compact CNN designed specifically for EEG classification.
+    It uses depthwise and separable convolutions to reduce parameters
+    while capturing spatial and temporal features.
+
+    Original paper: Lawhern et al. 2018 "EEGNet: A Compact Convolutional
+    Neural Network for EEG-based Brain-Computer Interfaces"
+    """
+
+    def __init__(
+        self,
+        n_channels: int = 27,
+        n_times: int = 2000,
+        sfreq: float = 200,
+        emb_size: int = 256,
+        F1: int = 8,  # Number of temporal filters
+        F2: int = 16,  # Number of pointwise filters
+        D: int = 2,  # Depth multiplier for depthwise convolution
+        dropout: float = 0.25,
+    ):
+        """Initialise EEGNet encoder.
+
+        Args:
+            n_channels: Number of EEG channels.
+            n_times: Number of time samples per window.
+            sfreq: Sampling frequency.
+            emb_size: Output embedding dimension.
+            F1: Number of temporal filters in first conv layer.
+            F2: Number of pointwise filters.
+            D: Depth multiplier (number of spatial filters per temporal filter).
+            dropout: Dropout probability.
+
+        Raises:
+            ImportError: If braindecode EEGNet is not available.
+        """
+        if not EEGNET_AVAILABLE:
+            error_msg = (
+                f"EEGNet encoder requires braindecode, but it failed to import.\n"
+                f"Error: {EEGNET_IMPORT_ERROR}\n"
+                f"Try: pip install braindecode\n"
+                f"Or use --eeg-encoder simplecnn instead."
+            )
+            logger.error(error_msg)
+            raise ImportError(error_msg)
+
+        super().__init__()
+
+        self.n_channels = n_channels
+        self.n_times = n_times
+        self.emb_size = emb_size
+
+        # Create EEGNet model
+        # Use n_outputs for the number of classes; we'll replace final layer
+        self.model = BraindecodeEEGNet(
+            n_chans=n_channels,
+            n_outputs=2,  # Dummy, will be replaced
+            n_times=n_times,
+            final_conv_length='auto',
+            pool_mode='mean',
+            F1=F1,
+            D=D,
+            F2=F2,
+            drop_prob=dropout,
+        )
+
+        # Calculate the feature dimension before final layer
+        # by doing a forward pass with the original model
+        with torch.no_grad():
+            dummy_input = torch.zeros(1, n_channels, n_times)
+            # Get output after all conv layers but before final classification
+            x = dummy_input
+            for name, module in self.model.named_children():
+                if name == 'final_layer':
+                    break
+                x = module(x)
+            # Flatten to get feature dim
+            feature_dim = x.numel()
+
+        # Replace final layer with our own projection
+        self.model.final_layer = nn.Sequential(
+            nn.Flatten(),
+            nn.Linear(feature_dim, emb_size),
+        )
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """Extract embeddings from EEG windows.
@@ -178,7 +290,7 @@ def get_eeg_encoder(
     """Factory function to get EEG encoder by type.
 
     Args:
-        encoder_type: Type of encoder ('labram', 'simplecnn').
+        encoder_type: Type of encoder ('labram', 'eegnet', 'simplecnn').
         n_channels: Number of EEG channels.
         n_times: Number of time samples per window.
         emb_size: Embedding dimension.
@@ -207,6 +319,20 @@ def get_eeg_encoder(
             emb_size=emb_size,
             **kwargs,
         )
+    elif encoder_type == "eegnet":
+        if not EEGNET_AVAILABLE:
+            logger.error(f"EEGNet requested but braindecode not available: {EEGNET_IMPORT_ERROR}")
+            raise ImportError(
+                f"EEGNet encoder requires braindecode.\n"
+                f"Import error: {EEGNET_IMPORT_ERROR}\n"
+                f"Use --eeg-encoder simplecnn as an alternative."
+            )
+        return EEGNetEncoder(
+            n_channels=n_channels,
+            n_times=n_times,
+            emb_size=emb_size,
+            **kwargs,
+        )
     elif encoder_type == "simplecnn":
         return SimpleCNNEncoder(
             n_channels=n_channels,
@@ -215,7 +341,7 @@ def get_eeg_encoder(
             **kwargs,
         )
     else:
-        raise ValueError(f"Unknown encoder type: {encoder_type}. Available: labram, simplecnn")
+        raise ValueError(f"Unknown encoder type: {encoder_type}. Available: labram, eegnet, simplecnn")
 
 
 def is_labram_available() -> bool:
@@ -234,6 +360,9 @@ def test_encoders():
     print(f"LaBraM available: {LABRAM_AVAILABLE}")
     if not LABRAM_AVAILABLE:
         print(f"LaBraM import error: {LABRAM_IMPORT_ERROR}")
+    print(f"EEGNet available: {EEGNET_AVAILABLE}")
+    if not EEGNET_AVAILABLE:
+        print(f"EEGNet import error: {EEGNET_IMPORT_ERROR}")
 
     n_channels = 27
     n_times = 2000
@@ -249,10 +378,25 @@ def test_encoders():
             out = labram(x)
             print(f"  Input shape: {x.shape}")
             print(f"  Output shape: {out.shape}")
+            print(f"  Parameters: {sum(p.numel() for p in labram.parameters()):,}")
         except Exception as e:
             print(f"  LaBraM test failed: {e}")
     else:
         print("\nSkipping LaBraM encoder test (not available)")
+
+    # Test EEGNet encoder (if available)
+    if EEGNET_AVAILABLE:
+        print("\nTesting EEGNet encoder:")
+        try:
+            eegnet = EEGNetEncoder(n_channels=n_channels, n_times=n_times, emb_size=256)
+            out = eegnet(x)
+            print(f"  Input shape: {x.shape}")
+            print(f"  Output shape: {out.shape}")
+            print(f"  Parameters: {sum(p.numel() for p in eegnet.parameters()):,}")
+        except Exception as e:
+            print(f"  EEGNet test failed: {e}")
+    else:
+        print("\nSkipping EEGNet encoder test (not available)")
 
     # Test SimpleCNN encoder
     print("\nTesting SimpleCNN encoder:")
@@ -260,6 +404,7 @@ def test_encoders():
     out = cnn(x)
     print(f"  Input shape: {x.shape}")
     print(f"  Output shape: {out.shape}")
+    print(f"  Parameters: {sum(p.numel() for p in cnn.parameters()):,}")
 
     print("\nEncoder tests complete.")
 

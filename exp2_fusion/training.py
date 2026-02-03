@@ -1,6 +1,8 @@
 """Training utilities for Experiment 2: EEG + SMILES fusion."""
 
 import logging
+import sys
+from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
 import numpy as np
@@ -9,6 +11,10 @@ import torch.nn as nn
 from sklearn.metrics import accuracy_score, balanced_accuracy_score, f1_score, roc_auc_score, roc_curve
 from sklearn.model_selection import StratifiedKFold
 from torch.utils.data import DataLoader
+
+# Add parent directory for exp8_stratification import
+sys.path.insert(0, str(Path(__file__).parent.parent))
+from exp8_stratification.stratified_cv import get_multilabel_splits, get_outcome_only_splits
 
 from .config import BATCH_SIZE_BY_ENCODER, CHUNK_SIZE_BY_ENCODER, MODEL_CONFIG, TRAIN_CONFIG
 from .data_pipeline import EEGSMILESDataset, create_datasets, get_max_channels, prepare_data
@@ -277,6 +283,7 @@ def run_cross_validation(
     device: torch.device,
     config: Dict = TRAIN_CONFIG,
     verbose: bool = True,
+    use_multilabel_stratification: bool = True,
 ) -> Dict:
     """Run k-fold cross validation.
 
@@ -291,6 +298,8 @@ def run_cross_validation(
         device: Device to use.
         config: Training configuration.
         verbose: Whether to print progress.
+        use_multilabel_stratification: Whether to use multi-label stratification
+            on outcome + focal + sex (reduces fold variance by 5-8x).
 
     Returns:
         Results dictionary with metrics.
@@ -304,16 +313,35 @@ def run_cross_validation(
     config["batch_size"] = BATCH_SIZE_BY_ENCODER.get(eeg_encoder_type, config["batch_size"])
 
     # Get labels and determine dimensions
-    labels = df["outcome"].values
     n_eeg_channels = get_max_channels(eeg_data)  # Use max channels across all data
     smiles_embed_dim = smiles_embeddings.shape[1]
 
-    # K-fold cross validation
-    kfold = StratifiedKFold(n_splits=config["n_folds"], shuffle=True, random_state=config["seed"])
+    # Cross-validation with stratification
+    strat_type = "multilabel" if use_multilabel_stratification else "outcome-only"
+    if verbose:
+        logger.info(f"  Using {strat_type} stratification")
+
+    if use_multilabel_stratification:
+        # Use multi-label stratification on outcome + focal + sex
+        splits = list(get_multilabel_splits(
+            df,
+            stratify_cols=["outcome", "focal", "sex"],
+            n_splits=config["n_folds"],
+            shuffle=True,
+            random_state=config["seed"],
+        ))
+    else:
+        # Outcome-only stratification (baseline)
+        splits = list(get_outcome_only_splits(
+            df,
+            n_splits=config["n_folds"],
+            shuffle=True,
+            random_state=config["seed"],
+        ))
 
     fold_metrics = {"accuracy": [], "auc": [], "f1": [], "f1_tuned": [], "balanced_acc_tuned": []}
 
-    for fold, (train_idx, val_idx) in enumerate(kfold.split(df, labels)):
+    for fold, (train_idx, val_idx) in enumerate(splits):
         if verbose:
             logger.info(f"  Fold {fold + 1}/{config['n_folds']} (train={len(train_idx)}, val={len(val_idx)})")
 

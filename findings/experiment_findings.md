@@ -409,7 +409,48 @@ Multi-label stratification (outcome + focal + sex) dramatically reduces fold-to-
 
 1. ~~Look at torch api key padding mask and add to code~~ **DONE** - Already implemented in `exp2_fusion/models/eeg_transformer.py`
 2. ~~Double check focal column distribution for stratification~~ **DONE** - Exp8 created with multi-label stratification
-3. Investigate high EEG variance - potential for improved EEG encoding
-4. Test LaBraM encoder once braindecode dependencies are resolved
-5. Hyperparameter optimisation for best-performing model (Exp7a ClinicalBERT+ChemBERTa) - Optuna
-6. External validation on further data or an additional dataset
+3. ~~Investigate high EEG variance~~ **DONE** - Exp9 investigation complete (see below)
+4. Test LaBraM encoder in experiments - braindecode now imports correctly, EEGNet also added
+5. Run Exp9 ablation experiments with new stratification and architectures
+6. Hyperparameter optimisation for best-performing model (Exp7a ClinicalBERT+ChemBERTa) - Optuna
+7. External validation on further data or an additional dataset
+
+---
+
+## Experiment 9: EEG Variance Investigation
+
+Investigated the sources of high fold-to-fold variance in EEG experiments (Exp5c AUC std 0.113).
+
+### Key Findings from Fold Analysis
+
+**Outcome-only stratification (current):**
+- `focal` varies 67.5%-92.7% across folds (25% range)
+- Best fold (4, AUC 0.866) has 92.7% focal patients vs 71.8% in worst fold (5, AUC 0.545)
+- EEG padding ratio strongly negatively correlated with AUC (r=-0.78)
+
+**Multi-label stratification (proposed):**
+- `focal` balanced to 77.5%-80.5% (3% range) - **8x variance reduction**
+- `sex` balanced to 60.9%-63.4% (2.5% range) - **6x variance reduction**
+- Correlations with AUC drop significantly (focal: 0.74 -> 0.21)
+
+### Implemented Improvements
+
+| Component | Implementation | Location |
+|-----------|----------------|----------|
+| Multi-label stratification | Integrated into exp2/exp5 training | `exp{2,5}_fusion/training.py` |
+| EEG quality metrics | SNR, artifacts, flatlines, correlation | `exp2_fusion/eeg_pipeline.py` |
+| EEG normalisation | Global z-score, window z-score, robust | `exp2_fusion/eeg_pipeline.py` |
+| Alternative aggregators | Attention, MaxPool, LSTM, MultiScale | `exp2_fusion/models/aggregators.py` |
+| EEGNet encoder | Added alongside SimpleCNN (~3x fewer params) | `exp2_fusion/models/eeg_encoders.py` |
+| Ablation framework | 12 experiments defined | `exp9_eeg_investigation/ablation_study.py` |
+
+### Files
+
+- `exp9_eeg_investigation/fold_analysis.py` - Fold composition analysis
+- `exp9_eeg_investigation/quality_analysis.py` - EEG quality metrics analysis
+- `exp9_eeg_investigation/ablation_study.py` - Ablation experiment framework
+- `exp9_eeg_investigation/config.py` - Configuration
+
+### Expected Impact
+
+Re-running EEG experiments with multi-label stratification should reduce AUC std from ~0.11 to ~0.03-0.04 based on feature balance improvements.

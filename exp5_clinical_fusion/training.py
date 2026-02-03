@@ -1,6 +1,8 @@
 """Training utilities for Experiment 5: Clinical + Single Modality Fusion."""
 
 import logging
+import sys
+from pathlib import Path
 from typing import Dict, List, Tuple
 
 import numpy as np
@@ -9,6 +11,10 @@ import torch.nn as nn
 from sklearn.metrics import accuracy_score, balanced_accuracy_score, f1_score, roc_auc_score, roc_curve
 from sklearn.model_selection import StratifiedKFold
 from torch.utils.data import DataLoader
+
+# Add parent directory for exp8_stratification import
+sys.path.insert(0, str(Path(__file__).parent.parent))
+from exp8_stratification.stratified_cv import get_multilabel_splits, get_outcome_only_splits
 
 from .config import CV_CONFIG, TRAINING_CONFIG
 from .data_pipeline import (
@@ -381,23 +387,41 @@ def train_fold(
 def run_cross_validation_smiles(
     smiles_model: str = "chemberta",
     device: torch.device = None,
+    use_multilabel_stratification: bool = True,
 ) -> Dict[str, List[float]]:
-    """Run 5-fold CV for Clinical + SMILES."""
+    """Run 5-fold CV for Clinical + SMILES.
+
+    Args:
+        smiles_model: Type of SMILES encoder.
+        device: Device to use.
+        use_multilabel_stratification: Whether to use multi-label stratification
+            on outcome + focal + sex (reduces fold variance by 5-8x).
+    """
     if device is None:
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-    logger.info(f"Running CV: Clinical + SMILES ({smiles_model})")
+    strat_type = "multilabel" if use_multilabel_stratification else "outcome-only"
+    logger.info(f"Running CV: Clinical + SMILES ({smiles_model}) with {strat_type} stratification")
 
     # Prepare data
     df, smiles_embeddings, smiles_indices = prepare_clinical_smiles_data(smiles_model)
-    outcomes = df["outcome"].values
 
-    # Cross-validation
-    kfold = StratifiedKFold(
-        n_splits=CV_CONFIG["n_splits"],
-        shuffle=CV_CONFIG["shuffle"],
-        random_state=CV_CONFIG["random_state"],
-    )
+    # Cross-validation with stratification
+    if use_multilabel_stratification:
+        splits = list(get_multilabel_splits(
+            df,
+            stratify_cols=["outcome", "focal", "sex"],
+            n_splits=CV_CONFIG["n_splits"],
+            shuffle=CV_CONFIG["shuffle"],
+            random_state=CV_CONFIG["random_state"],
+        ))
+    else:
+        splits = list(get_outcome_only_splits(
+            df,
+            n_splits=CV_CONFIG["n_splits"],
+            shuffle=CV_CONFIG["shuffle"],
+            random_state=CV_CONFIG["random_state"],
+        ))
 
     fold_metrics = {
         "auc": [],
@@ -407,7 +431,7 @@ def run_cross_validation_smiles(
         "balanced_acc_tuned": [],
     }
 
-    for fold, (train_idx, val_idx) in enumerate(kfold.split(np.zeros(len(outcomes)), outcomes)):
+    for fold, (train_idx, val_idx) in enumerate(splits):
         logger.info(f"Fold {fold + 1}/{CV_CONFIG['n_splits']}")
 
         train_ds, val_ds, _ = create_clinical_smiles_datasets(
@@ -438,23 +462,41 @@ def run_cross_validation_smiles(
 def run_cross_validation_text(
     text_model: str = "clinicalbert",
     device: torch.device = None,
+    use_multilabel_stratification: bool = True,
 ) -> Dict[str, List[float]]:
-    """Run 5-fold CV for Clinical + Text."""
+    """Run 5-fold CV for Clinical + Text.
+
+    Args:
+        text_model: Type of text encoder.
+        device: Device to use.
+        use_multilabel_stratification: Whether to use multi-label stratification
+            on outcome + focal + sex (reduces fold variance by 5-8x).
+    """
     if device is None:
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-    logger.info(f"Running CV: Clinical + Text ({text_model})")
+    strat_type = "multilabel" if use_multilabel_stratification else "outcome-only"
+    logger.info(f"Running CV: Clinical + Text ({text_model}) with {strat_type} stratification")
 
     # Prepare data
     df, text_embeddings = prepare_clinical_text_data(text_model)
-    outcomes = df["outcome"].values
 
-    # Cross-validation
-    kfold = StratifiedKFold(
-        n_splits=CV_CONFIG["n_splits"],
-        shuffle=CV_CONFIG["shuffle"],
-        random_state=CV_CONFIG["random_state"],
-    )
+    # Cross-validation with stratification
+    if use_multilabel_stratification:
+        splits = list(get_multilabel_splits(
+            df,
+            stratify_cols=["outcome", "focal", "sex"],
+            n_splits=CV_CONFIG["n_splits"],
+            shuffle=CV_CONFIG["shuffle"],
+            random_state=CV_CONFIG["random_state"],
+        ))
+    else:
+        splits = list(get_outcome_only_splits(
+            df,
+            n_splits=CV_CONFIG["n_splits"],
+            shuffle=CV_CONFIG["shuffle"],
+            random_state=CV_CONFIG["random_state"],
+        ))
 
     fold_metrics = {
         "auc": [],
@@ -464,7 +506,7 @@ def run_cross_validation_text(
         "balanced_acc_tuned": [],
     }
 
-    for fold, (train_idx, val_idx) in enumerate(kfold.split(np.zeros(len(outcomes)), outcomes)):
+    for fold, (train_idx, val_idx) in enumerate(splits):
         logger.info(f"Fold {fold + 1}/{CV_CONFIG['n_splits']}")
 
         train_ds, val_ds, _ = create_clinical_text_datasets(
@@ -495,23 +537,43 @@ def run_cross_validation_text(
 def run_cross_validation_eeg(
     eeg_model: str = "simplecnn",
     device: torch.device = None,
+    use_multilabel_stratification: bool = True,
 ) -> Dict[str, List[float]]:
-    """Run 5-fold CV for Clinical + EEG."""
+    """Run 5-fold CV for Clinical + EEG.
+
+    Args:
+        eeg_model: Type of EEG encoder.
+        device: Device to use.
+        use_multilabel_stratification: Whether to use multi-label stratification
+            on outcome + focal + sex (reduces fold variance by 5-8x).
+    """
     if device is None:
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-    logger.info(f"Running CV: Clinical + EEG ({eeg_model})")
+    strat_type = "multilabel" if use_multilabel_stratification else "outcome-only"
+    logger.info(f"Running CV: Clinical + EEG ({eeg_model}) with {strat_type} stratification")
 
     # Prepare data
     df, eeg_data = prepare_clinical_eeg_data()
-    outcomes = df["outcome"].values
 
-    # Cross-validation
-    kfold = StratifiedKFold(
-        n_splits=CV_CONFIG["n_splits"],
-        shuffle=CV_CONFIG["shuffle"],
-        random_state=CV_CONFIG["random_state"],
-    )
+    # Cross-validation with stratification
+    if use_multilabel_stratification:
+        # Use multi-label stratification on outcome + focal + sex
+        splits = list(get_multilabel_splits(
+            df,
+            stratify_cols=["outcome", "focal", "sex"],
+            n_splits=CV_CONFIG["n_splits"],
+            shuffle=CV_CONFIG["shuffle"],
+            random_state=CV_CONFIG["random_state"],
+        ))
+    else:
+        # Outcome-only stratification (baseline)
+        splits = list(get_outcome_only_splits(
+            df,
+            n_splits=CV_CONFIG["n_splits"],
+            shuffle=CV_CONFIG["shuffle"],
+            random_state=CV_CONFIG["random_state"],
+        ))
 
     fold_metrics = {
         "auc": [],
@@ -521,7 +583,7 @@ def run_cross_validation_eeg(
         "balanced_acc_tuned": [],
     }
 
-    for fold, (train_idx, val_idx) in enumerate(kfold.split(np.zeros(len(outcomes)), outcomes)):
+    for fold, (train_idx, val_idx) in enumerate(splits):
         logger.info(f"Fold {fold + 1}/{CV_CONFIG['n_splits']}")
 
         train_ds, val_ds, _ = create_clinical_eeg_datasets(
