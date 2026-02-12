@@ -120,7 +120,7 @@ windows, mask, n_channels, quality_metrics = result
 
 ## Ablation Study Design
 
-12 experiments defined in `exp9_eeg_investigation/ablation_study.py`:
+12 experiments defined in `exp9_eeg_investigation/run_experiments.py`:
 
 1. **Baseline:** SimpleCNN + Transformer aggregator
 2. **Encoder ablations:** EEGNet, frozen encoder
@@ -130,8 +130,8 @@ windows, mask, n_channels, quality_metrics = result
 
 Run with:
 ```bash
-python -m exp9_eeg_investigation.ablation_study --quick  # Just baseline
-python -m exp9_eeg_investigation.ablation_study          # All experiments
+python -m exp9_eeg_investigation.run_experiments --quick  # Just baseline
+python -m exp9_eeg_investigation.run_experiments          # All experiments
 ```
 
 ---
@@ -153,7 +153,7 @@ With multi-label stratification:
 | `exp9_eeg_investigation/config.py` | Configuration |
 | `exp9_eeg_investigation/fold_analysis.py` | Fold composition analysis |
 | `exp9_eeg_investigation/quality_analysis.py` | EEG quality metrics |
-| `exp9_eeg_investigation/ablation_study.py` | Ablation framework |
+| `exp9_eeg_investigation/run_experiments.py` | Ablation framework |
 | `exp2_fusion/models/aggregators.py` | Alternative aggregators |
 
 ---

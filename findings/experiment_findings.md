@@ -442,13 +442,13 @@ Investigated the sources of high fold-to-fold variance in EEG experiments (Exp5c
 | EEG normalisation | Global z-score, window z-score, robust | `exp2_fusion/eeg_pipeline.py` |
 | Alternative aggregators | Attention, MaxPool, LSTM, MultiScale | `exp2_fusion/models/aggregators.py` |
 | EEGNet encoder | Added alongside SimpleCNN (~3x fewer params) | `exp2_fusion/models/eeg_encoders.py` |
-| Ablation framework | 12 experiments defined | `exp9_eeg_investigation/ablation_study.py` |
+| Ablation framework | 12 experiments defined | `exp9_eeg_investigation/run_experiments.py` |
 
 ### Files
 
 - `exp9_eeg_investigation/fold_analysis.py` - Fold composition analysis
 - `exp9_eeg_investigation/quality_analysis.py` - EEG quality metrics analysis
-- `exp9_eeg_investigation/ablation_study.py` - Ablation experiment framework
+- `exp9_eeg_investigation/run_experiments.py` - Ablation experiment framework
 - `exp9_eeg_investigation/config.py` - Configuration
 
 ### Expected Impact

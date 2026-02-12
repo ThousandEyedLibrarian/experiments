@@ -8,7 +8,8 @@
 #   bash submit_job.sh -e exp2 -d                   # Local dry run test
 #
 # Options:
-#   -e, --experiment EXP   Experiment to run: exp1, exp2, or exp9 (default: exp1)
+#   -e, --experiment EXP   Experiment to run (e.g. exp1, exp2, exp9)
+#   -m, --module MOD       Override entry point module (default: run_experiments)
 #   -a, --args ARGS        Extra arguments for the experiment script
 #   -d, --dry-run          Test mode - show config without executing
 #   -h, --help             Show help message
@@ -44,6 +45,7 @@
 
 # Default values (can also be set via environment variables)
 EXPERIMENT="${EXPERIMENT:-exp1}"
+MODULE="${MODULE:-}"
 EXTRA_ARGS="${EXTRA_ARGS:-}"
 DRY_RUN="${DRY_RUN:-false}"
 
@@ -52,21 +54,27 @@ show_help() {
     echo "Usage: $0 [OPTIONS]"
     echo ""
     echo "Options:"
-    echo "  -e, --experiment EXP   Experiment to run: exp1, exp2, or exp9 (default: exp1)"
+    echo "  -e, --experiment EXP   Experiment to run (e.g. exp1, exp2, exp9)"
+    echo "  -m, --module MOD       Override entry point module (default: run_experiments)"
     echo "  -a, --args ARGS        Extra arguments for the experiment script"
     echo "  -d, --dry-run          Test mode - show config without executing"
     echo "  -h, --help             Show this help message"
     echo ""
-    echo "Extra args examples:"
-    echo "  exp1: --dry-run, --exp1a, --exp1b, --quiet"
-    echo "  exp2: --dry-run, --eeg-encoder simplecnn, --smiles-model chemberta"
-    echo "  exp9: --experiment encoder_labram, --quick, --no-multilabel"
+    echo "Available experiments:"
+    # List experiment directories dynamically
+    SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+    for dir in "${SCRIPT_DIR}"/exp*_*/; do
+        dirname=$(basename "$dir")
+        prefix="${dirname%%_*}"
+        echo "  ${prefix}  -> ${dirname}/"
+    done
     echo ""
     echo "Examples:"
     echo "  sbatch $0 -e exp2"
     echo "  sbatch $0 -e exp2 -a '--eeg-encoder simplecnn'"
     echo "  sbatch $0 -e exp9 -a '--experiment encoder_labram'"
     echo "  sbatch --mem=64G $0 -e exp9 -a '--experiment encoder_labram'"
+    echo "  sbatch $0 -e exp9 -a '--quick'"
     echo "  bash $0 -e exp1 -d"
     echo "  EXPERIMENT=exp2 sbatch $0"
     exit 0
@@ -77,6 +85,10 @@ while [[ $# -gt 0 ]]; do
     case $1 in
         -e|--experiment)
             EXPERIMENT="$2"
+            shift 2
+            ;;
+        -m|--module)
+            MODULE="$2"
             shift 2
             ;;
         -a|--args)
@@ -98,18 +110,97 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
-# Validate experiment choice
-if [[ "$EXPERIMENT" != "exp1" && "$EXPERIMENT" != "exp2" && "$EXPERIMENT" != "exp9" ]]; then
-    echo "ERROR: Invalid experiment '$EXPERIMENT'. Must be 'exp1', 'exp2', or 'exp9'."
-    exit 1
-fi
-
 #==============================================================================
-# JOB EXECUTION
+# EXPERIMENT DISCOVERY
 #==============================================================================
 
 # Get the directory where this script is located
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+# Find the experiment directory matching the prefix
+EXP_DIR=""
+EXP_DIR_COUNT=0
+for dir in "${SCRIPT_DIR}"/${EXPERIMENT}_*/; do
+    if [ -d "$dir" ]; then
+        EXP_DIR="$dir"
+        EXP_DIR_COUNT=$((EXP_DIR_COUNT + 1))
+    fi
+done
+
+if [ $EXP_DIR_COUNT -eq 0 ]; then
+    echo "ERROR: No directory found matching '${EXPERIMENT}_*'."
+    echo "Available experiments:"
+    for dir in "${SCRIPT_DIR}"/exp*_*/; do
+        dirname=$(basename "$dir")
+        prefix="${dirname%%_*}"
+        echo "  ${prefix}  -> ${dirname}/"
+    done
+    exit 1
+fi
+
+if [ $EXP_DIR_COUNT -gt 1 ]; then
+    # Disambiguate: prefer the directory containing run_experiments.py
+    CANDIDATE=""
+    CANDIDATE_COUNT=0
+    for dir in "${SCRIPT_DIR}"/${EXPERIMENT}_*/; do
+        if [ -f "${dir}/run_experiments.py" ]; then
+            CANDIDATE="$dir"
+            CANDIDATE_COUNT=$((CANDIDATE_COUNT + 1))
+        fi
+    done
+
+    if [ $CANDIDATE_COUNT -eq 1 ]; then
+        EXP_DIR="$CANDIDATE"
+    else
+        echo "ERROR: Multiple directories match '${EXPERIMENT}_*':"
+        for dir in "${SCRIPT_DIR}"/${EXPERIMENT}_*/; do
+            echo "  $(basename "$dir")"
+        done
+        echo "Use the full directory name or -m to specify the module."
+        exit 1
+    fi
+fi
+
+EXP_DIRNAME=$(basename "$EXP_DIR")
+
+# Determine entry point module
+if [ -n "$MODULE" ]; then
+    # User-specified module override
+    ENTRY_MODULE="${MODULE}"
+    if [ ! -f "${EXP_DIR}/${ENTRY_MODULE}.py" ]; then
+        echo "ERROR: Module '${ENTRY_MODULE}' not found in ${EXP_DIRNAME}/"
+        echo "Available modules:"
+        for f in "${EXP_DIR}"/*.py; do
+            fname=$(basename "$f" .py)
+            if [ "$fname" != "__init__" ] && [ "$fname" != "__pycache__" ]; then
+                echo "  ${fname}"
+            fi
+        done
+        exit 1
+    fi
+else
+    # Default: look for run_experiments.py
+    if [ -f "${EXP_DIR}/run_experiments.py" ]; then
+        ENTRY_MODULE="run_experiments"
+    else
+        echo "ERROR: No run_experiments.py found in ${EXP_DIRNAME}/."
+        echo "Use -m to specify the entry point module."
+        echo "Available modules:"
+        for f in "${EXP_DIR}"/*.py; do
+            fname=$(basename "$f" .py)
+            if [ "$fname" != "__init__" ] && [ "$fname" != "__pycache__" ]; then
+                echo "  ${fname}"
+            fi
+        done
+        exit 1
+    fi
+fi
+
+CMD="python -m ${EXP_DIRNAME}.${ENTRY_MODULE} ${EXTRA_ARGS}"
+
+#==============================================================================
+# JOB EXECUTION
+#==============================================================================
 
 echo "============================================================"
 echo "ASM Experiment Job"
@@ -118,7 +209,8 @@ echo "Job ID:      ${SLURM_JOB_ID:-local}"
 echo "Node:        $(hostname)"
 echo "Start time:  $(date)"
 echo "Directory:   ${SCRIPT_DIR}"
-echo "Experiment:  ${EXPERIMENT}"
+echo "Experiment:  ${EXPERIMENT} (${EXP_DIRNAME})"
+echo "Module:      ${ENTRY_MODULE}"
 echo "Extra args:  ${EXTRA_ARGS:-none}"
 echo "============================================================"
 
@@ -153,7 +245,7 @@ echo "============================================================"
 if [ "$EXPERIMENT" = "exp1" ]; then
     python check_environment.py --exp1
     ENV_CHECK=$?
-elif [ "$EXPERIMENT" = "exp2" ] || [ "$EXPERIMENT" = "exp9" ]; then
+elif [ "$EXPERIMENT" = "exp2" ]; then
     python check_environment.py --exp2
     ENV_CHECK=$?
 else
@@ -166,18 +258,6 @@ if [ $ENV_CHECK -ne 0 ]; then
     echo "WARNING: Environment check reported issues (exit code $ENV_CHECK)"
     echo "The experiment may fail. Check the output above for details."
     echo ""
-fi
-
-# Determine the command to run
-if [ "$EXPERIMENT" = "exp1" ]; then
-    CMD="python -m exp1_fusion.run_experiments ${EXTRA_ARGS}"
-elif [ "$EXPERIMENT" = "exp2" ]; then
-    CMD="python -m exp2_fusion.run_experiments ${EXTRA_ARGS}"
-elif [ "$EXPERIMENT" = "exp9" ]; then
-    CMD="python -m exp9_eeg_investigation.ablation_study ${EXTRA_ARGS}"
-else
-    echo "ERROR: Unknown experiment '${EXPERIMENT}'. Use 'exp1', 'exp2', or 'exp9'."
-    exit 1
 fi
 
 # Run the experiment (or show what would run in dry-run mode)
