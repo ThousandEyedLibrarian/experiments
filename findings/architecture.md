@@ -292,6 +292,8 @@ Raw Text -> Tokeniser -> LLM Encoder -> xD -> ModalityEncoder -> 64D --+
 - **Frozen**: All LLM parameters frozen, only classification head trains (feature extraction)
 - **Fine-tuned**: Last 2 transformer layers unfrozen with differential LR (encoder: 2e-5, head: 1e-3)
 
+**Diagram:** `exp10_clinical_llm.drawio`
+
 ---
 
 ## Training Configuration
@@ -351,3 +353,8 @@ Raw Text -> Tokeniser -> LLM Encoder -> xD -> ModalityEncoder -> 64D --+
 | Exp6b Clinical+SMILES+EEG | `exp6b_clinical_smiles_eeg.drawio` |
 | EEG Preprocessing | `eeg_preprocessing.drawio` |
 | SimpleCNN Encoder | `simplecnn_encoder.drawio` |
+| EEGNet Encoder | `exp9_eegnet_encoder.drawio` |
+| LaBraM Encoder | `exp9_labram_encoder.drawio` |
+| EEG2Vec Encoder | `exp9_eeg2vec_encoder.drawio` |
+| Exp9 Ablation Framework | `exp9_ablation_framework.drawio` |
+| Exp10 Clinical+LLM | `exp10_clinical_llm.drawio` |
