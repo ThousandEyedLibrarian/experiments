@@ -356,22 +356,22 @@ def define_ablation_experiments() -> List[Dict]:
         "freeze_encoder": True,
     })
 
-    # Aggregator ablations
+    # Aggregator ablations (using EEG2Vec - best encoder from encoder ablation)
     for agg_type in ["attention", "maxpool", "meanmax", "lstm"]:
         experiments.append({
             "name": f"aggregator_{agg_type}",
-            "encoder_type": "simplecnn",
+            "encoder_type": "eeg2vec",
             "aggregator_type": agg_type,
             "embed_dim": 256,
         })
 
-    # Transformer depth ablations
+    # Transformer depth ablations (using EEG2Vec)
     for n_layers in [0, 1, 4]:
         if n_layers == 0:
             # No transformer, just mean pooling
             experiments.append({
                 "name": "aggregator_depth_0",
-                "encoder_type": "simplecnn",
+                "encoder_type": "eeg2vec",
                 "aggregator_type": "attention",  # Use attention for simple pooling
                 "embed_dim": 256,
                 "num_layers": 0,
@@ -379,17 +379,17 @@ def define_ablation_experiments() -> List[Dict]:
         else:
             experiments.append({
                 "name": f"aggregator_depth_{n_layers}",
-                "encoder_type": "simplecnn",
+                "encoder_type": "eeg2vec",
                 "aggregator_type": "transformer",
                 "embed_dim": 256,
                 "num_layers": n_layers,
             })
 
-    # Embedding dimension ablations
+    # Embedding dimension ablations (using EEG2Vec)
     for dim in [64, 128]:
         experiments.append({
             "name": f"embed_dim_{dim}",
-            "encoder_type": "simplecnn",
+            "encoder_type": "eeg2vec",
             "aggregator_type": "transformer",
             "embed_dim": dim,
             "output_dim": dim,

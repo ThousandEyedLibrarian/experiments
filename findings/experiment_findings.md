@@ -383,7 +383,7 @@ Multi-label stratification (outcome + focal + sex) dramatically reduces fold-to-
 | Exp5b | Clinical + Text | ClinicalBERT | 0.676 | 0.708 | 0.716 |
 | Exp2a | EEG + SMILES | SimpleCNN + SMILES-Trf + MLP | 0.668 | N/A | N/A |
 | Exp4a | Clinical only | MLP | 0.664 | 0.675 | 0.627 |
-| Exp9 | Clinical + EEG (encoder ablation) | EEG2Vec | 0.661 | 0.689 | 0.585 |
+| Exp9 | EEG + SMILES (encoder ablation) | EEG2Vec | 0.661 | 0.689 | 0.585 |
 | Exp1b | LLM + SMILES | ClinicalBERT + SMILES-Trf + FuseMoE | 0.648 | 0.712 | 0.701 |
 | Exp6b | Clinical + SMILES + EEG | SimpleCNN + SMILES-Trf | 0.647 | 0.663 | 0.631 |
 | Exp5c | Clinical + EEG | SimpleCNN | 0.644 | 0.690 | 0.693 |
@@ -522,7 +522,7 @@ Run on M3 HPC (Job 51362383, node m3n102, A100 80GB, ~20 min runtime).
 5. ~~Run Exp9 encoder ablation experiments~~ **DONE** - 4 encoders compared, EEG2Vec selected as best
 6. ~~Run Exp10 frozen encoder experiments~~ **DONE** - Qwen 2.5 0.5B outperforms biomedical models in frozen mode
 7. Run Exp9 remaining ablations: aggregator, depth, and dimension experiments with EEG2Vec
-8. Run Exp10 fine-tuning experiments (Phase 2) - unfreeze last 2 transformer layers
+8. --Run Exp10 fine-tuning experiments (Phase 2) - unfreeze last 2 transformer layers-- **DONE** - Running
 9. Re-run Exp5c/Exp7 with EEG2Vec encoder (replacing SimpleCNN)
 10. Hyperparameter optimisation for best-performing model (Exp7a ClinicalBERT+ChemBERTa) - Optuna
 11. External validation on further data or an additional dataset
