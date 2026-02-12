@@ -21,7 +21,7 @@ from torch.utils.data import DataLoader
 BASE_DIR = Path(__file__).parent.parent
 sys.path.insert(0, str(BASE_DIR))
 
-from exp2_fusion.config import EEG_CONFIG, MODEL_CONFIG, TRAIN_CONFIG, BATCH_SIZE_BY_ENCODER
+from exp2_fusion.config import EEG_CONFIG, MODEL_CONFIG, TRAIN_CONFIG, BATCH_SIZE_BY_ENCODER, CHUNK_SIZE_BY_ENCODER
 from exp2_fusion.data_pipeline import prepare_data, create_datasets, get_max_channels
 from exp2_fusion.models.eeg_encoders import get_eeg_encoder, SimpleCNNEncoder
 from exp2_fusion.models.eeg_transformer import EEGWindowTransformer
@@ -58,7 +58,7 @@ class AblationModel(nn.Module):
         """Initialise ablation model.
 
         Args:
-            encoder_type: Type of window encoder ('simplecnn', 'eegnet').
+            encoder_type: Type of window encoder ('simplecnn', 'eegnet', 'labram').
             aggregator_type: Type of aggregator ('transformer', 'attention', 'maxpool', 'lstm').
             n_channels: Number of EEG channels.
             n_times: Number of time samples per window.
@@ -219,12 +219,13 @@ def run_ablation_experiment(
 
         encoder_type = ablation_config.get("encoder_type", "simplecnn")
         batch_size = BATCH_SIZE_BY_ENCODER.get(encoder_type, 8)
+        chunk_size = CHUNK_SIZE_BY_ENCODER.get(encoder_type, 32)
         train_loader = DataLoader(train_ds, batch_size=batch_size, shuffle=True)
         val_loader = DataLoader(val_ds, batch_size=batch_size, shuffle=False)
 
         # Create model
         model = AblationModel(
-            encoder_type=ablation_config.get("encoder_type", "simplecnn"),
+            encoder_type=encoder_type,
             aggregator_type=ablation_config.get("aggregator_type", "transformer"),
             n_channels=n_channels,
             embed_dim=ablation_config.get("embed_dim", 256),
@@ -234,6 +235,7 @@ def run_ablation_experiment(
             smiles_dim=smiles_dim,
             freeze_encoder=ablation_config.get("freeze_encoder", False),
             max_windows=ablation_config.get("max_windows", 120),
+            window_chunk_size=chunk_size,
         ).to(device)
 
         # Training setup
