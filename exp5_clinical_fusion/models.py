@@ -22,7 +22,7 @@ from .config import (
 import sys
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent))
-from exp2_fusion.models.eeg_encoders import SimpleCNNEncoder
+from exp2_fusion.models.eeg_encoders import get_eeg_encoder
 from exp2_fusion.models.eeg_transformer import EEGWindowTransformer
 
 
@@ -184,6 +184,7 @@ class ClinicalEEGFusion(nn.Module):
     def __init__(
         self,
         clinical_dim: int = CLINICAL_DIM,
+        eeg_encoder_type: str = "eeg2vec",
         n_channels: int = 27,
         n_times: int = 2000,
         hidden_dim: int = 64,
@@ -199,12 +200,12 @@ class ClinicalEEGFusion(nn.Module):
         # Clinical encoder
         self.clinical_encoder = ModalityEncoder(clinical_dim, hidden_dim, dropout)
 
-        # EEG window encoder (SimpleCNN)
-        self.window_encoder = SimpleCNNEncoder(
+        # EEG window encoder (via factory)
+        self.window_encoder = get_eeg_encoder(
+            encoder_type=eeg_encoder_type,
             n_channels=n_channels,
             n_times=n_times,
             emb_size=256,
-            dropout=dropout,
         )
 
         # EEG window aggregator
@@ -324,6 +325,7 @@ def get_model(
     elif modality == "eeg":
         model = ClinicalEEGFusion(
             clinical_dim=CLINICAL_DIM,
+            eeg_encoder_type=EEG_ENCODER_CONFIG["encoder_type"],
             n_channels=EEG_ENCODER_CONFIG["n_channels"],
             n_times=EEG_ENCODER_CONFIG["n_times"],
             hidden_dim=64,

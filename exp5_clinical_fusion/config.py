@@ -72,7 +72,7 @@ MAX_WINDOWS = int(EEG_CONFIG["use_duration_sec"] / EEG_CONFIG["window_sec"])  # 
 
 # EEG encoder config (reuse SimpleCNN from exp2)
 EEG_ENCODER_CONFIG = {
-    "encoder_type": "simplecnn",
+    "encoder_type": "eeg2vec",
     "n_channels": 27,
     "n_times": 2000,  # 10s @ 200Hz
     "embed_dim": 256,
@@ -132,5 +132,5 @@ EXPERIMENTS = [
     {"name": "exp5b_clinicalbert", "modality": "text", "text_model": "clinicalbert"},
     {"name": "exp5b_pubmedbert", "modality": "text", "text_model": "pubmedbert"},
     # Exp5c: Clinical + EEG
-    {"name": "exp5c_simplecnn", "modality": "eeg", "eeg_model": "simplecnn"},
+    {"name": "exp5c_eeg2vec", "modality": "eeg", "eeg_model": "eeg2vec"},
 ]
