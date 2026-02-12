@@ -7,7 +7,7 @@
 
 ## Executive Summary
 
-We evaluated multimodal fusion approaches for predicting ASM treatment outcomes. Seven experiment sets were conducted:
+We evaluated multimodal fusion approaches for predicting ASM treatment outcomes. Ten experiment sets were conducted:
 
 - **Experiment 1:** Text report embeddings (LLM) + drug structure embeddings (SMILES)
 - **Experiment 2:** EEG signal embeddings + drug structure embeddings (SMILES)
@@ -16,6 +16,9 @@ We evaluated multimodal fusion approaches for predicting ASM treatment outcomes.
 - **Experiment 5:** Clinical features + single modality fusion
 - **Experiment 6:** Clinical features + SMILES + third modality (text or EEG)
 - **Experiment 7:** All four modalities (Clinical + LLM + EEG + SMILES)
+- **Experiment 8:** Stratification analysis (multi-label CV)
+- **Experiment 9:** EEG encoder ablation (SimpleCNN, EEGNet, LaBraM, EEG2Vec)
+- **Experiment 10:** Direct LLM text modality (frozen/fine-tuned encoder)
 
 The best performing model achieved **AUC 0.762** and **balanced accuracy of 0.774** using all four modalities with MLP fusion (Exp7a). Class weighting and threshold tuning (via Youden's J statistic) were applied to address class imbalance.
 
@@ -375,10 +378,12 @@ Multi-label stratification (outcome + focal + sex) dramatically reduces fold-to-
 | **Exp7a** | **Clinical + LLM + EEG + SMILES** | ClinicalBERT + ChemBERTa + MLP | **0.762** | **0.774** | 0.786 |
 | Exp3b | LLM + EEG + SMILES | ClinicalBERT + ChemBERTa + FuseMoE | 0.753 | 0.774 | **0.801** |
 | Exp6a | Clinical + SMILES + Text | PubMedBERT + ChemBERTa | 0.702 | 0.705 | 0.738 |
+| Exp10 | Clinical + Direct LLM (frozen) | Qwen 2.5 0.5B | 0.689 | 0.717 | 0.666 |
 | Exp5a | Clinical + SMILES | ChemBERTa | 0.689 | 0.680 | 0.638 |
 | Exp5b | Clinical + Text | ClinicalBERT | 0.676 | 0.708 | 0.716 |
 | Exp2a | EEG + SMILES | SimpleCNN + SMILES-Trf + MLP | 0.668 | N/A | N/A |
 | Exp4a | Clinical only | MLP | 0.664 | 0.675 | 0.627 |
+| Exp9 | Clinical + EEG (encoder ablation) | EEG2Vec | 0.661 | 0.689 | 0.585 |
 | Exp1b | LLM + SMILES | ClinicalBERT + SMILES-Trf + FuseMoE | 0.648 | 0.712 | 0.701 |
 | Exp6b | Clinical + SMILES + EEG | SimpleCNN + SMILES-Trf | 0.647 | 0.663 | 0.631 |
 | Exp5c | Clinical + EEG | SimpleCNN | 0.644 | 0.690 | 0.693 |
@@ -389,6 +394,8 @@ Multi-label stratification (outcome + focal + sex) dramatically reduces fold-to-
 - MLP fusion more stable than MoE for small datasets (107 patients)
 - Text fusion consistently outperforms EEG fusion across all experiments
 - SMILES embeddings provide complementary signal to other modalities
+- Exp10 frozen Qwen 2.5 (0.689) matches Exp5a SMILES fusion - general-purpose LLM competitive with domain-specific models
+- Exp9 EEG2Vec (0.661) improves on SimpleCNN baseline (0.607) with substantially lower variance
 
 ---
 
@@ -398,37 +405,25 @@ Multi-label stratification (outcome + focal + sex) dramatically reduces fold-to-
 - High variance across folds (std up to 0.10 for AUC in some configurations)
 - Wide 95% CIs due to small k (5 folds) and high heterogeneity (I²=80%)
 - Overlapping CIs between best models prevent definitive ranking
-- LaBraM EEG encoder not tested due to dependency issues with braindecode
+- LaBraM EEG encoder underperforms (AUC 0.549) - architecture may be unsuitable for 27-channel clinical EEG with small dataset
 - No hyperparameter tuning performed
 - Quad-modality limited by intersection of all data sources (107 patients)
-
-
----
-
-## Next Steps
-
-1. ~~Look at torch api key padding mask and add to code~~ **DONE** - Already implemented in `exp2_fusion/models/eeg_transformer.py`
-2. ~~Double check focal column distribution for stratification~~ **DONE** - Exp8 created with multi-label stratification
-3. ~~Investigate high EEG variance~~ **DONE** - Exp9 investigation complete (see below)
-4. Test LaBraM encoder in experiments - braindecode now imports correctly, EEGNet also added
-5. Run Exp9 ablation experiments with new stratification and architectures
-6. Hyperparameter optimisation for best-performing model (Exp7a ClinicalBERT+ChemBERTa) - Optuna
-7. External validation on further data or an additional dataset
+- Exp10 frozen encoder results only - fine-tuning may change model ranking
 
 ---
 
 ## Experiment 9: EEG Variance Investigation
 
-Investigated the sources of high fold-to-fold variance in EEG experiments (Exp5c AUC std 0.113).
+Investigated the sources of high fold-to-fold variance in EEG experiments (Exp5c AUC std 0.113) and conducted encoder ablation study.
 
 ### Key Findings from Fold Analysis
 
-**Outcome-only stratification (current):**
+**Outcome-only stratification (previous):**
 - `focal` varies 67.5%-92.7% across folds (25% range)
 - Best fold (4, AUC 0.866) has 92.7% focal patients vs 71.8% in worst fold (5, AUC 0.545)
 - EEG padding ratio strongly negatively correlated with AUC (r=-0.78)
 
-**Multi-label stratification (proposed):**
+**Multi-label stratification (implemented):**
 - `focal` balanced to 77.5%-80.5% (3% range) - **8x variance reduction**
 - `sex` balanced to 60.9%-63.4% (2.5% range) - **6x variance reduction**
 - Correlations with AUC drop significantly (focal: 0.74 -> 0.21)
@@ -444,6 +439,36 @@ Investigated the sources of high fold-to-fold variance in EEG experiments (Exp5c
 | EEGNet encoder | Added alongside SimpleCNN (~3x fewer params) | `exp2_fusion/models/eeg_encoders.py` |
 | Ablation framework | 12 experiments defined | `exp9_eeg_investigation/run_experiments.py` |
 
+### Results: Encoder Ablation (12 February 2026)
+
+Run on M3 HPC (A100 80GB). Three HPC runs required: Run 1 failed (missing `iterative-stratification`), Run 2 partially succeeded (braindecode CUDA issue), Run 3 all 4 encoders completed successfully.
+
+| Encoder | AUC | Bal Acc Tuned | F1 Tuned | AUC Std |
+|---------|-----|---------------|----------|---------|
+| **EEG2Vec** | **0.661 +/- 0.061** | **0.689 +/- 0.054** | 0.585 +/- 0.149 | **0.061** |
+| EEGNet | 0.648 +/- 0.107 | 0.686 +/- 0.078 | 0.584 +/- 0.239 | 0.107 |
+| SimpleCNN (baseline) | 0.607 +/- 0.107 | 0.661 +/- 0.076 | 0.616 +/- 0.059 | 0.107 |
+| LaBraM | 0.549 +/- 0.077 | 0.608 +/- 0.036 | 0.512 +/- 0.196 | 0.077 |
+
+### Per-Fold AUC
+
+| Encoder | Fold 1 | Fold 2 | Fold 3 | Fold 4 | Fold 5 |
+|---------|--------|--------|--------|--------|--------|
+| EEG2Vec | 0.710 | 0.673 | 0.701 | 0.678 | 0.542 |
+| EEGNet | 0.741 | 0.711 | 0.705 | 0.640 | 0.444 |
+| SimpleCNN | 0.710 | 0.691 | 0.683 | 0.487 | 0.467 |
+| LaBraM | 0.629 | 0.653 | 0.509 | 0.471 | 0.481 |
+
+### Key Observations
+
+- **EEG2Vec achieves best AUC (0.661) with lowest variance (std 0.061)** - most stable encoder
+- EEGNet outperforms SimpleCNN (+0.041 AUC) but both share high variance (std 0.107)
+- LaBraM significantly underperforms (AUC 0.549) - likely due to small dataset or 27-channel clinical EEG mismatch
+- Multi-label stratification did not eliminate variance for SimpleCNN/EEGNet - encoder architecture also contributes
+- EEG2Vec's CVAE pre-training provides more robust features (std 0.061 vs 0.107)
+- Folds 4/5 consistently weakest across all encoders
+- Remaining ablations (aggregator, depth, dimension) not yet run
+
 ### Files
 
 - `exp9_eeg_investigation/fold_analysis.py` - Fold composition analysis
@@ -451,6 +476,53 @@ Investigated the sources of high fold-to-fold variance in EEG experiments (Exp5c
 - `exp9_eeg_investigation/run_experiments.py` - Ablation experiment framework
 - `exp9_eeg_investigation/config.py` - Configuration
 
-### Expected Impact
+---
 
-Re-running EEG experiments with multi-label stratification should reduce AUC std based on feature balance improvements.
+## Experiment 10: Direct LLM Text Modality
+
+Ran LLM inference at training time (frozen encoder mode) instead of pre-computed embeddings, enabling comparison across different LLM architectures with the same training pipeline.
+
+### Architecture
+
+Late fusion: Clinical features (19D) -> 64D + Raw text -> LLM encoder -> embed_dim -> 64D, concatenated (128D), then classified. Matches Exp5b architecture.
+
+### Results: Frozen Encoder (12 February 2026)
+
+Run on M3 HPC (Job 51362383, node m3n102, A100 80GB, ~20 min runtime).
+
+| Model | AUC | Bal Acc Tuned | F1 Tuned |
+|-------|-----|---------------|----------|
+| **Qwen 2.5 0.5B** | **0.689 +/- 0.088** | **0.717 +/- 0.073** | 0.666 +/- 0.119 |
+| ClinicalBERT | 0.644 +/- 0.121 | 0.695 +/- 0.092 | 0.671 +/- 0.130 |
+| PubMedBERT | 0.635 +/- 0.096 | 0.671 +/- 0.075 | 0.674 +/- 0.058 |
+
+### Per-Fold AUC
+
+| Model | Fold 1 | Fold 2 | Fold 3 | Fold 4 | Fold 5 |
+|-------|--------|--------|--------|--------|--------|
+| Qwen 2.5 0.5B | 0.769 | 0.790 | 0.671 | 0.542 | 0.671 |
+| ClinicalBERT | 0.788 | 0.629 | 0.580 | 0.458 | 0.762 |
+| PubMedBERT | 0.744 | 0.685 | 0.643 | 0.458 | 0.643 |
+
+### Key Observations
+
+- Qwen 2.5 0.5B (general-purpose) outperforms both biomedical-specific models in frozen mode
+- Fold 4 consistently weakest across all 3 models (AUC 0.458-0.542) - data composition issue
+- Frozen results comparable to Exp5b pre-computed embeddings (ClinicalBERT 0.644 vs 0.676)
+- Fine-tuning experiments still pending (Phase 2)
+
+---
+
+## Next Steps
+
+1. ~~Look at torch api key padding mask and add to code~~ **DONE** - Already implemented in `exp2_fusion/models/eeg_transformer.py`
+2. ~~Double check focal column distribution for stratification~~ **DONE** - Exp8 created with multi-label stratification
+3. ~~Investigate high EEG variance~~ **DONE** - Exp9 investigation complete
+4. ~~Test LaBraM/EEGNet/EEG2Vec encoders~~ **DONE** - Exp9 encoder ablation complete (EEG2Vec best, LaBraM underperforms)
+5. ~~Run Exp9 encoder ablation experiments~~ **DONE** - 4 encoders compared, EEG2Vec selected as best
+6. ~~Run Exp10 frozen encoder experiments~~ **DONE** - Qwen 2.5 0.5B outperforms biomedical models in frozen mode
+7. Run Exp9 remaining ablations: aggregator, depth, and dimension experiments with EEG2Vec
+8. Run Exp10 fine-tuning experiments (Phase 2) - unfreeze last 2 transformer layers
+9. Re-run Exp5c/Exp7 with EEG2Vec encoder (replacing SimpleCNN)
+10. Hyperparameter optimisation for best-performing model (Exp7a ClinicalBERT+ChemBERTa) - Optuna
+11. External validation on further data or an additional dataset

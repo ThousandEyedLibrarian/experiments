@@ -108,9 +108,57 @@ Uses multilabel stratification on outcome + focal + sex + age_group (matching Ex
 
 ---
 
-## Results
+## Results: Frozen Encoder (Phase 1)
 
-*Pending - to be run on HPC*
+**HPC Job:** 51362383 | **Node:** m3n102 (A100 80GB) | **Runtime:** ~20 minutes | **Date:** 12 February 2026, 21:46-22:05
+
+### Frozen Encoder Comparison
+
+| Model | AUC | Bal Acc Tuned | F1 Tuned |
+|-------|-----|---------------|----------|
+| **Qwen 2.5 0.5B** | **0.689 +/- 0.088** | **0.717 +/- 0.073** | 0.666 +/- 0.119 |
+| ClinicalBERT | 0.644 +/- 0.121 | 0.695 +/- 0.092 | 0.671 +/- 0.130 |
+| PubMedBERT | 0.635 +/- 0.096 | 0.671 +/- 0.075 | 0.674 +/- 0.058 |
+
+### Per-Fold AUC
+
+| Model | Fold 1 | Fold 2 | Fold 3 | Fold 4 | Fold 5 |
+|-------|--------|--------|--------|--------|--------|
+| Qwen 2.5 0.5B | 0.769 | 0.790 | 0.671 | 0.542 | 0.671 |
+| ClinicalBERT | 0.788 | 0.629 | 0.580 | 0.458 | 0.762 |
+| PubMedBERT | 0.744 | 0.685 | 0.643 | 0.458 | 0.643 |
+
+### Per-Fold Balanced Accuracy (Tuned)
+
+| Model | Fold 1 | Fold 2 | Fold 3 | Fold 4 | Fold 5 |
+|-------|--------|--------|--------|--------|--------|
+| Qwen 2.5 0.5B | 0.728 | 0.794 | 0.710 | 0.583 | 0.769 |
+| ClinicalBERT | 0.801 | 0.647 | 0.636 | 0.583 | 0.808 |
+| PubMedBERT | 0.766 | 0.717 | 0.664 | 0.542 | 0.664 |
+
+### Key Observations
+
+1. **Qwen 2.5 0.5B (general-purpose) outperforms both biomedical models** in frozen mode - surprising given PubMedBERT and ClinicalBERT were pre-trained on biomedical/clinical text
+2. **Fold 4 consistently weakest** across all 3 models (AUC 0.458-0.542), suggesting a data composition issue in that fold rather than model-specific weakness
+3. **ClinicalBERT has highest variance** (AUC std 0.121) - performance ranges from 0.458 to 0.788
+4. **PubMedBERT most stable on F1** (std 0.058) despite lower AUC - fewer catastrophic fold failures
+5. **Frozen results comparable to Exp5b pre-computed embeddings** (ClinicalBERT frozen 0.644 vs Exp5b pre-computed 0.676) - small gap suggests pre-computed pipeline was well-calibrated
+6. **Runtime efficient:** All 3 models completed in ~20 minutes on A100 80GB
+
+### Comparison with Exp5b (Pre-computed Embeddings)
+
+| Model | Exp10 Frozen AUC | Exp5b Pre-computed AUC | Delta |
+|-------|------------------|------------------------|-------|
+| ClinicalBERT | 0.644 | 0.676 | -0.032 |
+| PubMedBERT | 0.635 | 0.620 | +0.015 |
+
+The small differences confirm that frozen encoder mode produces comparable results to pre-computed embeddings, validating the Exp10 pipeline.
+
+---
+
+## Results: Fine-tuned Encoder (Phase 2)
+
+*Pending - to be run after encoder ablation analysis*
 
 ---
 

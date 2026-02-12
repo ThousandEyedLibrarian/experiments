@@ -136,9 +136,9 @@ python -m exp9_eeg_investigation.run_experiments          # All experiments
 
 ---
 
-## HPC Run 1: Initial Encoder Ablation (12 February 2026)
+## HPC Run 1: Initial Encoder Ablation (12 February 2026, 15:33)
 
-### Jobs Submitted
+**Status: All jobs FAILED** (kept for reference)
 
 Three encoder ablation experiments submitted to M3 HPC:
 
@@ -148,8 +148,6 @@ Three encoder ablation experiments submitted to M3 HPC:
 | 2 | encoder_eegnet | EEGNet | FAILED |
 | 3 | encoder_labram | LaBraM | FAILED |
 
-### Results
-
 All three jobs failed with the same error:
 
 ```
@@ -157,27 +155,95 @@ iterative-stratification required for multi-label stratification.
 Install with: uv pip install iterative-stratification
 ```
 
-**Root cause:** The `iterative-stratification` package was not installed in the HPC `.venv-others` environment. The `exp9_eeg_investigation/run_experiments.py` script defaults to multi-label stratification (via `exp8_stratification/stratified_cv.py`), which requires `MultilabelStratifiedKFold` from the `iterstrat` package.
+**Root cause:** The `iterative-stratification` package was not installed in the HPC `.venv-others` environment.
 
-**Contributing factors:**
-1. `check_environment.py` does not validate `iterative-stratification` as a dependency
-2. `exp9` has a `--no-multilabel` flag but defaults to requiring the package
-3. The error occurs at runtime when `get_multilabel_splits()` is called, not at import time
-
-### Fix Required
-
-1. Install `iterative-stratification` in HPC environment: `uv pip install iterative-stratification`
-2. Add `iterative-stratification` to `check_environment.py` validation
-3. Consider adding a graceful fallback with warning instead of hard failure
+**Fix applied:** Installed `iterative-stratification` on HPC and added graceful fallback with warning in `exp8_stratification/stratified_cv.py`.
 
 ---
 
-## Expected Results
+## HPC Run 2: Partial Success (12 February 2026, 21:32)
 
-With multi-label stratification:
-- AUC std should reduce from 0.113 to ~0.03-0.04
-- Fold min-max range should reduce from 0.321 to <0.15
-- More reliable model comparison between architectures
+**Status: 2/4 succeeded, 2/4 FAILED** (braindecode issue)
+
+After fixing `iterative-stratification`, a second run was submitted with all 4 encoder ablations:
+
+| Job | Experiment | Encoder | Status |
+|-----|-----------|---------|--------|
+| 1 | baseline_simplecnn_transformer | SimpleCNN | SUCCESS |
+| 2 | encoder_eeg2vec | EEG2Vec | SUCCESS |
+| 3 | encoder_eegnet | EEGNet | FAILED |
+| 4 | encoder_labram | LaBraM | FAILED |
+
+EEGNet and LaBraM failed with:
+
+```
+OSError: libcudart.so.12: cannot open shared object file: No such file or directory
+```
+
+**Root cause:** `braindecode` (required by EEGNet and LaBraM) had an incompatible CUDA dependency. The installed version pulled in a torch build expecting CUDA 12 libraries not present on the HPC nodes.
+
+**Fix applied:** Reinstalled braindecode 1.2.0 with compatible CUDA bindings.
+
+---
+
+## HPC Run 3: Definitive Encoder Ablation (12 February 2026, 22:05-23:45)
+
+**Status: All 4 jobs SUCCEEDED**
+
+With braindecode fixed, all 4 encoder ablations completed successfully:
+
+| Job ID | Experiment | Encoder | Status | Runtime |
+|--------|-----------|---------|--------|---------|
+| 51362675 | baseline_simplecnn_transformer | SimpleCNN | SUCCESS | ~25 min |
+| 51362676 | encoder_eeg2vec | EEG2Vec | SUCCESS | ~25 min |
+| 51362677 | encoder_eegnet | EEGNet | SUCCESS | ~25 min |
+| 51362679 | encoder_labram | LaBraM | SUCCESS | ~25 min |
+
+---
+
+## Results: Encoder Ablation (Run 3 - Definitive)
+
+### Encoder Comparison
+
+| Encoder | AUC | Bal Acc Tuned | F1 Tuned | AUC Std |
+|---------|-----|---------------|----------|---------|
+| **EEG2Vec** | **0.661 +/- 0.061** | **0.689 +/- 0.054** | 0.585 +/- 0.149 | **0.061** |
+| EEGNet | 0.648 +/- 0.107 | 0.686 +/- 0.078 | 0.584 +/- 0.239 | 0.107 |
+| SimpleCNN (baseline) | 0.607 +/- 0.107 | 0.661 +/- 0.076 | 0.616 +/- 0.059 | 0.107 |
+| LaBraM | 0.549 +/- 0.077 | 0.608 +/- 0.036 | 0.512 +/- 0.196 | 0.077 |
+
+### Per-Fold AUC
+
+| Encoder | Fold 1 | Fold 2 | Fold 3 | Fold 4 | Fold 5 |
+|---------|--------|--------|--------|--------|--------|
+| EEG2Vec | 0.710 | 0.673 | 0.701 | 0.678 | 0.542 |
+| EEGNet | 0.741 | 0.711 | 0.705 | 0.640 | 0.444 |
+| SimpleCNN | 0.710 | 0.691 | 0.683 | 0.487 | 0.467 |
+| LaBraM | 0.629 | 0.653 | 0.509 | 0.471 | 0.481 |
+
+### Key Observations
+
+1. **EEG2Vec achieves best AUC (0.661) with lowest variance (std 0.061)** - the most stable encoder across folds
+2. **EEGNet marginally outperforms SimpleCNN baseline** (+0.041 AUC) but has identical high variance (std 0.107)
+3. **LaBraM significantly underperforms** (AUC 0.549) - likely due to small dataset size or architecture mismatch with 27-channel clinical EEG
+4. **Multi-label stratification did NOT eliminate high variance** for SimpleCNN/EEGNet (std still 0.107) - suggesting encoder architecture also contributes to instability
+5. **EEG2Vec's lower variance (0.061 vs 0.107)** suggests CVAE pre-training provides more robust features
+6. **Folds 4/5 consistently weakest** across all encoders
+7. **EEGNet F1 tuned has extreme variance** (std 0.239) - fold 5 F1 of 0.118 is a near-complete failure
+
+### EEG Data Quality Summary
+
+Quality metrics computed across 151 patients with quality + outcome data:
+
+| Metric | Value |
+|--------|-------|
+| Overall quality | 0.674 +/- 0.087 |
+| Mean SNR | -3.7 +/- 10.1 dB |
+| High-artifact recordings | 7 |
+| Problem recordings | 2 (N085, 452) |
+| Quality-outcome correlation | -0.016 (not significant) |
+
+No significant correlation between quality metrics and outcome, suggesting quality is not the primary driver of fold-to-fold variance.
 
 ---
 
@@ -210,9 +276,13 @@ EEG2Vec encoder added 12 February 2026, based on arxiv 2207.08002.
 
 ## Next Steps
 
-1. Install `iterative-stratification` on HPC and resubmit jobs
-2. Add EEG2Vec encoder job to submission batch
-3. Run fold analysis to validate stratification improvements
-4. Run quality analysis to identify problem recordings
-5. Re-run Exp5c with multi-label stratification
-6. Execute full ablation study to identify best architecture
+1. ~~Install `iterative-stratification` on HPC and resubmit jobs~~ **DONE** (Run 2)
+2. ~~Add EEG2Vec encoder job to submission batch~~ **DONE** (Run 2)
+3. ~~Fix braindecode CUDA dependency on HPC~~ **DONE** (Run 3)
+4. ~~Run all 4 encoder ablations successfully~~ **DONE** (Run 3)
+5. ~~Run quality analysis to identify problem recordings~~ **DONE** (2 problem recordings identified)
+6. Run aggregator ablations (Attention, MaxPool, MeanMax, LSTM) with EEG2Vec encoder
+7. Run depth ablations (0, 1, 2, 4 transformer layers) with EEG2Vec encoder
+8. Run dimension ablations (embed_dim 64, 128, 256) with EEG2Vec encoder
+9. Re-run Exp5c with multi-label stratification and EEG2Vec encoder
+10. Investigate fold 4/5 weakness across encoders
