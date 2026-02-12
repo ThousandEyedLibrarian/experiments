@@ -5,6 +5,7 @@ from typing import Optional, Tuple
 
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 
 # Import guard for braindecode (may fail due to CUDA library issues)
 LABRAM_AVAILABLE = False
@@ -280,6 +281,91 @@ class SimpleCNNEncoder(nn.Module):
         return x
 
 
+class EEG2VecEncoder(nn.Module):
+    """EEG2Vec encoder using CVAE with EEGNet backbone.
+
+    Based on arxiv 2207.08002. Uses EEGNet-style convolutional layers as
+    the feature encoder, then projects to a VAE latent space. Returns mu
+    (mean) as the deterministic embedding at inference time.
+
+    The logvar head is retained so that KL divergence can optionally be
+    used as an auxiliary training loss.
+    """
+
+    def __init__(
+        self,
+        n_channels: int = 27,
+        n_times: int = 2000,
+        emb_size: int = 256,
+        F1: int = 8,
+        F2: int = 16,
+        D: int = 2,
+        dropout: float = 0.25,
+    ):
+        """Initialise EEG2Vec encoder.
+
+        Args:
+            n_channels: Number of EEG channels.
+            n_times: Number of time samples per window.
+            emb_size: Output embedding dimension (latent space size).
+            F1: Number of temporal filters in first conv layer.
+            F2: Number of pointwise filters.
+            D: Depth multiplier for depthwise convolution.
+            dropout: Dropout probability.
+        """
+        super().__init__()
+
+        self.n_channels = n_channels
+        self.n_times = n_times
+        self.emb_size = emb_size
+
+        # EEGNet backbone (conv layers for temporal + spatial features)
+        # Temporal convolution
+        self.conv1 = nn.Conv2d(1, F1, (1, 64), padding=(0, 32), bias=False)
+        self.bn1 = nn.BatchNorm2d(F1)
+        # Depthwise spatial convolution
+        self.conv2 = nn.Conv2d(F1, F1 * D, (n_channels, 1), groups=F1, bias=False)
+        self.bn2 = nn.BatchNorm2d(F1 * D)
+        self.pool1 = nn.AvgPool2d((1, 4))
+        self.drop1 = nn.Dropout(dropout)
+        # Separable convolution (depthwise + pointwise)
+        self.conv3_dw = nn.Conv2d(F1 * D, F1 * D, (1, 16), padding=(0, 8),
+                                  groups=F1 * D, bias=False)
+        self.conv3_pw = nn.Conv2d(F1 * D, F2, (1, 1), bias=False)
+        self.bn3 = nn.BatchNorm2d(F2)
+        self.pool2 = nn.AvgPool2d((1, 8))
+        self.drop2 = nn.Dropout(dropout)
+
+        # Calculate flattened feature size with a dummy forward pass
+        with torch.no_grad():
+            dummy = torch.zeros(1, 1, n_channels, n_times)
+            dummy = self.pool1(F.elu(self.bn2(self.conv2(self.bn1(self.conv1(dummy))))))
+            dummy = self.pool2(F.elu(self.bn3(self.conv3_pw(self.conv3_dw(dummy)))))
+            feat_size = dummy.numel()
+
+        # VAE projection heads
+        self.fc_mu = nn.Linear(feat_size, emb_size)
+        self.fc_logvar = nn.Linear(feat_size, emb_size)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        """Extract embeddings from EEG windows.
+
+        Args:
+            x: EEG windows of shape (batch, channels, time).
+
+        Returns:
+            Mu embeddings of shape (batch, emb_size).
+        """
+        # x: (batch, channels, time) -> (batch, 1, channels, time)
+        x = x.unsqueeze(1)
+        x = self.drop1(self.pool1(F.elu(self.bn2(self.conv2(self.bn1(self.conv1(x)))))))
+        x = self.drop2(self.pool2(F.elu(self.bn3(self.conv3_pw(self.conv3_dw(x))))))
+        x = x.flatten(1)
+        mu = self.fc_mu(x)
+        # logvar available via self.fc_logvar(x) for KL loss if needed
+        return mu
+
+
 def get_eeg_encoder(
     encoder_type: str = "labram",
     n_channels: int = 27,
@@ -290,7 +376,7 @@ def get_eeg_encoder(
     """Factory function to get EEG encoder by type.
 
     Args:
-        encoder_type: Type of encoder ('labram', 'eegnet', 'simplecnn').
+        encoder_type: Type of encoder ('labram', 'eegnet', 'simplecnn', 'eeg2vec').
         n_channels: Number of EEG channels.
         n_times: Number of time samples per window.
         emb_size: Embedding dimension.
@@ -340,8 +426,18 @@ def get_eeg_encoder(
             emb_size=emb_size,
             **kwargs,
         )
+    elif encoder_type == "eeg2vec":
+        return EEG2VecEncoder(
+            n_channels=n_channels,
+            n_times=n_times,
+            emb_size=emb_size,
+            **kwargs,
+        )
     else:
-        raise ValueError(f"Unknown encoder type: {encoder_type}. Available: labram, eegnet, simplecnn")
+        raise ValueError(
+            f"Unknown encoder type: {encoder_type}. "
+            f"Available: labram, eegnet, simplecnn, eeg2vec"
+        )
 
 
 def is_labram_available() -> bool:
@@ -405,6 +501,14 @@ def test_encoders():
     print(f"  Input shape: {x.shape}")
     print(f"  Output shape: {out.shape}")
     print(f"  Parameters: {sum(p.numel() for p in cnn.parameters()):,}")
+
+    # Test EEG2Vec encoder
+    print("\nTesting EEG2Vec encoder:")
+    eeg2vec = EEG2VecEncoder(n_channels=n_channels, n_times=n_times, emb_size=256)
+    out = eeg2vec(x)
+    print(f"  Input shape: {x.shape}")
+    print(f"  Output shape: {out.shape}")
+    print(f"  Parameters: {sum(p.numel() for p in eeg2vec.parameters()):,}")
 
     print("\nEncoder tests complete.")
 

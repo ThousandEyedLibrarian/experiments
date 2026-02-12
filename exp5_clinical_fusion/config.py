@@ -30,7 +30,7 @@ CLINICAL_CONFIG = {
         "ld",
     ],
     "categorical_features": ["lesion", "eeg_cat"],
-    "input_dim": 20,  # 13 binary + 1 numeric + 6 one-hot
+    "input_dim": 19,  # 13 binary + 4 age bins + 2 binary categorical
 }
 
 # Text embeddings (from exp1/exp3)
@@ -48,7 +48,7 @@ SMILES_EMBEDDINGS = {
 ASM_NAMES_FILE = OUTPUTS_DIR / "asm_drug_names.txt"
 
 # Embedding dimensions
-CLINICAL_DIM = 20
+CLINICAL_DIM = 19
 TEXT_DIM = 768
 EEG_DIM = 256  # SimpleCNN output after aggregation
 SMILES_DIMS = {

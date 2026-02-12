@@ -58,7 +58,7 @@ class AblationModel(nn.Module):
         """Initialise ablation model.
 
         Args:
-            encoder_type: Type of window encoder ('simplecnn', 'eegnet', 'labram').
+            encoder_type: Type of window encoder ('simplecnn', 'eegnet', 'labram', 'eeg2vec').
             aggregator_type: Type of aggregator ('transformer', 'attention', 'maxpool', 'lstm').
             n_channels: Number of EEG channels.
             n_times: Number of time samples per window.
@@ -327,6 +327,15 @@ def define_ablation_experiments() -> List[Dict]:
         "aggregator_type": "transformer",
         "embed_dim": 128,  # LaBraM uses smaller embedding for memory
         "output_dim": 128,
+        "num_layers": 2,
+    })
+
+    experiments.append({
+        "name": "encoder_eeg2vec",
+        "encoder_type": "eeg2vec",
+        "aggregator_type": "transformer",
+        "embed_dim": 256,
+        "output_dim": 256,
         "num_layers": 2,
     })
 

@@ -44,6 +44,7 @@ BATCH_SIZE_BY_ENCODER = {
     "simplecnn": 8,
     "labram": 1,  # LaBraM is very memory-intensive
     "eegnet": 8,  # EEGNet is lightweight
+    "eeg2vec": 8,  # Similar footprint to SimpleCNN
 }
 
 # Encoder-specific window chunk sizes for memory efficiency
@@ -51,6 +52,7 @@ CHUNK_SIZE_BY_ENCODER = {
     "simplecnn": 32,
     "labram": 4,  # Process fewer windows at once for LaBraM
     "eegnet": 32,  # EEGNet is lightweight
+    "eeg2vec": 32,  # Similar footprint to SimpleCNN
 }
 
 # Model configuration

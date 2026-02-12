@@ -10,6 +10,7 @@ import torch
 from torch.utils.data import Dataset
 
 from .config import (
+    AGE_BINS,
     CLINICAL_CONFIG,
     CSV_PATH,
     OUTCOME_MAPPING,
@@ -124,8 +125,8 @@ class ClinicalFeaturePreprocessor:
     This class must be fit on training data only to prevent data leakage.
     It handles:
     - Mode imputation for binary/categorical features
-    - Z-score standardisation for numeric features
-    - One-hot encoding for categorical features
+    - Age binning into groups (Hakeem et al. 2022)
+    - Binary encoding for categorical features (normal vs abnormal)
     """
 
     def __init__(self):
@@ -134,11 +135,9 @@ class ClinicalFeaturePreprocessor:
         self.categorical_features = CLINICAL_CONFIG["categorical_features"]
 
         # Fitted parameters (computed on training set only)
-        self.numeric_mean: Optional[Dict[str, float]] = None
-        self.numeric_std: Optional[Dict[str, float]] = None
+        self.numeric_mean: Optional[Dict[str, float]] = None  # Used for imputation before binning
         self.binary_modes: Optional[Dict[str, float]] = None
         self.categorical_modes: Optional[Dict[str, float]] = None
-        self.categorical_categories: Optional[Dict[str, List[float]]] = None
 
         self._fitted = False
 
@@ -151,15 +150,10 @@ class ClinicalFeaturePreprocessor:
         Returns:
             Self for chaining.
         """
-        # Compute statistics for numeric features
+        # Compute mean for numeric features (used for imputation before binning)
         self.numeric_mean = {}
-        self.numeric_std = {}
         for col in self.numeric_features:
             self.numeric_mean[col] = df[col].mean()
-            self.numeric_std[col] = df[col].std()
-            # Avoid division by zero
-            if self.numeric_std[col] == 0:
-                self.numeric_std[col] = 1.0
 
         # Compute modes for binary features
         self.binary_modes = {}
@@ -169,15 +163,12 @@ class ClinicalFeaturePreprocessor:
             mode_val = col_data.mode()
             self.binary_modes[col] = mode_val.iloc[0] if len(mode_val) > 0 else 0.0
 
-        # Compute modes and categories for categorical features
+        # Compute modes for categorical features (used for imputation)
         self.categorical_modes = {}
-        self.categorical_categories = {}
         for col in self.categorical_features:
             col_data = pd.to_numeric(df[col], errors="coerce")
             mode_val = col_data.mode()
             self.categorical_modes[col] = mode_val.iloc[0] if len(mode_val) > 0 else 1.0
-            # Define fixed categories (1, 2, 3) for both lesion and eeg_cat
-            self.categorical_categories[col] = [1.0, 2.0, 3.0]
 
         self._fitted = True
         return self
@@ -203,26 +194,23 @@ class ClinicalFeaturePreprocessor:
             col_data = col_data.fillna(self.binary_modes[col])
             features.append(col_data.values.reshape(-1, 1))
 
-        # Process numeric features (1 feature: age_init)
+        # Process age as binned one-hot features (4 features)
+        # Bins: <18, 18-29, 29-46, >46 (Hakeem et al. 2022)
         for col in self.numeric_features:
             col_data = df[col].copy()
-            # Impute missing with mean
             col_data = col_data.fillna(self.numeric_mean[col])
-            # Standardise
-            col_data = (col_data - self.numeric_mean[col]) / self.numeric_std[col]
-            features.append(col_data.values.reshape(-1, 1))
+            for i in range(len(AGE_BINS) - 1):
+                bin_col = ((col_data >= AGE_BINS[i]) & (col_data < AGE_BINS[i + 1])).astype(float)
+                features.append(bin_col.values.reshape(-1, 1))
 
-        # Process categorical features with one-hot encoding (6 features total)
+        # Process categorical features as binary presence (2 features total)
+        # lesion: 1=normal->0, 2/3=abnormal->1
+        # eeg_cat: 1=normal->0, 2/3=abnormal->1
         for col in self.categorical_features:
             col_data = pd.to_numeric(df[col], errors="coerce")
-            # Impute missing with mode
             col_data = col_data.fillna(self.categorical_modes[col])
-
-            # One-hot encode
-            categories = self.categorical_categories[col]
-            for cat in categories:
-                one_hot = (col_data == cat).astype(float).values.reshape(-1, 1)
-                features.append(one_hot)
+            binary = (col_data > 1.0).astype(float)
+            features.append(binary.values.reshape(-1, 1))
 
         # Concatenate all features
         feature_matrix = np.hstack(features).astype(np.float32)

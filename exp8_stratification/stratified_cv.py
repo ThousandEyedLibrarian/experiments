@@ -22,6 +22,24 @@ except ImportError:
 
 from .config import CV_CONFIG, STRATIFICATION_FEATURES
 
+# Age bins following Hakeem et al. 2022 (JAMA Neurology)
+AGE_BINS = [0, 18, 29, 46, float("inf")]
+
+
+def bin_age(age_series: pd.Series, bins: list = None) -> pd.Series:
+    """Bin age into groups following Hakeem et al. 2022.
+
+    Args:
+        age_series: Series of age values.
+        bins: Bin edges. Defaults to [0, 18, 29, 46, inf].
+
+    Returns:
+        Series of integer bin labels (0, 1, 2, 3).
+    """
+    if bins is None:
+        bins = AGE_BINS
+    return pd.cut(age_series, bins=bins, labels=False, right=False)
+
 
 def get_outcome_only_splits(
     df: pd.DataFrame,
@@ -92,6 +110,15 @@ def get_multilabel_splits(
     # Default stratification columns
     if stratify_cols is None:
         stratify_cols = ["outcome"] + STRATIFICATION_FEATURES
+
+    # Compute derived columns if needed
+    df = df.copy()
+    if "age_group" in stratify_cols and "age_group" not in df.columns:
+        if "age_init" in df.columns:
+            df["age_group"] = bin_age(df["age_init"].fillna(df["age_init"].median()))
+        else:
+            logging.warning("'age_init' not found, cannot compute age_group")
+            stratify_cols = [c for c in stratify_cols if c != "age_group"]
 
     # Build multi-label matrix
     # Each column becomes a one-hot encoding for multi-label stratification

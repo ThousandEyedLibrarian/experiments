@@ -9,6 +9,11 @@ CSV_PATH = DATA_DIR / "alfred_1st_regimen.csv"
 OUTPUTS_DIR = BASE_DIR / "outputs"
 RESULTS_DIR = OUTPUTS_DIR / "exp4_results"
 
+# Age bins following Hakeem et al. 2022 (JAMA Neurology)
+# Tertile-based from Glasgow cohort, <18 added for HEP cohort compatibility
+AGE_BINS = [0, 18, 29, 46, float("inf")]
+AGE_BIN_LABELS = ["under_18", "18_to_28", "29_to_45", "46_plus"]
+
 # Clinical feature configuration
 CLINICAL_CONFIG = {
     "numeric_features": ["age_init"],
@@ -28,8 +33,8 @@ CLINICAL_CONFIG = {
         "ld",
     ],
     "categorical_features": ["lesion", "eeg_cat"],
-    # Final dimension: 13 binary + 1 numeric + 3 (lesion one-hot) + 3 (eeg_cat one-hot) = 20
-    "input_dim": 20,
+    # Final dimension: 13 binary + 4 age bins + 2 binary categorical = 19
+    "input_dim": 19,
 }
 
 # Experiment 4a: Simple MLP

@@ -32,7 +32,7 @@ CLINICAL_CONFIG = {
         "ld",
     ],
     "categorical_features": ["lesion", "eeg_cat"],
-    "input_dim": 20,  # 13 binary + 1 numeric + 6 one-hot
+    "input_dim": 19,  # 13 binary + 4 age bins + 2 binary categorical
 }
 
 # Features with severe imbalance (>95% majority)
@@ -40,7 +40,7 @@ SEVERELY_IMBALANCED_FEATURES = ["ld", "birth_t", "febrile", "ci"]
 
 # Features to use for multi-label stratification
 # (outcome is always included, these are additional)
-STRATIFICATION_FEATURES = ["focal", "sex"]
+STRATIFICATION_FEATURES = ["focal", "sex", "age_group"]
 
 # Text embeddings
 TEXT_EMBEDDINGS = {
@@ -56,7 +56,7 @@ SMILES_EMBEDDINGS = {
 ASM_NAMES_FILE = OUTPUTS_DIR / "asm_drug_names.txt"
 
 # Embedding dimensions
-CLINICAL_DIM = 20
+CLINICAL_DIM = 19
 TEXT_DIM = 768
 EEG_DIM = 256
 SMILES_DIM = 768
