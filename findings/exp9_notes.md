@@ -136,12 +136,61 @@ python -m exp9_eeg_investigation.run_experiments          # All experiments
 
 ---
 
+## HPC Run 1: Initial Encoder Ablation (12 February 2026)
+
+### Jobs Submitted
+
+Three encoder ablation experiments submitted to M3 HPC:
+
+| Job | Experiment | Encoder | Status |
+|-----|-----------|---------|--------|
+| 1 | baseline_simplecnn_transformer | SimpleCNN | FAILED |
+| 2 | encoder_eegnet | EEGNet | FAILED |
+| 3 | encoder_labram | LaBraM | FAILED |
+
+### Results
+
+All three jobs failed with the same error:
+
+```
+iterative-stratification required for multi-label stratification.
+Install with: uv pip install iterative-stratification
+```
+
+**Root cause:** The `iterative-stratification` package was not installed in the HPC `.venv-others` environment. The `exp9_eeg_investigation/run_experiments.py` script defaults to multi-label stratification (via `exp8_stratification/stratified_cv.py`), which requires `MultilabelStratifiedKFold` from the `iterstrat` package.
+
+**Contributing factors:**
+1. `check_environment.py` does not validate `iterative-stratification` as a dependency
+2. `exp9` has a `--no-multilabel` flag but defaults to requiring the package
+3. The error occurs at runtime when `get_multilabel_splits()` is called, not at import time
+
+### Fix Required
+
+1. Install `iterative-stratification` in HPC environment: `uv pip install iterative-stratification`
+2. Add `iterative-stratification` to `check_environment.py` validation
+3. Consider adding a graceful fallback with warning instead of hard failure
+
+---
+
 ## Expected Results
 
 With multi-label stratification:
 - AUC std should reduce from 0.113 to ~0.03-0.04
 - Fold min-max range should reduce from 0.321 to <0.15
 - More reliable model comparison between architectures
+
+---
+
+## Encoder Inventory (Updated)
+
+| Encoder | Parameters | Notes |
+|---------|------------|-------|
+| SimpleCNN | 857K | Current baseline |
+| EEGNet | 256K | 3x fewer params, EEG-specific |
+| LaBraM | 1.0M | Transformer-based, high memory |
+| EEG2Vec | 510K | CVAE with EEGNet backbone (new) |
+
+EEG2Vec encoder added 12 February 2026, based on arxiv 2207.08002.
 
 ---
 
@@ -155,13 +204,15 @@ With multi-label stratification:
 | `exp9_eeg_investigation/quality_analysis.py` | EEG quality metrics |
 | `exp9_eeg_investigation/run_experiments.py` | Ablation framework |
 | `exp2_fusion/models/aggregators.py` | Alternative aggregators |
+| `exp2_fusion/models/eeg_encoders.py` | EEG2Vec encoder added |
 
 ---
 
 ## Next Steps
 
-1. Run fold analysis to validate stratification improvements
-2. Run quality analysis to identify problem recordings
-3. Re-run Exp5c with multi-label stratification
-4. Execute ablation study to identify best architecture
-5. Compare EEGNet vs SimpleCNN with controlled stratification
+1. Install `iterative-stratification` on HPC and resubmit jobs
+2. Add EEG2Vec encoder job to submission batch
+3. Run fold analysis to validate stratification improvements
+4. Run quality analysis to identify problem recordings
+5. Re-run Exp5c with multi-label stratification
+6. Execute full ablation study to identify best architecture

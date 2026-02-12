@@ -175,6 +175,23 @@ def check_exp2_packages() -> bool:
     return success
 
 
+def check_stratification_packages() -> bool:
+    """Check stratification dependencies (required for exp4-9)."""
+    header("Stratification Packages")
+    success = True
+
+    try:
+        from iterstrat.ml_stratifiers import MultilabelStratifiedKFold
+        ok("iterative-stratification available")
+    except ImportError as e:
+        fail(f"iterative-stratification: {e}")
+        fail("Required for multi-label CV stratification (exp4-9)")
+        fail("Install with: uv pip install iterative-stratification")
+        success = False
+
+    return success
+
+
 def check_data_files() -> bool:
     """Check required data files exist."""
     header("Data Files")
@@ -277,6 +294,7 @@ def main():
     if args.exp2 or args.all:
         all_passed &= check_exp2_packages()
 
+    all_passed &= check_stratification_packages()
     all_passed &= check_data_files()
 
     # Summary

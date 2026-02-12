@@ -192,13 +192,21 @@ def run_ablation_experiment(
     """
     logger.info(f"Running ablation: {ablation_config['name']}")
 
-    # Get splits
+    # Get splits (fall back to outcome-only if iterative-stratification unavailable)
     if use_multilabel_stratification:
-        splits = list(get_multilabel_splits(
-            df,
-            stratify_cols=["outcome", "focal", "sex"],
-            n_splits=CV_CONFIG["n_splits"],
-        ))
+        try:
+            splits = list(get_multilabel_splits(
+                df,
+                stratify_cols=["outcome", "focal", "sex", "age_group"],
+                n_splits=CV_CONFIG["n_splits"],
+            ))
+        except ImportError:
+            logger.warning(
+                "iterative-stratification not installed, falling back to "
+                "outcome-only stratification. Install with: "
+                "uv pip install iterative-stratification"
+            )
+            splits = list(get_outcome_only_splits(df, n_splits=CV_CONFIG["n_splits"]))
     else:
         splits = list(get_outcome_only_splits(df, n_splits=CV_CONFIG["n_splits"]))
 
