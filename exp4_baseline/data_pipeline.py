@@ -195,7 +195,7 @@ class ClinicalFeaturePreprocessor:
             features.append(col_data.values.reshape(-1, 1))
 
         # Process age as binned one-hot features (4 features)
-        # Bins: <18, 18-29, 29-46, >46 (Hakeem et al. 2022)
+        # Bins: [0,18), [18,29), [29,46), [46,inf) (Hakeem et al. 2022)
         for col in self.numeric_features:
             col_data = df[col].copy()
             col_data = col_data.fillna(self.numeric_mean[col])

@@ -14,20 +14,13 @@ utilities for defining hyperparameter grids for our PyTorch models.
 import itertools
 import json
 import logging
-from copy import deepcopy
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional, Tuple
+from typing import Any, Callable, Dict, List, Optional
 
 import numpy as np
 import pandas as pd
 from sklearn.model_selection import StratifiedKFold
-
-try:
-    from iterstrat.ml_stratifiers import MultilabelStratifiedKFold
-    ITERSTRAT_AVAILABLE = True
-except ImportError:
-    ITERSTRAT_AVAILABLE = False
 
 logger = logging.getLogger(__name__)
 
@@ -195,12 +188,20 @@ def nested_cv(
             })
 
     # Aggregate outer fold results
+    failed_folds = [r for r in outer_fold_results if "error" in r]
+    if failed_folds:
+        logger.warning(
+            f"{len(failed_folds)}/{outer_splits} outer folds failed. "
+            f"AUC statistics may be unreliable."
+        )
+
     outer_aucs = [r.get("auc", 0.0) for r in outer_fold_results]
     results = {
         "experiment_name": experiment_name,
         "outer_splits": outer_splits,
         "inner_splits": inner_splits,
         "n_param_combinations": n_combos,
+        "n_failed_outer_folds": len(failed_folds),
         "param_grid": {k: [str(v) for v in vals] for k, vals in param_grid.items()},
         "outer_fold_results": outer_fold_results,
         "best_params_per_fold": best_params_per_fold,

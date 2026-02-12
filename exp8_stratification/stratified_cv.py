@@ -21,9 +21,7 @@ except ImportError:
     )
 
 from .config import CV_CONFIG, STRATIFICATION_FEATURES
-
-# Age bins following Hakeem et al. 2022 (JAMA Neurology)
-AGE_BINS = [0, 18, 29, 46, float("inf")]
+from exp4_baseline.config import AGE_BINS
 
 
 def bin_age(age_series: pd.Series, bins: list = None) -> pd.Series:
