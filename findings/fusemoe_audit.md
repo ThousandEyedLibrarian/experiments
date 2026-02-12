@@ -119,25 +119,58 @@ not used in any of the three MoE strategy classes - it may be used elsewhere in 
 professor's codebase or was left as a dead import. The `shared/fuse_moe.py` will fail to
 import as-is due to this missing dependency.
 
-## Recommendations
+## Recommendations (Original)
 
-1. **Fix the dead import**: Remove `from commons import ProbGaussianNoise` from
-   `shared/fuse_moe.py` or add a try/except guard, so the module can be imported
-   for reference and testing.
+1. **Fix the dead import** - RESOLVED
+2. **Consider Laplace gating** - RESOLVED
+3. **Consider temperature annealing** - RESOLVED
+4. **Consider deeper experts** - RESOLVED
+5. **MI loss vs CV-squared** - RESOLVED
+6. **Fix exp2 KL loss** - RESOLVED
 
-2. **Consider Laplace gating**: The professor's Laplace gating with learned expert
-   embeddings is more expressive than our linear softmax gate. Worth testing whether
-   this improves expert specialisation.
+---
 
-3. **Consider temperature annealing**: The professor uses temperature decay to sharpen
-   routing decisions over training. This could reduce expert collapse.
+## Resolution (2026-02-13)
 
-4. **Consider deeper experts**: The professor's 3-layer residual experts are deeper
-   than our 2-layer MLPs. Given our small dataset (107-286 patients), our shallower
-   experts may be more appropriate to avoid overfitting.
+All experiment MoE implementations have been rewritten to use `shared/fuse_moe.py`
+(the professor's reference implementation). The following changes were made:
 
-5. **MI loss vs CV-squared**: The MI-based load balancing is more principled. Could
-   be tested as a drop-in replacement in our training loop.
+### Changes Applied
 
-6. **Fix exp2 KL loss**: The current formulation in `exp2_fusion/models/fusion.py`
-   (line 210) mixes KL divergence terms - should be reviewed for correctness.
+| Issue | Before | After |
+|-------|--------|-------|
+| Gating mechanism | Softmax (linear gate) | Laplace distance-based gating |
+| Load balancing loss | CV-squared (exp1b) / malformed KL (exp2b, exp3b, exp7b) | MI loss (information-theoretic) |
+| Expert architecture | 2-layer MLP (no residuals) | 3-layer residual blocks with LayerNorm |
+| Temperature | None | Exponential annealing (1.0 -> 0.5, decay 0.9995) |
+| Dead import | `ProbGaussianNoise` commented out | Already commented out, verified importable |
+
+### Strategy Assignments
+
+| Experiment | Strategy | Rationale |
+|------------|----------|-----------|
+| exp1b | `FuseMoE("permodality", num_modalities=2)` | Text + SMILES routed separately through shared experts in each MoEFusionLayer |
+| exp2b | `FuseMoE("joint", num_modalities=1)` | Single concatenated (attended_eeg + smiles) input, joint routing |
+| exp3b | `FuseMoE("permodality", num_modalities=3)` | Text, EEG, SMILES modality tokens routed separately after cross-modal self-attention |
+| exp7b | `FuseMoE("permodality", num_modalities=4)` | Clinical, text, EEG, SMILES modality tokens routed separately after cross-modal self-attention |
+
+### Training Loop Updates
+
+Temperature annealing added to all MoE training loops (exp1b, exp2b, exp3b, exp7b):
+- `global_step` counter initialised at 0 per fold
+- `model.update_temperature(global_step)` called after each `optimizer.step()`
+- Temperature decays exponentially per batch: `max(0.5, 1.0 * 0.9995^step)`
+
+### Files Modified
+
+**Model files:**
+- `exp1_fusion/models/fusemoe.py` - Removed `SparseGatedMoE`, use `shared.fuse_moe.FuseMoE`
+- `exp2_fusion/models/fusion.py` - Removed `Expert` + `SparseMoELayer`, use `shared.fuse_moe.FuseMoE`
+- `exp3_fusion/models/triple_fusemoe.py` - Removed `Expert` + `SparseMoELayer`, use `shared.fuse_moe.FuseMoE`
+- `exp7_all_modalities/models.py` - Removed `Expert` + `SparseMoELayer`, use `shared.fuse_moe.FuseMoE`
+
+**Training files:**
+- `exp1_fusion/training.py` - Added `global_step` + temperature annealing
+- `exp2_fusion/training.py` - Added `global_step` + temperature annealing
+- `exp3_fusion/training.py` - Added `global_step` + temperature annealing
+- `exp7_all_modalities/training.py` - Added `global_step` + temperature annealing
