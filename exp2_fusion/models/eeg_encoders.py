@@ -98,9 +98,9 @@ class LaBraMEncoder(nn.Module):
             neural_tokenizer=True,
         )
 
-        # Remove the final classification layer
-        # We'll use fc_norm output as embedding
-        self.model.final_layer = nn.Identity()
+        # Keep the final_layer as Linear(internal_dim, emb_size)
+        # The braindecode Labram internal dimension (tied to patch_size)
+        # differs from emb_size, so final_layer provides the projection.
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """Extract embeddings from EEG windows.
