@@ -521,8 +521,9 @@ Run on M3 HPC (Job 51362383, node m3n102, A100 80GB, ~20 min runtime).
 4. ~~Test LaBraM/EEGNet/EEG2Vec encoders~~ **DONE** - Exp9 encoder ablation complete (EEG2Vec best, LaBraM underperforms)
 5. ~~Run Exp9 encoder ablation experiments~~ **DONE** - 4 encoders compared, EEG2Vec selected as best
 6. ~~Run Exp10 frozen encoder experiments~~ **DONE** - Qwen 2.5 0.5B outperforms biomedical models in frozen mode
-7. Run Exp9 remaining ablations: aggregator, depth, and dimension experiments with EEG2Vec
+7. --Run Exp9 remaining ablations: aggregator, depth, and dimension experiments with EEG2Vec-- **DONE** - Running, reran all exp9 with EEG2VEC
 8. --Run Exp10 fine-tuning experiments (Phase 2) - unfreeze last 2 transformer layers-- **DONE** - Running
-9. Re-run Exp5c/Exp7 with EEG2Vec encoder (replacing SimpleCNN)
+8. --Replace fusemoe implementation with revised portions from Duong's fusemoe.py in shared/-- **IN PROG**
+9. --Re-run Exp5c/Exp7 with EEG2Vec encoder (replacing SimpleCNN)-- **IN PROG**
 10. Hyperparameter optimisation for best-performing model (Exp7a ClinicalBERT+ChemBERTa) - Optuna
-11. External validation on further data or an additional dataset
+11. External validation on further data or an additional dataset if it becomes available
