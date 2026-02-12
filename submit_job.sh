@@ -62,7 +62,7 @@ show_help() {
     echo ""
     echo "Available experiments:"
     # List experiment directories dynamically
-    SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+    SCRIPT_DIR="${SLURM_SUBMIT_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)}"
     for dir in "${SCRIPT_DIR}"/exp*_*/; do
         dirname=$(basename "$dir")
         prefix="${dirname%%_*}"
@@ -115,7 +115,8 @@ done
 #==============================================================================
 
 # Get the directory where this script is located
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# Use SLURM_SUBMIT_DIR when running via sbatch (SLURM copies scripts to a spool directory)
+SCRIPT_DIR="${SLURM_SUBMIT_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)}"
 
 # Find the experiment directory matching the prefix
 EXP_DIR=""
