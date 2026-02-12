@@ -9,115 +9,10 @@ import torch.nn as nn
 import torch.nn.functional as F
 from typing import Tuple, Optional
 
-
-class SparseGatedMoE(nn.Module):
-    """
-    Sparse gated mixture of experts layer.
-
-    Uses top-k routing to select a subset of experts for each input,
-    enabling efficient computation while maintaining model capacity.
-    """
-
-    def __init__(
-        self,
-        input_dim: int,
-        hidden_dim: int,
-        num_experts: int = 4,
-        top_k: int = 2,
-        noise_std: float = 0.1,
-    ):
-        """
-        Args:
-            input_dim: Input/output dimension
-            hidden_dim: Hidden dimension within each expert
-            num_experts: Number of expert networks
-            top_k: Number of experts to route each input to
-            noise_std: Standard deviation of noise for load balancing
-        """
-        super().__init__()
-
-        self.num_experts = num_experts
-        self.top_k = top_k
-        self.noise_std = noise_std
-
-        # Expert networks (simple 2-layer MLPs)
-        self.experts = nn.ModuleList([
-            nn.Sequential(
-                nn.Linear(input_dim, hidden_dim),
-                nn.ReLU(),
-                nn.Linear(hidden_dim, input_dim),
-            )
-            for _ in range(num_experts)
-        ])
-
-        # Gating network
-        self.gate = nn.Linear(input_dim, num_experts)
-
-    def forward(self, x: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
-        """
-        Forward pass with sparse routing.
-
-        Args:
-            x: (batch, seq_len, dim) or (batch, dim) input tensor
-
-        Returns:
-            output: Same shape as input
-            aux_loss: Load balancing loss (scalar)
-        """
-        # Handle both 2D and 3D inputs
-        orig_shape = x.shape
-        if x.dim() == 2:
-            x = x.unsqueeze(1)  # (B, 1, D)
-
-        batch_size, seq_len, dim = x.shape
-        x_flat = x.view(-1, dim)  # (B*S, D)
-
-        # Compute gating logits
-        gate_logits = self.gate(x_flat)  # (B*S, E)
-
-        # Add noise during training for load balancing
-        if self.training and self.noise_std > 0:
-            noise = torch.randn_like(gate_logits) * self.noise_std
-            gate_logits = gate_logits + noise
-
-        # Top-k gating
-        top_k_logits, top_k_indices = gate_logits.topk(self.top_k, dim=-1)
-        top_k_gates = F.softmax(top_k_logits, dim=-1)  # (B*S, K)
-
-        # Compute all expert outputs
-        expert_outputs = torch.stack(
-            [expert(x_flat) for expert in self.experts], dim=1
-        )  # (B*S, E, D)
-
-        # Gather top-k expert outputs
-        top_k_expert_outputs = torch.gather(
-            expert_outputs, 1,
-            top_k_indices.unsqueeze(-1).expand(-1, -1, dim)
-        )  # (B*S, K, D)
-
-        # Weighted combination
-        output = (top_k_gates.unsqueeze(-1) * top_k_expert_outputs).sum(dim=1)
-        output = output.view(batch_size, seq_len, dim)
-
-        # Restore original shape if needed
-        if len(orig_shape) == 2:
-            output = output.squeeze(1)
-
-        # Compute auxiliary load balancing loss
-        aux_loss = self._load_balance_loss(gate_logits)
-
-        return output, aux_loss
-
-    def _load_balance_loss(self, gate_logits: torch.Tensor) -> torch.Tensor:
-        """
-        Compute load balancing loss to encourage even expert utilization.
-
-        Uses coefficient of variation (CV^2) as the loss.
-        """
-        gates = F.softmax(gate_logits, dim=-1)
-        importance = gates.sum(dim=0)  # Sum over batch
-        cv = importance.std() / (importance.mean() + 1e-8)
-        return cv ** 2
+import sys
+from pathlib import Path
+sys.path.insert(0, str(Path(__file__).parent.parent.parent))
+from shared.fuse_moe import FuseMoE
 
 
 class MoEFusionLayer(nn.Module):
@@ -141,12 +36,15 @@ class MoEFusionLayer(nn.Module):
             hidden_dim, num_heads, dropout=dropout, batch_first=True
         )
 
-        # Cross-modal MoE
-        self.moe = SparseGatedMoE(
-            input_dim=hidden_dim,
-            hidden_dim=hidden_dim * 2,
+        # Cross-modal MoE (shared reference implementation)
+        self.fuse_moe = FuseMoE(
+            strategy="permodality",
+            input_dims=hidden_dim,
+            hidden_dim=hidden_dim,
+            out_dim=hidden_dim,
             num_experts=num_experts,
-            top_k=top_k,
+            k=top_k,
+            num_modalities=2,
         )
 
         # Layer norms
@@ -189,14 +87,14 @@ class MoEFusionLayer(nn.Module):
         smiles_attn, _ = self.smiles_self_attn(smiles_h, smiles_h, smiles_h)
         smiles_h = self.norm1_smiles(smiles_h + smiles_attn)
 
-        # Cross-modal MoE fusion
-        combined = torch.cat([text_h, smiles_h], dim=1)  # (B, 2, H)
-        fused, aux_loss = self.moe(combined)
-        fused = self.norm2(combined + fused)
-
-        # Split back
-        text_h = fused[:, :1, :]
-        smiles_h = fused[:, 1:, :]
+        # Cross-modal MoE fusion (per-modality routing)
+        text_flat = text_h.squeeze(1)      # (B, H)
+        smiles_flat = smiles_h.squeeze(1)  # (B, H)
+        fused_out, aux_loss = self.fuse_moe(text_flat, smiles_flat)
+        fused_out = self.norm2(fused_out)
+        # Add fused output as residual to both modalities
+        text_h = text_h + fused_out.unsqueeze(1)
+        smiles_h = smiles_h + fused_out.unsqueeze(1)
 
         # FFN
         text_h = self.norm3(text_h + self.ffn(text_h))
@@ -293,6 +191,11 @@ class SimplifiedFuseMoE(nn.Module):
                 nn.init.xavier_uniform_(module.weight)
                 if module.bias is not None:
                     nn.init.zeros_(module.bias)
+
+    def update_temperature(self, global_step: int):
+        """Update FuseMoE temperature for annealing across all fusion layers."""
+        for layer in self.fusion_layers:
+            layer.fuse_moe.update_temperature(global_step)
 
     def forward(
         self,
