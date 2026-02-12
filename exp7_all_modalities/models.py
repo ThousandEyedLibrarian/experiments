@@ -26,6 +26,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 from exp2_fusion.models.eeg_encoders import get_eeg_encoder
 from exp2_fusion.models.eeg_transformer import EEGWindowTransformer
+from shared.fuse_moe import FuseMoE
 
 
 class ModalityEncoder(nn.Module):
@@ -204,87 +205,6 @@ class QuadFusionMLP(nn.Module):
         return self.classifier(fused)
 
 
-class Expert(nn.Module):
-    """Single expert network for Mixture of Experts."""
-
-    def __init__(self, input_dim: int, hidden_dim: int, output_dim: int, dropout: float = 0.1):
-        super().__init__()
-        self.net = nn.Sequential(
-            nn.Linear(input_dim, hidden_dim),
-            nn.GELU(),
-            nn.Dropout(dropout),
-            nn.Linear(hidden_dim, output_dim),
-        )
-
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        return self.net(x)
-
-
-class SparseMoELayer(nn.Module):
-    """Sparse Mixture of Experts layer with top-k gating."""
-
-    def __init__(
-        self,
-        input_dim: int,
-        hidden_dim: int,
-        output_dim: int,
-        num_experts: int = 4,
-        top_k: int = 2,
-        dropout: float = 0.1,
-    ):
-        super().__init__()
-
-        self.num_experts = num_experts
-        self.top_k = top_k
-
-        # Gate network
-        self.gate = nn.Linear(input_dim, num_experts)
-
-        # Expert networks
-        self.experts = nn.ModuleList([
-            Expert(input_dim, hidden_dim, output_dim, dropout)
-            for _ in range(num_experts)
-        ])
-
-    def forward(self, x: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
-        """Forward pass with sparse gating."""
-        orig_shape = x.shape
-        if len(orig_shape) == 3:
-            batch, seq, dim = x.shape
-            x = x.view(batch * seq, dim)
-        else:
-            batch = x.shape[0]
-
-        # Compute gate scores
-        gate_scores = self.gate(x)
-        gate_probs = F.softmax(gate_scores, dim=-1)
-
-        # Select top-k experts
-        top_k_probs, top_k_indices = torch.topk(gate_probs, self.top_k, dim=-1)
-        top_k_probs = top_k_probs / top_k_probs.sum(dim=-1, keepdim=True)
-
-        # Compute expert outputs
-        expert_outputs = torch.stack([expert(x) for expert in self.experts], dim=1)
-
-        # Gather selected expert outputs
-        top_k_indices_expanded = top_k_indices.unsqueeze(-1).expand(-1, -1, expert_outputs.shape[-1])
-        selected_outputs = torch.gather(expert_outputs, 1, top_k_indices_expanded)
-
-        # Weight and sum
-        output = (selected_outputs * top_k_probs.unsqueeze(-1)).sum(dim=1)
-
-        # Reshape if needed
-        if len(orig_shape) == 3:
-            output = output.view(batch, seq, -1)
-
-        # Compute load balancing loss
-        expert_usage = gate_probs.mean(dim=0)
-        uniform = torch.ones_like(expert_usage) / self.num_experts
-        aux_loss = (expert_usage * uniform.log() - expert_usage.log() * uniform).sum()
-
-        return output, aux_loss
-
-
 class QuadFusionMoE(nn.Module):
     """FuseMoE model for all 4 modalities (Experiment 7b).
 
@@ -359,21 +279,17 @@ class QuadFusionMoE(nn.Module):
         )
         self.attn_norm = nn.LayerNorm(hidden_dim)
 
-        # MoE fusion layers
-        self.moe_layers = nn.ModuleList([
-            SparseMoELayer(
-                input_dim=hidden_dim,
-                hidden_dim=hidden_dim * 2,
-                output_dim=hidden_dim,
-                num_experts=num_experts,
-                top_k=top_k,
-                dropout=dropout,
-            )
-            for _ in range(num_moe_layers)
-        ])
-        self.moe_norms = nn.ModuleList([
-            nn.LayerNorm(hidden_dim) for _ in range(num_moe_layers)
-        ])
+        # MoE fusion (shared reference implementation)
+        self.fuse_moe = FuseMoE(
+            strategy="permodality",
+            input_dims=hidden_dim,
+            hidden_dim=hidden_dim,
+            out_dim=hidden_dim,
+            num_experts=num_experts,
+            k=top_k,
+            num_modalities=4,
+        )
+        self.fuse_norm = nn.LayerNorm(hidden_dim)
 
         # Classifier
         self.classifier = nn.Sequential(
@@ -381,6 +297,10 @@ class QuadFusionMoE(nn.Module):
             nn.Dropout(dropout),
             nn.Linear(hidden_dim, num_classes),
         )
+
+    def update_temperature(self, global_step: int):
+        """Update FuseMoE temperature for annealing."""
+        self.fuse_moe.update_temperature(global_step)
 
     def encode_windows_chunked(
         self,
@@ -454,15 +374,14 @@ class QuadFusionMoE(nn.Module):
         attn_out, _ = self.cross_attention(modality_tokens, modality_tokens, modality_tokens)
         modality_tokens = self.attn_norm(modality_tokens + attn_out)
 
-        # MoE layers with residual connections
-        total_aux_loss = 0.0
-        for moe_layer, moe_norm in zip(self.moe_layers, self.moe_norms):
-            moe_out, aux_loss = moe_layer(modality_tokens)
-            modality_tokens = moe_norm(modality_tokens + moe_out)
-            total_aux_loss = total_aux_loss + aux_loss
+        # Extract individual modality vectors for per-modality routing
+        clinical_vec = modality_tokens[:, 0, :]
+        text_vec = modality_tokens[:, 1, :]
+        eeg_vec = modality_tokens[:, 2, :]
+        smiles_vec = modality_tokens[:, 3, :]
 
-        # Mean pool across modality tokens
-        fused = modality_tokens.mean(dim=1)  # (batch, hidden_dim)
+        fused, total_aux_loss = self.fuse_moe(clinical_vec, text_vec, eeg_vec, smiles_vec)
+        fused = self.fuse_norm(fused)
 
         # Classify
         logits = self.classifier(fused)

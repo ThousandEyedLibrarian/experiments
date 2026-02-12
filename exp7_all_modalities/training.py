@@ -60,8 +60,13 @@ def train_epoch_moe(
     optimizer: torch.optim.Optimizer,
     criterion: nn.Module,
     device: torch.device,
-) -> float:
-    """Train for one epoch (MoE model with aux loss)."""
+    global_step: int = 0,
+) -> Tuple[float, int]:
+    """Train for one epoch (MoE model with aux loss).
+
+    Returns:
+        Tuple of (avg_loss, updated_global_step).
+    """
     model.train()
     total_loss = 0.0
     n_batches = 0
@@ -82,10 +87,15 @@ def train_epoch_moe(
         torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
         optimizer.step()
 
+        # Temperature annealing
+        if hasattr(model, 'update_temperature'):
+            model.update_temperature(global_step)
+        global_step += 1
+
         total_loss += loss.item()
         n_batches += 1
 
-    return total_loss / n_batches
+    return total_loss / n_batches, global_step
 
 
 def evaluate_mlp(
@@ -276,9 +286,13 @@ def train_fold(
     best_val_auc = 0.0
     best_metrics = {}
     patience_counter = 0
+    global_step = 0
 
     for epoch in range(config["epochs"]):
-        train_loss = train_fn(model, train_loader, optimizer, criterion, device)
+        if fusion == "moe":
+            train_loss, global_step = train_fn(model, train_loader, optimizer, criterion, device, global_step)
+        else:
+            train_loss = train_fn(model, train_loader, optimizer, criterion, device)
         val_loss, val_metrics = eval_fn(model, val_loader, criterion, device)
 
         if val_metrics["auc"] > best_val_auc:
