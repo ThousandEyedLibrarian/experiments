@@ -64,7 +64,7 @@ MAX_WINDOWS = int(EEG_CONFIG["use_duration_sec"] / EEG_CONFIG["window_sec"])  # 
 
 # EEG encoder config
 EEG_ENCODER_CONFIG = {
-    "encoder_type": "simplecnn",
+    "encoder_type": "eeg2vec",
     "n_channels": 27,
     "n_times": 2000,  # 10s @ 200Hz
     "embed_dim": 256,

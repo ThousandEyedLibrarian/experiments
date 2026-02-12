@@ -24,7 +24,7 @@ from .config import (
 import sys
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent))
-from exp2_fusion.models.eeg_encoders import SimpleCNNEncoder
+from exp2_fusion.models.eeg_encoders import get_eeg_encoder
 from exp2_fusion.models.eeg_transformer import EEGWindowTransformer
 
 
@@ -107,6 +107,7 @@ class QuadFusionMLP(nn.Module):
         hidden_dim: int = 64,
         num_classes: int = 2,
         dropout: float = 0.3,
+        eeg_encoder_type: str = "eeg2vec",
         n_channels: int = 27,
         n_times: int = 2000,
         max_windows: int = 120,
@@ -121,12 +122,12 @@ class QuadFusionMLP(nn.Module):
         self.text_encoder = ModalityEncoder(text_dim, hidden_dim, dropout)
         self.smiles_encoder = ModalityEncoder(smiles_dim, hidden_dim, dropout)
 
-        # EEG window encoder (SimpleCNN)
-        self.window_encoder = SimpleCNNEncoder(
+        # EEG window encoder (via factory)
+        self.window_encoder = get_eeg_encoder(
+            encoder_type=eeg_encoder_type,
             n_channels=n_channels,
             n_times=n_times,
             emb_size=256,
-            dropout=dropout,
         )
 
         # EEG window aggregator
@@ -307,6 +308,7 @@ class QuadFusionMoE(nn.Module):
         num_moe_layers: int = 2,
         dropout: float = 0.1,
         aux_loss_weight: float = 0.1,
+        eeg_encoder_type: str = "eeg2vec",
         n_channels: int = 27,
         n_times: int = 2000,
         eeg_embed_dim: int = 256,
@@ -324,12 +326,12 @@ class QuadFusionMoE(nn.Module):
         self.text_proj = nn.Linear(text_dim, hidden_dim)
         self.smiles_proj = nn.Linear(smiles_dim, hidden_dim)
 
-        # EEG window encoder
-        self.window_encoder = SimpleCNNEncoder(
+        # EEG window encoder (via factory)
+        self.window_encoder = get_eeg_encoder(
+            encoder_type=eeg_encoder_type,
             n_channels=n_channels,
             n_times=n_times,
             emb_size=eeg_embed_dim,
-            dropout=dropout,
         )
 
         # Window aggregation transformer
@@ -494,6 +496,7 @@ def get_model(
             hidden_dim=config["hidden_dim"],
             num_classes=config["num_classes"],
             dropout=config["dropout"],
+            eeg_encoder_type=EEG_ENCODER_CONFIG["encoder_type"],
             n_channels=EEG_ENCODER_CONFIG["n_channels"],
             n_times=EEG_ENCODER_CONFIG["n_times"],
             max_windows=EEG_ENCODER_CONFIG["max_windows"],
@@ -513,6 +516,7 @@ def get_model(
             num_moe_layers=config["num_moe_layers"],
             dropout=config["dropout"],
             aux_loss_weight=config["aux_loss_weight"],
+            eeg_encoder_type=EEG_ENCODER_CONFIG["encoder_type"],
             n_channels=EEG_ENCODER_CONFIG["n_channels"],
             n_times=EEG_ENCODER_CONFIG["n_times"],
             eeg_embed_dim=EEG_ENCODER_CONFIG["embed_dim"],
