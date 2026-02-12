@@ -8,6 +8,7 @@ import torch.nn.functional as F
 
 from .eeg_encoders import get_eeg_encoder
 from .eeg_transformer import EEGWindowTransformer
+from shared.fuse_moe import FuseMoE
 
 
 class EEGSMILESMLPFusion(nn.Module):
@@ -131,87 +132,6 @@ class EEGSMILESMLPFusion(nn.Module):
         return logits
 
 
-class Expert(nn.Module):
-    """Single expert network for Mixture of Experts."""
-
-    def __init__(self, input_dim: int, hidden_dim: int, output_dim: int, dropout: float = 0.1):
-        super().__init__()
-        self.net = nn.Sequential(
-            nn.Linear(input_dim, hidden_dim),
-            nn.GELU(),
-            nn.Dropout(dropout),
-            nn.Linear(hidden_dim, output_dim),
-        )
-
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        return self.net(x)
-
-
-class SparseMoELayer(nn.Module):
-    """Sparse Mixture of Experts layer with top-k gating."""
-
-    def __init__(
-        self,
-        input_dim: int,
-        hidden_dim: int,
-        output_dim: int,
-        num_experts: int = 4,
-        top_k: int = 2,
-        dropout: float = 0.1,
-    ):
-        super().__init__()
-
-        self.num_experts = num_experts
-        self.top_k = top_k
-
-        # Gate network
-        self.gate = nn.Linear(input_dim, num_experts)
-
-        # Expert networks
-        self.experts = nn.ModuleList([
-            Expert(input_dim, hidden_dim, output_dim, dropout)
-            for _ in range(num_experts)
-        ])
-
-    def forward(self, x: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
-        """Forward pass with sparse gating.
-
-        Args:
-            x: Input tensor of shape (batch, input_dim)
-
-        Returns:
-            Tuple of (output, aux_loss) where:
-            - output: (batch, output_dim)
-            - aux_loss: Load balancing auxiliary loss
-        """
-        batch_size = x.shape[0]
-
-        # Compute gate scores
-        gate_scores = self.gate(x)
-        gate_probs = F.softmax(gate_scores, dim=-1)
-
-        # Select top-k experts
-        top_k_probs, top_k_indices = torch.topk(gate_probs, self.top_k, dim=-1)
-        top_k_probs = top_k_probs / top_k_probs.sum(dim=-1, keepdim=True)
-
-        # Compute expert outputs
-        expert_outputs = torch.stack([expert(x) for expert in self.experts], dim=1)
-
-        # Gather selected expert outputs
-        top_k_indices_expanded = top_k_indices.unsqueeze(-1).expand(-1, -1, expert_outputs.shape[-1])
-        selected_outputs = torch.gather(expert_outputs, 1, top_k_indices_expanded)
-
-        # Weight and sum
-        output = (selected_outputs * top_k_probs.unsqueeze(-1)).sum(dim=1)
-
-        # Compute load balancing loss
-        expert_usage = gate_probs.mean(dim=0)
-        uniform = torch.ones_like(expert_usage) / self.num_experts
-        aux_loss = (expert_usage * uniform.log() - expert_usage.log() * uniform).sum()
-
-        return output, aux_loss
-
-
 class EEGSMILESFuseMoE(nn.Module):
     """FuseMoE model for EEG + SMILES fusion.
 
@@ -270,14 +190,15 @@ class EEGSMILESFuseMoE(nn.Module):
             batch_first=True,
         )
 
-        # MoE fusion layer
-        self.moe_layer = SparseMoELayer(
-            input_dim=hidden_dim * 2,
-            hidden_dim=hidden_dim * 2,
-            output_dim=hidden_dim,
+        # MoE fusion layer (shared reference implementation)
+        self.fuse_moe = FuseMoE(
+            strategy="joint",
+            input_dims=hidden_dim * 2,
+            hidden_dim=hidden_dim,
+            out_dim=hidden_dim,
             num_experts=num_experts,
-            top_k=top_k,
-            dropout=dropout,
+            k=top_k,
+            num_modalities=1,
         )
 
         # Classifier
@@ -286,6 +207,10 @@ class EEGSMILESFuseMoE(nn.Module):
             nn.Dropout(dropout),
             nn.Linear(hidden_dim, num_classes),
         )
+
+    def update_temperature(self, global_step: int):
+        """Update FuseMoE temperature for annealing."""
+        self.fuse_moe.update_temperature(global_step)
 
     def encode_windows_chunked(
         self,
@@ -344,7 +269,7 @@ class EEGSMILESFuseMoE(nn.Module):
         fused_input = torch.cat([attended_eeg, smiles_proj], dim=-1)
 
         # MoE layer
-        fused, aux_loss = self.moe_layer(fused_input)
+        fused, aux_loss = self.fuse_moe(fused_input)
 
         # Classify
         logits = self.classifier(fused)
