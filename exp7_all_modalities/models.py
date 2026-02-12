@@ -211,8 +211,8 @@ class QuadFusionMoE(nn.Module):
     Architecture:
         Each modality -> Projection(dim->256) + Learnable modality token
         Cross-modal self-attention across 4 modality tokens
-        2 sparse MoE layers
-        Mean pool -> classifier
+        Per-modality FuseMoE routing (Laplace gating, MI loss, 3-layer residual experts)
+        Classifier
     """
 
     def __init__(
@@ -225,7 +225,6 @@ class QuadFusionMoE(nn.Module):
         num_experts: int = 4,
         top_k: int = 2,
         num_heads: int = 4,
-        num_moe_layers: int = 2,
         dropout: float = 0.1,
         aux_loss_weight: float = 0.1,
         eeg_encoder_type: str = "eeg2vec",
@@ -432,7 +431,6 @@ def get_model(
             num_experts=config["num_experts"],
             top_k=config["top_k"],
             num_heads=config["num_heads"],
-            num_moe_layers=config["num_moe_layers"],
             dropout=config["dropout"],
             aux_loss_weight=config["aux_loss_weight"],
             eeg_encoder_type=EEG_ENCODER_CONFIG["encoder_type"],

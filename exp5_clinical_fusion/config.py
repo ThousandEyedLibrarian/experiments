@@ -50,7 +50,7 @@ ASM_NAMES_FILE = OUTPUTS_DIR / "asm_drug_names.txt"
 # Embedding dimensions
 CLINICAL_DIM = 19
 TEXT_DIM = 768
-EEG_DIM = 256  # SimpleCNN output after aggregation
+EEG_DIM = 256  # EEG encoder output after aggregation
 SMILES_DIMS = {
     "chemberta": 768,
     "smilestrf": 256,
@@ -70,7 +70,7 @@ EEG_CONFIG = {
 
 MAX_WINDOWS = int(EEG_CONFIG["use_duration_sec"] / EEG_CONFIG["window_sec"])  # 120
 
-# EEG encoder config (reuse SimpleCNN from exp2)
+# EEG encoder config (reuse encoder from exp2)
 EEG_ENCODER_CONFIG = {
     "encoder_type": "eeg2vec",
     "n_channels": 27,

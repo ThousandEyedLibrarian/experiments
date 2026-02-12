@@ -48,7 +48,7 @@ ASM_NAMES_FILE = OUTPUTS_DIR / "asm_drug_names.txt"
 # Embedding dimensions
 CLINICAL_DIM = 19
 TEXT_DIM = 768
-EEG_DIM = 256  # SimpleCNN output after aggregation
+EEG_DIM = 256  # EEG encoder output after aggregation
 SMILES_DIM = 768  # ChemBERTa
 
 # EEG processing parameters

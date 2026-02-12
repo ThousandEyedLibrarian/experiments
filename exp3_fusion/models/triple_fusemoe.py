@@ -21,8 +21,8 @@ class TripleModalityFuseMoE(nn.Module):
     Architecture:
     - Each modality -> Projection(dim->256) + Learnable modality token
     - Self-attention across 3 modality tokens
-    - 2 sparse MoE layers
-    - Mean pool -> classifier
+    - Per-modality FuseMoE routing (Laplace gating, MI loss, 3-layer residual experts)
+    - Classifier
     """
 
     def __init__(
@@ -34,7 +34,6 @@ class TripleModalityFuseMoE(nn.Module):
         num_experts: int = 4,
         top_k: int = 2,
         num_heads: int = 4,
-        num_moe_layers: int = 2,
         dropout: float = 0.1,
         aux_loss_weight: float = 0.1,
         # EEG encoder config

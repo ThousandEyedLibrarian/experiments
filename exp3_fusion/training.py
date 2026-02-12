@@ -180,7 +180,6 @@ def get_model(
             num_experts=config["num_experts"],
             top_k=config["top_k"],
             num_heads=config["num_heads"],
-            num_moe_layers=config["num_moe_layers"],
             dropout=config["dropout"],
             aux_loss_weight=config["aux_loss_weight"],
             eeg_encoder_type=EEG_ENCODER_CONFIG["encoder_type"],

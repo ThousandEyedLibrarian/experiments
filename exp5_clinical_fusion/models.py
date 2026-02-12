@@ -177,7 +177,7 @@ class ClinicalEEGFusion(nn.Module):
 
     Architecture:
         Clinical (20D) -> Encoder -> 64D
-        EEG (num_windows, 27, 2000) -> SimpleCNN -> Aggregator -> 64D
+        EEG (num_windows, 27, 2000) -> EEG2Vec -> Aggregator -> 64D
         Concatenate -> 128D -> Classifier -> 2 classes
     """
 
@@ -296,7 +296,7 @@ def get_model(
         modality: 'smiles', 'text', or 'eeg'
         smiles_model: 'chemberta' or 'smilestrf' (for smiles modality)
         text_model: 'clinicalbert' or 'pubmedbert' (for text modality)
-        eeg_model: 'simplecnn' (for eeg modality)
+        eeg_model: EEG encoder type string (for eeg modality)
         device: Device to place model on.
 
     Returns:
@@ -382,7 +382,7 @@ def test_models():
     padding_mask = torch.zeros(batch_size, 120, dtype=torch.bool)
     padding_mask[:, 90:] = True  # Last 30 windows are padded
 
-    model = get_model("eeg", eeg_model="simplecnn", device=device)
+    model = get_model("eeg", eeg_model="eeg2vec", device=device)
     print(f"  Parameters: {count_parameters(model):,}")
     output = model(clinical, eeg_windows, padding_mask)
     print(f"  Input: clinical={clinical.shape}, eeg={eeg_windows.shape}")
