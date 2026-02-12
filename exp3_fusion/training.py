@@ -29,8 +29,13 @@ def train_epoch(
     criterion: nn.Module,
     device: torch.device,
     is_moe: bool = False,
-) -> float:
-    """Train for one epoch."""
+    global_step: int = 0,
+) -> Tuple[float, int]:
+    """Train for one epoch.
+
+    Returns:
+        Tuple of (avg_loss, updated_global_step).
+    """
     model.train()
     total_loss = 0.0
     n_batches = 0
@@ -56,10 +61,15 @@ def train_epoch(
         torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
         optimizer.step()
 
+        # Temperature annealing
+        if hasattr(model, 'update_temperature'):
+            model.update_temperature(global_step)
+        global_step += 1
+
         total_loss += loss.item()
         n_batches += 1
 
-    return total_loss / n_batches
+    return total_loss / n_batches, global_step
 
 
 def evaluate(
@@ -241,9 +251,10 @@ def train_fold(
     best_val_auc = 0.0
     best_metrics = {}
     patience_counter = 0
+    global_step = 0
 
     for epoch in range(config["epochs"]):
-        train_loss = train_epoch(model, train_loader, optimizer, criterion, device, is_moe)
+        train_loss, global_step = train_epoch(model, train_loader, optimizer, criterion, device, is_moe, global_step)
         val_loss, val_metrics = evaluate(model, val_loader, criterion, device, is_moe)
 
         if val_metrics["auc"] > best_val_auc:

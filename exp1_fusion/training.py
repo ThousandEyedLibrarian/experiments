@@ -69,8 +69,13 @@ def train_one_epoch(
     device: torch.device,
     use_aux_loss: bool = False,
     aux_loss_weight: float = 0.1,
-) -> float:
-    """Train for one epoch."""
+    global_step: int = 0,
+) -> Tuple[float, int]:
+    """Train for one epoch.
+
+    Returns:
+        Tuple of (avg_loss, updated_global_step).
+    """
     model.train()
     total_loss = 0.0
 
@@ -92,9 +97,14 @@ def train_one_epoch(
         torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
         optimizer.step()
 
+        # Temperature annealing
+        if hasattr(model, 'update_temperature'):
+            model.update_temperature(global_step)
+        global_step += 1
+
         total_loss += loss.item()
 
-    return total_loss / len(train_loader)
+    return total_loss / len(train_loader), global_step
 
 
 def evaluate(
@@ -266,13 +276,15 @@ def run_experiment(
         best_val_auc = 0.0
         patience_counter = 0
         best_model_state = None
+        global_step = 0
 
         for epoch in range(config['epochs']):
             # Train
-            train_loss = train_one_epoch(
+            train_loss, global_step = train_one_epoch(
                 model, train_loader, optimizer, criterion, device,
                 use_aux_loss=use_aux_loss,
                 aux_loss_weight=config.get('aux_loss_weight', 0.1),
+                global_step=global_step,
             )
 
             # Evaluate
