@@ -21,7 +21,7 @@ from torch.utils.data import DataLoader
 BASE_DIR = Path(__file__).parent.parent
 sys.path.insert(0, str(BASE_DIR))
 
-from exp2_fusion.config import EEG_CONFIG, MODEL_CONFIG, TRAIN_CONFIG
+from exp2_fusion.config import EEG_CONFIG, MODEL_CONFIG, TRAIN_CONFIG, BATCH_SIZE_BY_ENCODER
 from exp2_fusion.data_pipeline import prepare_data, create_datasets, get_max_channels
 from exp2_fusion.models.eeg_encoders import get_eeg_encoder, SimpleCNNEncoder
 from exp2_fusion.models.eeg_transformer import EEGWindowTransformer
@@ -217,8 +217,10 @@ def run_ablation_experiment(
             max_channels=n_channels,
         )
 
-        train_loader = DataLoader(train_ds, batch_size=8, shuffle=True)
-        val_loader = DataLoader(val_ds, batch_size=8, shuffle=False)
+        encoder_type = ablation_config.get("encoder_type", "simplecnn")
+        batch_size = BATCH_SIZE_BY_ENCODER.get(encoder_type, 8)
+        train_loader = DataLoader(train_ds, batch_size=batch_size, shuffle=True)
+        val_loader = DataLoader(val_ds, batch_size=batch_size, shuffle=False)
 
         # Create model
         model = AblationModel(
@@ -314,6 +316,15 @@ def define_ablation_experiments() -> List[Dict]:
         "encoder_type": "eegnet",
         "aggregator_type": "transformer",
         "embed_dim": 256,
+        "num_layers": 2,
+    })
+
+    experiments.append({
+        "name": "encoder_labram",
+        "encoder_type": "labram",
+        "aggregator_type": "transformer",
+        "embed_dim": 128,  # LaBraM uses smaller embedding for memory
+        "output_dim": 128,
         "num_layers": 2,
     })
 

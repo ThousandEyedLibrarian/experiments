@@ -43,12 +43,14 @@ TRAIN_CONFIG = {
 BATCH_SIZE_BY_ENCODER = {
     "simplecnn": 8,
     "labram": 1,  # LaBraM is very memory-intensive
+    "eegnet": 8,  # EEGNet is lightweight
 }
 
 # Encoder-specific window chunk sizes for memory efficiency
 CHUNK_SIZE_BY_ENCODER = {
     "simplecnn": 32,
     "labram": 4,  # Process fewer windows at once for LaBraM
+    "eegnet": 32,  # EEGNet is lightweight
 }
 
 # Model configuration
@@ -67,6 +69,7 @@ MODEL_CONFIG = {
 EEG_EMBED_DIMS = {
     "labram": 128,  # Reduced for memory efficiency
     "simplecnn": 256,
+    "eegnet": 256,
     "eegformer": 256,
     "eeg2vec": 256,
 }
