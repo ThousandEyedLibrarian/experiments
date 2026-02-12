@@ -476,10 +476,17 @@ if __name__ == "__main__":
     parser.add_argument("--smiles-model", default="chemberta", help="SMILES model")
     parser.add_argument("--no-multilabel", action="store_true", help="Disable multi-label stratification")
     parser.add_argument("--quick", action="store_true", help="Run only baseline experiment")
+    parser.add_argument("--experiment", type=str, default=None,
+                        help="Run only the named experiment (e.g. encoder_labram)")
     args = parser.parse_args()
 
     if args.quick:
         experiments = [define_ablation_experiments()[0]]  # Just baseline
+    elif args.experiment:
+        all_exps = define_ablation_experiments()
+        experiments = [e for e in all_exps if e["name"] == args.experiment]
+        if not experiments:
+            parser.error(f"Unknown experiment: {args.experiment}")
     else:
         experiments = None  # All experiments
 

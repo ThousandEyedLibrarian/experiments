@@ -8,7 +8,7 @@
 #   bash submit_job.sh -e exp2 -d                   # Local dry run test
 #
 # Options:
-#   -e, --experiment EXP   Experiment to run: exp1 or exp2 (default: exp1)
+#   -e, --experiment EXP   Experiment to run: exp1, exp2, or exp9 (default: exp1)
 #   -a, --args ARGS        Extra arguments for the experiment script
 #   -d, --dry-run          Test mode - show config without executing
 #   -h, --help             Show help message
@@ -52,7 +52,7 @@ show_help() {
     echo "Usage: $0 [OPTIONS]"
     echo ""
     echo "Options:"
-    echo "  -e, --experiment EXP   Experiment to run: exp1 or exp2 (default: exp1)"
+    echo "  -e, --experiment EXP   Experiment to run: exp1, exp2, or exp9 (default: exp1)"
     echo "  -a, --args ARGS        Extra arguments for the experiment script"
     echo "  -d, --dry-run          Test mode - show config without executing"
     echo "  -h, --help             Show this help message"
@@ -60,10 +60,13 @@ show_help() {
     echo "Extra args examples:"
     echo "  exp1: --dry-run, --exp1a, --exp1b, --quiet"
     echo "  exp2: --dry-run, --eeg-encoder simplecnn, --smiles-model chemberta"
+    echo "  exp9: --experiment encoder_labram, --quick, --no-multilabel"
     echo ""
     echo "Examples:"
     echo "  sbatch $0 -e exp2"
     echo "  sbatch $0 -e exp2 -a '--eeg-encoder simplecnn'"
+    echo "  sbatch $0 -e exp9 -a '--experiment encoder_labram'"
+    echo "  sbatch --mem=64G $0 -e exp9 -a '--experiment encoder_labram'"
     echo "  bash $0 -e exp1 -d"
     echo "  EXPERIMENT=exp2 sbatch $0"
     exit 0
@@ -96,8 +99,8 @@ while [[ $# -gt 0 ]]; do
 done
 
 # Validate experiment choice
-if [[ "$EXPERIMENT" != "exp1" && "$EXPERIMENT" != "exp2" ]]; then
-    echo "ERROR: Invalid experiment '$EXPERIMENT'. Must be 'exp1' or 'exp2'."
+if [[ "$EXPERIMENT" != "exp1" && "$EXPERIMENT" != "exp2" && "$EXPERIMENT" != "exp9" ]]; then
+    echo "ERROR: Invalid experiment '$EXPERIMENT'. Must be 'exp1', 'exp2', or 'exp9'."
     exit 1
 fi
 
@@ -150,7 +153,7 @@ echo "============================================================"
 if [ "$EXPERIMENT" = "exp1" ]; then
     python check_environment.py --exp1
     ENV_CHECK=$?
-elif [ "$EXPERIMENT" = "exp2" ]; then
+elif [ "$EXPERIMENT" = "exp2" ] || [ "$EXPERIMENT" = "exp9" ]; then
     python check_environment.py --exp2
     ENV_CHECK=$?
 else
@@ -170,8 +173,10 @@ if [ "$EXPERIMENT" = "exp1" ]; then
     CMD="python -m exp1_fusion.run_experiments ${EXTRA_ARGS}"
 elif [ "$EXPERIMENT" = "exp2" ]; then
     CMD="python -m exp2_fusion.run_experiments ${EXTRA_ARGS}"
+elif [ "$EXPERIMENT" = "exp9" ]; then
+    CMD="python -m exp9_eeg_investigation.ablation_study ${EXTRA_ARGS}"
 else
-    echo "ERROR: Unknown experiment '${EXPERIMENT}'. Use 'exp1' or 'exp2'."
+    echo "ERROR: Unknown experiment '${EXPERIMENT}'. Use 'exp1', 'exp2', or 'exp9'."
     exit 1
 fi
 
