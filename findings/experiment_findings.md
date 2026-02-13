@@ -521,9 +521,13 @@ Run on M3 HPC (Job 51362383, node m3n102, A100 80GB, ~20 min runtime).
 4. ~~Test LaBraM/EEGNet/EEG2Vec encoders~~ **DONE** - Exp9 encoder ablation complete (EEG2Vec best, LaBraM underperforms)
 5. ~~Run Exp9 encoder ablation experiments~~ **DONE** - 4 encoders compared, EEG2Vec selected as best
 6. ~~Run Exp10 frozen encoder experiments~~ **DONE** - Qwen 2.5 0.5B outperforms biomedical models in frozen mode
-7. --Run Exp9 remaining ablations: aggregator, depth, and dimension experiments with EEG2Vec-- **DONE** - Running, reran all exp9 with EEG2VEC
-8. --Run Exp10 fine-tuning experiments (Phase 2) - unfreeze last 2 transformer layers-- **DONE** - Running
-8. --Replace fusemoe implementation with revised portions from Duong's fusemoe.py in shared/-- **IN PROG**
-9. --Re-run Exp5c/Exp7 with EEG2Vec encoder (replacing SimpleCNN)-- **IN PROG**
-10. Hyperparameter optimisation for best-performing model (Exp7a ClinicalBERT+ChemBERTa) - Optuna
-11. External validation on further data or an additional dataset if it becomes available
+7. ~~Run Exp9 remaining ablations: aggregator, depth, and dimension experiments with EEG2Vec~~ **DONE** - Running, reran all exp9 with EEG2Vec
+8. ~~Run Exp10 fine-tuning experiments (Phase 2) - unfreeze last 2 transformer layers~~ **DONE** - Running
+9. ~~Replace FuseMoE implementation with revised portions from Duong's fusemoe.py in shared/~~ **IN PROG**
+10. ~~Re-run Exp5c/Exp7 with EEG2Vec encoder (replacing SimpleCNN)~~ **IN PROG**
+11. Swap EEG2Vec into exp2, exp3, and exp6b configs (currently still SimpleCNN) for consistent encoder across all EEG experiments
+12. Re-run exp1b, exp2b, exp3b with revised FuseMoE (Laplace gating, MI loss, temperature annealing)
+13. Re-run exp3a/exp7a MLP baselines with EEG2Vec to get matched comparisons against revised FuseMoE
+14. Re-run exp6b with EEG2Vec encoder for comparison table completeness
+15. Hyperparameter optimisation for best-performing model - Optuna
+16. External validation on further data or an additional dataset if it becomes available
