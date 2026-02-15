@@ -3,7 +3,7 @@
 ## Overview
 
 Experiment 7 combines all four available modalities to predict ASM treatment outcomes:
-- **Clinical features** (20D): Demographics, medical history
+- **Clinical features** (19D): Demographics, medical history
 - **Text embeddings** (768D): EEG report embeddings from ClinicalBERT/PubMedBERT
 - **EEG signals**: Raw EEG windows processed through CNN + Transformer
 - **SMILES embeddings** (768D): Drug molecular structure from ChemBERTa
@@ -23,7 +23,7 @@ Test whether adding clinical features to the triple modality fusion (Exp3) impro
 ### Exp7a: Late Fusion MLP (~2M params)
 
 ```
-Clinical (20D) ───> Encoder -> 64D ─┐
+Clinical (19D) ───> Encoder -> 64D ─┐
                                      │
 Text (768D) ──────> Encoder -> 64D ─┼─> Concat (256D) -> Classifier -> 2
                                      │
@@ -35,7 +35,7 @@ SMILES (768D) ────> Encoder -> 64D ─┘
 ### Exp7b: FuseMoE (~4.7M params)
 
 ```
-Clinical (20D) ───> Projection -> 256D ─┐
+Clinical (19D) ───> Projection -> 256D ─┐
                                          │
 Text (768D) ──────> Projection -> 256D ─┼─> Cross-Attention -> MoE -> Classifier
                                          │

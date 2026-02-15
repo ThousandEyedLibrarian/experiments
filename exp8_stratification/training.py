@@ -152,7 +152,7 @@ def train_fold(
 
     # Create model
     model = QuadFusionMLP(
-        clinical_dim=20,
+        clinical_dim=19,
         text_dim=768,
         smiles_dim=768,
         n_channels=EEG_ENCODER_CONFIG["n_channels"],

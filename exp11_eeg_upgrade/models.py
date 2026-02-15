@@ -309,8 +309,8 @@ def test_models():
             smiles_dim=768, eeg_embed_dim=128,
             aggregator_type=agg,
         )
-        clinical_20 = torch.randn(batch_size, 20)
-        out = model(clinical_20, text, eeg, mask, smiles)
+        clinical = torch.randn(batch_size, 19)
+        out = model(clinical, text, eeg, mask, smiles)
         print(f"QuadMLPv2: {out.shape}, params={sum(p.numel() for p in model.parameters()):,}")
 
     print("\nAll exp11 model tests passed!")
