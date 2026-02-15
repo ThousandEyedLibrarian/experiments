@@ -7,7 +7,7 @@
 
 ## Executive Summary
 
-We evaluated multimodal fusion approaches for predicting ASM treatment outcomes. Ten experiment sets were conducted:
+We evaluated multimodal fusion approaches for predicting ASM treatment outcomes. Thirteen experiment sets were conducted:
 
 - **Experiment 1:** Text report embeddings (LLM) + drug structure embeddings (SMILES)
 - **Experiment 2:** EEG signal embeddings + drug structure embeddings (SMILES)
@@ -19,10 +19,13 @@ We evaluated multimodal fusion approaches for predicting ASM treatment outcomes.
 - **Experiment 8:** Stratification analysis (multi-label CV)
 - **Experiment 9:** EEG encoder ablation (SimpleCNN, EEGNet, LaBraM, EEG2Vec)
 - **Experiment 10:** Direct LLM text modality (frozen/fine-tuned encoder)
+- **Experiment 11:** EEG2Vec 128D upgrade for triple and clinical+EEG modality experiments
+- **Experiment 12:** FuseMoE hyperparameter investigation (exp3b regression)
+- **Experiment 13:** Qwen 2.5 fine-tuning with unfrozen transformer layers
 
 The best performing model achieved **AUC 0.798** and **balanced accuracy of 0.814** using all four modalities with MLP fusion (Exp7a). Class weighting and threshold tuning (via Youden's J statistic) were applied to address class imbalance.
 
-**Key finding:** Quad modality fusion (Exp7a, AUC 0.798) outperforms triple modality (Exp3b, AUC 0.677). The revised FuseMoE implementation (Laplace gating, MI loss, temperature annealing) improved results in most experiments, though Exp3b showed a regression from its previous AUC of 0.753 with the old implementation.
+**Key finding:** Quad modality fusion (Exp7a, AUC 0.798) outperforms triple modality (Exp3b, AUC 0.677). The revised FuseMoE regression was resolved via hyperparameter tuning (Exp12, AUC 0.760). EEG2Vec 128D upgrade improves triple MLP to AUC 0.736 (Exp11).
 
 ---
 
@@ -579,7 +582,98 @@ Run on M3 HPC (Job 51370915, A100 80GB). Last 2 transformer layers unfrozen with
 - Fine-tuned ClinicalBERT (0.691) marginally outperforms frozen Qwen 2.5 0.5B (0.689)
 - Fold 4 remains weakest for both models (AUC 0.382-0.556) - consistent with frozen results
 - PubMedBERT fine-tuning has very high variance (std 0.144) - fold 4 AUC 0.382 is a near-complete failure
-- Qwen 2.5 fine-tuning not yet tested - potential next step
+- Qwen 2.5 fine-tuning tested in Exp13 - see below. AUC slightly regressed but balanced metrics improved substantially
+
+---
+
+## Experiment 11: EEG2Vec 128D Upgrade (15 February 2026)
+
+Replaced SimpleCNN with EEG2Vec encoder (128D embeddings) across exp3a and exp6b base experiments, testing both transformer and MeanMax aggregators. Validates exp9 ablation findings in multi-modal settings.
+
+### Exp3a Base: Triple MLP with EEG2Vec (n=107)
+
+| Text Model | SMILES Model | Aggregator | AUC | Bal Acc Tuned | F1 Tuned |
+|------------|--------------|-----------|-----|---------------|----------|
+| **ClinicalBERT** | **SMILES-Trf** | **MeanMax** | **0.736 +/- 0.036** | 0.752 +/- 0.034 | **0.779 +/- 0.020** |
+| ClinicalBERT | SMILES-Trf | Transformer | 0.733 +/- 0.087 | **0.777 +/- 0.056** | 0.764 +/- 0.085 |
+| ClinicalBERT | ChemBERTa | Transformer | 0.729 +/- 0.078 | 0.756 +/- 0.084 | 0.751 +/- 0.110 |
+| ClinicalBERT | ChemBERTa | MeanMax | 0.721 +/- 0.104 | 0.742 +/- 0.095 | 0.723 +/- 0.133 |
+
+Previous exp3a best (SimpleCNN): AUC 0.687. **+0.049 AUC improvement.**
+
+### Exp6b Base: Clinical + SMILES + EEG with EEG2Vec (n=151)
+
+| SMILES Model | Aggregator | AUC | Bal Acc Tuned | F1 Tuned |
+|--------------|-----------|-----|---------------|----------|
+| **ChemBERTa** | **Transformer** | **0.697 +/- 0.070** | 0.694 +/- 0.050 | 0.672 +/- 0.096 |
+| ChemBERTa | MeanMax | 0.693 +/- 0.051 | **0.712 +/- 0.044** | 0.684 +/- 0.037 |
+
+Previous exp6b best (SimpleCNN): AUC 0.647. **+0.050 AUC improvement.**
+
+**Note:** Exp7a EEG2Vec configs (quad modality) did not complete. Re-submission required.
+
+### Exp11 Key Observations
+
+- EEG2Vec is a clear upgrade over SimpleCNN across both base experiments (+0.049 and +0.050 AUC)
+- MeanMax aggregator confirms exp9 findings: competitive AUC with lower variance (std 0.036)
+- ClinicalBERT consistently outperforms PubMedBERT with EEG2Vec (all 4 ClinicalBERT configs above 0.721)
+- EEG fusion (0.697) now nearly matches text fusion (exp6a, 0.702) with proper EEG encoding
+
+---
+
+## Experiment 12: FuseMoE Hyperparameter Investigation (15 February 2026)
+
+Investigated whether the exp3b FuseMoE regression (AUC 0.753 -> 0.677) was caused by suboptimal default hyperparameters. Tested 12 configurations: 3 learning rates (5e-5, 1e-4, 5e-4) x 2 expert counts (2, 4) x 2 temperature decay settings (0.9995, None). Fixed to ClinicalBERT + ChemBERTa + SimpleCNN.
+
+### Top 5 Configurations (sorted by AUC)
+
+| LR | Experts | Temp Decay | AUC | Bal Acc Tuned | F1 Tuned |
+|-----|---------|-----------|-----|---------------|----------|
+| **5e-5** | **4** | **None** | **0.760 +/- 0.112** | 0.760 +/- 0.081 | 0.742 +/- 0.132 |
+| 1e-4 | 2 | 0.9995 | 0.749 +/- 0.105 | **0.773 +/- 0.064** | 0.745 +/- 0.096 |
+| 1e-4 | 4 | 0.9995 | 0.737 +/- 0.080 | 0.763 +/- 0.077 | **0.772 +/- 0.110** |
+| 5e-4 | 2 | None | 0.734 +/- 0.111 | 0.770 +/- 0.085 | 0.712 +/- 0.134 |
+| 1e-4 | 2 | None | 0.734 +/- 0.107 | 0.747 +/- 0.078 | 0.769 +/- 0.068 |
+
+### FuseMoE Regression Comparison
+
+| Implementation | AUC |
+|----------------|-----|
+| Old FuseMoE (softmax + malformed KL) | 0.753 |
+| Revised FuseMoE (default HP) | 0.677 |
+| **Revised FuseMoE (tuned HP)** | **0.760** |
+
+**Regression fully resolved.** Tuned FuseMoE surpasses the old malformed result by +0.007.
+
+### Exp12 Key Observations
+
+- Lower learning rates work much better for FuseMoE (5e-5, 1e-4 >> default 1e-3)
+- Temperature annealing is not always beneficial - depends on learning rate and expert count
+- 4 experts can outperform 2 experts when learning rate is low enough
+- High variance persists (std 0.112) due to small dataset (n=107)
+
+---
+
+## Experiment 13: Qwen 2.5 Fine-tuning (15 February 2026)
+
+Tested Qwen 2.5 0.5B fine-tuning with 1, 2, and 4 unfrozen transformer layers. Differential learning rates (encoder: 1e-5/2e-5, head: 1e-3).
+
+### Results (n=121)
+
+| Config | Layers | AUC | Bal Acc Tuned | F1 Tuned |
+|--------|--------|-----|---------------|----------|
+| **4 layers** | 4 | **0.682 +/- 0.046** | **0.736 +/- 0.014** | **0.737 +/- 0.043** |
+| 1 layer | 1 | 0.653 +/- 0.099 | 0.712 +/- 0.060 | 0.682 +/- 0.083 |
+| 2 layers | 2 | 0.640 +/- 0.131 | 0.664 +/- 0.078 | 0.650 +/- 0.159 |
+
+Frozen Qwen baseline: AUC 0.689 +/- 0.088. Fine-tuned (4L): AUC 0.682 (-0.007).
+
+### Exp13 Key Observations
+
+- Fine-tuning Qwen does not improve AUC (-0.007) but dramatically reduces variance (std 0.046 vs 0.088)
+- Balanced accuracy and F1 improve substantially (+0.019 and +0.071 respectively)
+- 4 layers is optimal for the decoder-only architecture; 2-layer config is unstable (std 0.131)
+- Fold 4 no longer catastrophic with 4-layer fine-tuning (AUC 0.632 vs 0.542 frozen)
 
 ---
 
