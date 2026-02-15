@@ -542,7 +542,38 @@ Run on M3 HPC (Job 51362383, node m3n102, A100 80GB, ~20 min runtime).
 - Qwen 2.5 0.5B (general-purpose) outperforms both biomedical-specific models in frozen mode
 - Fold 4 consistently weakest across all 3 models (AUC 0.458-0.542) - data composition issue
 - Frozen results comparable to Exp5b pre-computed embeddings (ClinicalBERT 0.644 vs 0.676)
-- Fine-tuning experiments still pending (Phase 2)
+
+### Results: Fine-tuned Encoder (Phase 2, 13 February 2026)
+
+Run on M3 HPC (Job 51370915, A100 80GB). Last 2 transformer layers unfrozen with differential learning rates (encoder: 2e-5, head: 1e-3).
+
+| Model | AUC | Bal Acc Tuned | F1 Tuned |
+|-------|-----|---------------|----------|
+| **ClinicalBERT (fine-tuned)** | **0.691 +/- 0.081** | **0.723 +/- 0.057** | **0.698 +/- 0.106** |
+| PubMedBERT (fine-tuned) | 0.638 +/- 0.144 | 0.690 +/- 0.084 | 0.674 +/- 0.101 |
+
+### Per-Fold AUC (Fine-tuned)
+
+| Model | Fold 1 | Fold 2 | Fold 3 | Fold 4 | Fold 5 |
+|-------|--------|--------|--------|--------|--------|
+| ClinicalBERT (fine-tuned) | 0.737 | 0.776 | 0.643 | 0.556 | 0.741 |
+| PubMedBERT (fine-tuned) | 0.801 | 0.594 | 0.720 | 0.382 | 0.692 |
+
+### Frozen vs Fine-tuned Comparison
+
+| Model | Frozen AUC | Fine-tuned AUC | Delta |
+|-------|-----------|---------------|-------|
+| ClinicalBERT | 0.644 | 0.691 | **+0.047** |
+| PubMedBERT | 0.635 | 0.638 | +0.003 |
+
+### Fine-tuning Key Observations
+
+- ClinicalBERT benefits substantially from fine-tuning (+0.047 AUC, +0.028 Bal Acc)
+- PubMedBERT barely improves with fine-tuning (+0.003 AUC) - already well-suited to clinical text in frozen mode
+- Fine-tuned ClinicalBERT (0.691) marginally outperforms frozen Qwen 2.5 0.5B (0.689)
+- Fold 4 remains weakest for both models (AUC 0.382-0.556) - consistent with frozen results
+- PubMedBERT fine-tuning has very high variance (std 0.144) - fold 4 AUC 0.382 is a near-complete failure
+- Qwen 2.5 fine-tuning not yet tested - potential next step
 
 ---
 
