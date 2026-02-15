@@ -314,27 +314,31 @@ Raw Text -> Tokeniser -> LLM Encoder -> xD -> ModalityEncoder -> 64D --+
 | Experiment | Description | Params | Best AUC | Best Bal Acc |
 |------------|-------------|--------|----------|--------------|
 | **Exp7a** | **Quad MLP (All 4 modalities)** | **2M** | **0.798** | **0.814** |
+| Exp12 | Triple FuseMoE (tuned HP) | 4.7M | 0.760 | 0.760 |
 | Exp7b | Quad MoE (revised FuseMoE) | 4.7M | 0.753 | 0.754 |
 | Exp7a | Quad MLP (PubMedBERT) | 2M | 0.752 | 0.766 |
+| Exp11 | Triple MLP (EEG2Vec) | ~2.5M | 0.736 | 0.752 |
 | Exp9 | EEG+SMILES ablation (128D) | varies | 0.730 | 0.725 |
 | Exp7b | Quad MoE (PubMedBERT) | 4.7M | 0.712 | 0.716 |
 | Exp6a | Clinical+SMILES+Text | 113K | 0.702 | 0.705 |
+| Exp11 | Clinical+SMILES+EEG (EEG2Vec) | ~2M | 0.697 | 0.694 |
 | Exp10 | Clinical+Direct LLM (fine-tuned) | varies | 0.691 | 0.723 |
 | Exp5a | Clinical+SMILES | 59K | 0.689 | 0.682 |
 | Exp10 | Clinical+Direct LLM (frozen) | varies | 0.689 | 0.717 |
-| Exp3a | Triple MLP | 2.5M | 0.687 | 0.713 |
+| Exp3a | Triple MLP (SimpleCNN) | 2.5M | 0.687 | 0.713 |
+| Exp13 | Clinical+Direct LLM (Qwen fine-tuned) | varies | 0.682 | 0.736 |
 | Exp3b | Triple FuseMoE (revised) | 4.7M | 0.677 | 0.726 |
 | Exp5b | Clinical+Text | 59K | 0.676 | 0.708 |
 | Exp5c | Clinical+EEG | 1.9M | 0.675 | 0.698 |
 | Exp1b | LLM+SMILES FuseMoE (revised) | 2.6M | 0.674 | 0.720 |
 | Exp4a | Clinical MLP | 3.7K | 0.664 | 0.675 |
-| Exp6b | Clinical+SMILES+EEG | 1.96M | 0.647 | 0.663 |
+| Exp6b | Clinical+SMILES+EEG (SimpleCNN) | 1.96M | 0.647 | 0.663 |
 | Exp1a | LLM+SMILES MLP | 953K | 0.641 | 0.699 |
 | Exp4b | Clinical Attention | 104K | 0.636 | 0.673 |
 | Exp2a | EEG+SMILES MLP | 1.2M | 0.634 | 0.699 |
 | Exp2b | EEG+SMILES FuseMoE (revised) | 2.8M | 0.611 | 0.621 |
 
-**Key finding:** Quad modality MLP (Exp7a) achieves best AUC (0.798) with ClinicalBERT + ChemBERTa. Revised FuseMoE improved most experiments but regressed Exp3b (0.753 -> 0.677).
+**Key finding:** Quad modality MLP (Exp7a) achieves best AUC (0.798) with ClinicalBERT + ChemBERTa. FuseMoE regression resolved via hyperparameter tuning (Exp12, AUC 0.760). EEG2Vec 128D upgrade improves triple MLP to AUC 0.736 (Exp11).
 
 ---
 
