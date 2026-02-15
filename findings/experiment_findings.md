@@ -595,7 +595,7 @@ Run on M3 HPC (Job 51370915, A100 80GB). Last 2 transformer layers unfrozen with
 8. ~~Run Exp10 fine-tuning experiments (Phase 2) - unfreeze last 2 transformer layers~~ **DONE** - ClinicalBERT +0.047 AUC, PubMedBERT +0.003 AUC
 9. ~~Replace FuseMoE implementation with revised version~~ **DONE** - Re-run results: exp1b/2b/7b improved, exp3b regressed
 10. ~~Re-run Exp5c/Exp7 with pipeline improvements~~ **DONE** - Exp5c AUC 0.675 (was 0.644), Exp7a AUC 0.798 (was 0.762)
-11. Execute EEG2Vec swap plan (docs/plans/2026-02-13-eeg2vec-fusemoe-rewrite.md) - swap EEG2Vec into exp5c, exp7, exp2, exp3, exp6b
+11. Execute EEG2Vec swap plan - swap EEG2Vec into exp5c, exp7, exp2, exp3, exp6b
 12. ~~Re-run exp1b, exp2b, exp3b with revised FuseMoE~~ **DONE** - Mixed results, exp3b regressed
 13. Re-run exp3a/exp7a MLP baselines with EEG2Vec encoder (use 128D based on exp9 findings)
 14. Re-run exp6b with EEG2Vec encoder
