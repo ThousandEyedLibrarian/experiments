@@ -48,58 +48,55 @@ SMILES (768D) ────> Projection -> 256D ─┘
 
 | Experiment | Text Model | Fusion | AUC | Std | Bal Acc | Std |
 |------------|------------|--------|-----|-----|---------|-----|
-| **exp7a_clinicalbert** | ClinicalBERT | MLP | **0.762** | 0.093 | **0.774** | 0.071 |
-| exp7a_pubmedbert | PubMedBERT | MLP | 0.746 | 0.059 | 0.741 | 0.057 |
-| exp7b_clinicalbert | ClinicalBERT | MoE | 0.720 | 0.106 | 0.737 | 0.075 |
-| exp7b_pubmedbert | PubMedBERT | MoE | 0.662 | 0.050 | 0.702 | 0.044 |
+| **exp7a_clinicalbert** | ClinicalBERT | MLP | **0.798** | 0.093 | **0.814** | 0.069 |
+| exp7b_clinicalbert | ClinicalBERT | MoE | 0.753 | 0.127 | 0.754 | 0.079 |
+| exp7a_pubmedbert | PubMedBERT | MLP | 0.752 | 0.069 | 0.766 | 0.065 |
+| exp7b_pubmedbert | PubMedBERT | MoE | 0.712 | 0.072 | 0.716 | 0.051 |
+
+*Updated 13 February 2026 with pipeline improvements (multi-label stratification, code review fixes) for exp7a, and revised FuseMoE (Laplace gating, MI loss, temperature annealing) for exp7b. Previous best: exp7a ClinicalBERT AUC 0.762.*
 
 ### Per-Fold AUC (Best Model: exp7a_clinicalbert)
 
 | Fold | AUC | Bal Acc | F1 (tuned) |
 |------|-----|---------|------------|
-| 1 | 0.667 | 0.727 | 0.800 |
-| 2 | 0.736 | 0.727 | 0.700 |
-| 3 | 0.700 | 0.725 | 0.750 |
+| 1 | 0.689 | 0.731 | 0.786 |
+| 2 | 0.818 | 0.864 | 0.842 |
+| 3 | 0.700 | 0.742 | 0.700 |
 | 4 | 0.933 | 0.908 | 0.917 |
-| 5 | 0.775 | 0.783 | 0.762 |
+| 5 | 0.850 | 0.825 | 0.818 |
 
 ## Comparison with Baselines
 
 | Experiment | Description | AUC | Delta |
 |------------|-------------|-----|-------|
-| **Exp7a** | Clinical + Text + EEG + SMILES (MLP) | **0.762** | - |
-| Exp3b | Text + EEG + SMILES (FuseMoE) | 0.753 | +0.009 |
-| Exp6a | Clinical + Text + SMILES | 0.702 | +0.060 |
-| Exp4a | Clinical only | 0.664 | +0.098 |
+| **Exp7a** | Clinical + Text + EEG + SMILES (MLP) | **0.798** | - |
+| Exp3b | Text + EEG + SMILES (FuseMoE, revised) | 0.677 | +0.121 |
+| Exp6a | Clinical + Text + SMILES | 0.702 | +0.096 |
+| Exp4a | Clinical only | 0.664 | +0.134 |
 
 ## Key Findings
 
-1. **Best configuration**: exp7a_clinicalbert_chemberta (MLP fusion)
-   - AUC: 0.762 +/- 0.093
-   - Balanced Accuracy: 0.774 +/- 0.071
+1. **New overall best**: exp7a_clinicalbert_chemberta (MLP fusion)
+   - AUC: 0.798 +/- 0.093 (up from 0.762)
+   - Balanced Accuracy: 0.814 +/- 0.069
 
-2. **MLP outperforms MoE** for quad modality fusion
-   - MLP: 0.762 vs MoE: 0.720 (with ClinicalBERT)
-   - Simpler architecture more stable for small dataset
+2. **MLP still outperforms MoE** but gap narrowed with revised FuseMoE
+   - MLP: 0.798 vs MoE: 0.753 (with ClinicalBERT)
+   - Previous: MLP 0.762 vs MoE 0.720
 
-3. **Marginal improvement over Exp3b** (+0.009 AUC)
-   - Clinical features provide slight additional signal
-   - Most information already captured by embeddings
+3. **Revised FuseMoE improved MoE substantially**
+   - ClinicalBERT MoE: 0.720 -> 0.753 (+0.033 AUC)
+   - PubMedBERT MoE: 0.662 -> 0.712 (+0.050 AUC)
 
 4. **ClinicalBERT > PubMedBERT** for quad modality
    - Consistent with Exp3 findings
    - Clinical domain-specific pretraining beneficial
 
-5. **High fold variance**
-   - Fold 4 shows unusually high AUC (0.933)
-   - Likely due to favourable class split in small dataset
+5. **Fold 4 consistently strongest** (AUC 0.933) across re-runs
 
 ## Interpretation
 
-The marginal improvement (+0.009 AUC) from adding clinical features suggests that:
-- The embedding modalities (text, EEG, SMILES) already capture most predictive signal
-- Clinical features provide some complementary information
-- The small dataset size (107 patients) limits the benefit of additional modalities
+The substantial improvement over Exp3b (+0.121 AUC) confirms that clinical features provide meaningful additional signal when combined with all embedding modalities. Pipeline improvements (multi-label stratification, code review fixes) contributed to the overall gains.
 
 ## Training Configuration
 

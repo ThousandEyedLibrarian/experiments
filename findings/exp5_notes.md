@@ -50,7 +50,9 @@ Modality (xD)  --> Encoder --> 64D --|
 | **Exp5a** | SMILES-Trf | 0.687 +/- 0.041 | 0.682 +/- 0.042 | 0.674 +/- 0.063 |
 | **Exp5b** | ClinicalBERT | 0.676 +/- 0.083 | **0.708 +/- 0.073** | 0.716 +/- 0.090 |
 | **Exp5b** | PubMedBERT | 0.620 +/- 0.038 | 0.690 +/- 0.060 | 0.729 +/- 0.043 |
-| **Exp5c** | SimpleCNN | 0.644 +/- 0.113 | 0.690 +/- 0.089 | 0.693 +/- 0.120 |
+| **Exp5c** | SimpleCNN | 0.675 +/- 0.061 | 0.698 +/- 0.057 | 0.689 +/- 0.091 |
+
+*Note: Exp5c updated 13 February 2026 with multi-label stratification and pipeline improvements. Previous: AUC 0.644 +/- 0.113. Variance halved (std 0.061 vs 0.113).*
 
 ### Per-Fold AUC Values
 
@@ -71,8 +73,8 @@ Modality (xD)  --> Encoder --> 64D --|
 | exp5a_chemberta | 0.689 | **+0.025** | Modest improvement |
 | exp5a_smilestrf | 0.687 | **+0.023** | Modest improvement |
 | exp5b_clinicalbert | 0.676 | +0.012 | Marginal improvement |
+| exp5c_simplecnn | 0.675 | +0.011 | Marginal improvement |
 | exp5b_pubmedbert | 0.620 | -0.044 | Degradation |
-| exp5c_simplecnn | 0.644 | -0.020 | Slight degradation |
 
 ---
 
@@ -82,7 +84,7 @@ Modality (xD)  --> Encoder --> 64D --|
 
 2. **Text embeddings show mixed results**: ClinicalBERT achieves highest balanced accuracy (0.708) but has high variance; PubMedBERT underperforms baseline
 
-3. **EEG fusion is unstable**: High variance across folds (std 0.113), with one exceptional fold (0.866) and one poor fold (0.545)
+3. **EEG fusion now stable**: Variance halved (std 0.061, was 0.113) due to multi-label stratification and pipeline improvements. EEG now provides a small positive lift (+0.011 AUC)
 
 4. **Dataset size matters**: Text experiments have smallest dataset (121 patients) which may explain higher variance
 

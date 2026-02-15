@@ -44,7 +44,7 @@ Test whether combining clinical text report embeddings (LLM) with drug molecular
 | ClinicalBERT | SMILES-Trf | 0.623 +/- 0.112 | 0.677 +/- 0.073 | 0.557 +/- 0.110 |
 | ClinicalBERT | ChemBERTa | 0.609 +/- 0.099 | 0.669 +/- 0.067 | 0.707 +/- 0.061 |
 
-### Exp1b (FuseMoE)
+### Exp1b (FuseMoE) - Original (28 January 2026)
 
 | Text Model | SMILES Model | AUC | Bal Acc Tuned | F1 Tuned |
 |------------|--------------|-----|---------------|----------|
@@ -53,15 +53,30 @@ Test whether combining clinical text report embeddings (LLM) with drug molecular
 | PubMedBERT | ChemBERTa | 0.641 +/- 0.071 | **0.713 +/- 0.047** | 0.670 +/- 0.125 |
 | PubMedBERT | SMILES-Trf | 0.592 +/- 0.075 | 0.641 +/- 0.047 | 0.635 +/- 0.079 |
 
+*Note: Results above used the old FuseMoE implementation (softmax gating, malformed KL/CV-squared loss, 2-layer MLP experts).*
+
+### Re-run Results: Revised FuseMoE (13 February 2026)
+
+Revised FuseMoE: Laplace gating, MI loss, 3-layer residual experts, temperature annealing.
+
+| Text Model | SMILES Model | AUC | Bal Acc Tuned | F1 Tuned |
+|------------|--------------|-----|---------------|----------|
+| ClinicalBERT | SMILES-Trf | **0.674 +/- 0.139** | **0.720 +/- 0.079** | 0.664 +/- 0.147 |
+| ClinicalBERT | ChemBERTa | 0.636 +/- 0.142 | 0.709 +/- 0.100 | 0.713 +/- 0.116 |
+| PubMedBERT | SMILES-Trf | 0.612 +/- 0.049 | 0.689 +/- 0.049 | 0.713 +/- 0.052 |
+| PubMedBERT | ChemBERTa | 0.601 +/- 0.104 | 0.681 +/- 0.079 | 0.707 +/- 0.070 |
+
+Best AUC improved from 0.648 to 0.674. PubMedBERT + SMILES-Trf now has lowest variance (AUC std 0.049).
+
 ---
 
 ## Key Findings
 
-1. **Best balanced accuracy:** exp1b_pubmedbert_chemberta (0.713) and exp1b_clinicalbert_smilestrf (0.712)
+1. **Best AUC:** exp1b_clinicalbert_smilestrf (0.674) with revised FuseMoE
 
-2. **FuseMoE outperforms MLP:** For balanced accuracy, FuseMoE variants achieve 0.67-0.71 vs MLP's 0.67-0.70
+2. **FuseMoE outperforms MLP:** Best FuseMoE AUC (0.674) exceeds best MLP AUC (0.641)
 
-3. **High variance:** AUC std ranges 0.07-0.13, indicating sensitivity to fold splits with small dataset (n=121)
+3. **Revised FuseMoE improved stability for PubMedBERT:** PubMedBERT + SMILES-Trf std dropped from 0.075 to 0.049
 
 4. **Threshold tuning critical:** F1_tuned (0.56-0.71) substantially better than raw F1 (0.35-0.68)
 

@@ -41,10 +41,12 @@ Window embeddings (256D) aggregated via 2-layer Transformer encoder.
 
 | Experiment | SMILES Model | Fusion | AUC | Bal Acc Tuned | F1 Tuned |
 |------------|--------------|--------|-----|---------------|----------|
-| **Exp2a** | SMILES-Trf | MLP | 0.634 +/- 0.045 | **0.699 +/- 0.047** | **0.720 +/- 0.056** |
+| **Exp2a** | SMILES-Trf | MLP | **0.634 +/- 0.045** | **0.699 +/- 0.047** | **0.720 +/- 0.056** |
 | **Exp2a** | ChemBERTa | MLP | 0.611 +/- 0.074 | 0.672 +/- 0.045 | 0.632 +/- 0.075 |
-| Exp2b | SMILES-Trf | FuseMoE | 0.576 +/- 0.095 | 0.579 +/- 0.051 | 0.537 +/- 0.272 |
-| Exp2b | ChemBERTa | FuseMoE | 0.562 +/- 0.084 | 0.583 +/- 0.054 | 0.554 +/- 0.278 |
+| Exp2b | SMILES-Trf | FuseMoE | 0.611 +/- 0.056 | 0.621 +/- 0.049 | 0.556 +/- 0.175 |
+| Exp2b | ChemBERTa | FuseMoE | 0.572 +/- 0.024 | 0.599 +/- 0.012 | 0.569 +/- 0.133 |
+
+*Note: Exp2b rows updated 13 February 2026 with revised FuseMoE (Laplace gating, MI loss, 3-layer residual experts, temperature annealing). Previous Exp2b results: SMILES-Trf AUC 0.576, ChemBERTa AUC 0.562.*
 
 ### Per-Fold AUC Values (Best Model: Exp2a SMILES-Trf MLP)
 
@@ -62,11 +64,11 @@ Window embeddings (256D) aggregated via 2-layer Transformer encoder.
 
 1. **Best model:** Exp2a with SMILES Transformer + MLP (Bal Acc 0.699, F1 0.720)
 
-2. **MLP significantly outperforms FuseMoE:** Balanced accuracy 0.67-0.70 vs 0.58 for FuseMoE
+2. **MLP still outperforms FuseMoE but gap narrowed:** AUC 0.634 vs 0.611 for SMILES-Trf (was 0.634 vs 0.576)
 
 3. **SMILES-Trf outperforms ChemBERTa:** Consistent across both fusion methods
 
-4. **FuseMoE unstable with EEG:** High F1 variance (0.27-0.28 std), may overfit
+4. **Revised FuseMoE substantially more stable:** AUC std 0.056 (was 0.095), F1 std 0.175 (was 0.272) for SMILES-Trf
 
 ---
 

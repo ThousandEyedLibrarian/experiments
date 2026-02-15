@@ -42,6 +42,21 @@ Test whether combining all three modalities (text reports, EEG signals, drug str
 | exp3b | PubMedBERT | ChemBERTa | FuseMoE | 0.618 +/- 0.023 | 0.681 +/- 0.032 | 0.661 +/- 0.102 |
 | exp3b | PubMedBERT | SMILES-Trf | FuseMoE | 0.629 +/- 0.028 | 0.691 +/- 0.031 | 0.600 +/- 0.082 |
 
+*Note: Results above used the old FuseMoE implementation (softmax gating, malformed KL/CV-squared loss, 2-layer MLP experts).*
+
+### Re-run Results: Revised FuseMoE (13 February 2026) - REGRESSION
+
+Revised FuseMoE: Laplace gating, MI loss, 3-layer residual experts, temperature annealing.
+
+| Experiment | Text | SMILES | Fusion | AUC | Bal Acc Tuned | F1 Tuned |
+|------------|------|--------|--------|-----|---------------|----------|
+| exp3b | ClinicalBERT | ChemBERTa | FuseMoE | **0.677 +/- 0.108** | **0.726 +/- 0.092** | **0.761 +/- 0.084** |
+| exp3b | PubMedBERT | SMILES-Trf | FuseMoE | 0.657 +/- 0.084 | 0.682 +/- 0.058 | 0.689 +/- 0.060 |
+| exp3b | ClinicalBERT | SMILES-Trf | FuseMoE | 0.628 +/- 0.124 | 0.684 +/- 0.092 | 0.693 +/- 0.057 |
+| exp3b | PubMedBERT | ChemBERTa | FuseMoE | 0.604 +/- 0.088 | 0.680 +/- 0.061 | 0.658 +/- 0.106 |
+
+> **Regression:** Best FuseMoE AUC dropped from 0.753 (old implementation, balanced accuracy threshold selection) to 0.677. The old softmax + malformed KL loss may have acted as accidental regularisation. MLP fusion (exp3a) now outperforms FuseMoE for triple modality.
+
 ---
 
 ## Key Findings
@@ -50,9 +65,9 @@ Test whether combining all three modalities (text reports, EEG signals, drug str
 
 2. **Best Balanced Accuracy:** ClinicalBERT + ChemBERTa + MLP (0.706)
 
-3. **MLP generally outperforms FuseMoE:** Simpler fusion works better with limited data (n=107)
+3. **MLP outperforms FuseMoE:** MLP AUC 0.672-0.687 vs revised FuseMoE 0.604-0.677. Simpler fusion works better with limited data (n=107)
 
-4. **ChemBERTa more consistent than SMILES-Trf:** Lower variance in most configurations
+4. **FuseMoE regression with revised implementation:** Old FuseMoE achieved AUC 0.753 but used malformed loss. Revised implementation regressed to 0.677
 
 5. **Reduced dataset size:** Only 107 patients have all modalities (vs 151 for Exp2)
 

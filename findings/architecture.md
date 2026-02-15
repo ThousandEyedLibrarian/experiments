@@ -313,24 +313,28 @@ Raw Text -> Tokeniser -> LLM Encoder -> xD -> ModalityEncoder -> 64D --+
 
 | Experiment | Description | Params | Best AUC | Best Bal Acc |
 |------------|-------------|--------|----------|--------------|
-| **Exp10** | **Clinical + Direct LLM (frozen/fine-tuned)** | **varies** | *pending* | *pending* |
-| **Exp7a** | **Quad MLP (All 4 modalities)** | **2M** | **0.762** | **0.774** |
-| Exp3b | Triple FuseMoE | 4.7M | 0.753 | 0.774 |
-| Exp7b | Quad MoE | 4.7M | 0.720 | 0.737 |
+| **Exp7a** | **Quad MLP (All 4 modalities)** | **2M** | **0.798** | **0.814** |
+| Exp7b | Quad MoE (revised FuseMoE) | 4.7M | 0.753 | 0.754 |
+| Exp7a | Quad MLP (PubMedBERT) | 2M | 0.752 | 0.766 |
+| Exp9 | EEG+SMILES ablation (128D) | varies | 0.730 | 0.725 |
+| Exp7b | Quad MoE (PubMedBERT) | 4.7M | 0.712 | 0.716 |
 | Exp6a | Clinical+SMILES+Text | 113K | 0.702 | 0.705 |
+| Exp10 | Clinical+Direct LLM (fine-tuned) | varies | 0.691 | 0.723 |
 | Exp5a | Clinical+SMILES | 59K | 0.689 | 0.682 |
+| Exp10 | Clinical+Direct LLM (frozen) | varies | 0.689 | 0.717 |
+| Exp3a | Triple MLP | 2.5M | 0.687 | 0.713 |
+| Exp3b | Triple FuseMoE (revised) | 4.7M | 0.677 | 0.726 |
 | Exp5b | Clinical+Text | 59K | 0.676 | 0.708 |
-| Exp3a | Triple MLP | 2.5M | 0.672 | 0.706 |
-| Exp2a | EEG+SMILES MLP | 1.2M | 0.668 | - |
+| Exp5c | Clinical+EEG | 1.9M | 0.675 | 0.698 |
+| Exp1b | LLM+SMILES FuseMoE (revised) | 2.6M | 0.674 | 0.720 |
 | Exp4a | Clinical MLP | 3.7K | 0.664 | 0.675 |
-| Exp1b | LLM+SMILES FuseMoE | 2.6M | 0.648 | 0.712 |
-| Exp6b | Clinical+SMILES+EEG | 1.96M | 0.647 | 0.692 |
-| Exp5c | Clinical+EEG | 1.9M | 0.644 | 0.690 |
+| Exp6b | Clinical+SMILES+EEG | 1.96M | 0.647 | 0.663 |
 | Exp1a | LLM+SMILES MLP | 953K | 0.641 | 0.699 |
 | Exp4b | Clinical Attention | 104K | 0.636 | 0.673 |
-| Exp2b | EEG+SMILES FuseMoE | 2.8M | 0.608 | - |
+| Exp2a | EEG+SMILES MLP | 1.2M | 0.634 | 0.699 |
+| Exp2b | EEG+SMILES FuseMoE (revised) | 2.8M | 0.611 | 0.621 |
 
-**Key finding:** Triple modality without clinical (Exp3b) achieves best AUC (0.753). Adding clinical features provides diminishing returns when rich embeddings are available.
+**Key finding:** Quad modality MLP (Exp7a) achieves best AUC (0.798) with ClinicalBERT + ChemBERTa. Revised FuseMoE improved most experiments but regressed Exp3b (0.753 -> 0.677).
 
 ---
 
