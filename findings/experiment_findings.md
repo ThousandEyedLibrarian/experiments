@@ -1,6 +1,6 @@
 # ASM Outcome Prediction: Experimental Findings
 
-**Date:** 30 January 2026
+**Date:** 13 February 2026 (updated)
 **Dataset:** 151 patients with EEG recordings and anti-seizure medication (ASM) outcomes
 
 ---
@@ -297,9 +297,9 @@ Tested whether combining all four modalities improves upon triple modality (Exp3
 - Fold 4 still shows highest performance (AUC 0.933) - consistent across re-runs
 - Multi-label stratification and pipeline improvements contributed to overall gains
 
-### Meta-Analysis (Sidik-Jonkman + Knapp-Hartung)
+### Meta-Analysis (Sidik-Jonkman + Knapp-Hartung) - 30 January 2026 run
 
-Proper confidence intervals accounting for between-fold heterogeneity:
+Proper confidence intervals accounting for between-fold heterogeneity (from previous run; to be re-computed with updated results):
 
 | Configuration | AUC | 95% CI | I² | τ² |
 |---------------|-----|--------|----|----|
@@ -310,7 +310,7 @@ Proper confidence intervals accounting for between-fold heterogeneity:
 
 **Interpretation:**
 - **Wide CIs** (0.14–0.29 range): Limited precision due to small sample (k=5 folds, n=107 patients)
-- **High I² (80%)**: Substantial heterogeneity — fold composition strongly affects performance
+- **High I² (80%)**: Substantial heterogeneity - fold composition strongly affects performance
 - **Overlapping CIs**: Cannot definitively rank configurations; differences may be due to chance
 - **MoE more variable**: Higher τ² for MoE models indicates less stable training on small data
 - **PubMedBERT more consistent**: Lower τ² but lower point estimates than ClinicalBERT
