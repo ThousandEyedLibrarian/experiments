@@ -197,7 +197,56 @@ Last 2 transformer layers unfrozen with differential learning rates (encoder: 2e
 3. **Fine-tuned ClinicalBERT (0.691) marginally outperforms frozen Qwen 2.5 0.5B (0.689)** - fine-tuning a smaller domain model can match a larger general-purpose model
 4. **Fold 4 remains weakest** for both models (AUC 0.382-0.556) - consistent with frozen results, confirming data composition issue
 5. **PubMedBERT fine-tuning has very high variance** (AUC std 0.144) - fold 4 AUC 0.382 is a near-complete failure
-6. **Qwen 2.5 fine-tuning not yet tested** - potential next step given frozen Qwen already competitive
+6. Qwen 2.5 fine-tuning tested in Phase 3 (Exp13) - see below. AUC slightly regressed but balanced metrics improved substantially
+
+---
+
+## Results: Qwen 2.5 Fine-tuning (Phase 3, 15 February 2026)
+
+Run on M3 HPC (A100 80GB). Tested 1, 2, and 4 unfrozen transformer layers with differential learning rates. See `exp13_qwen_finetune/` for implementation.
+
+### Qwen Fine-tuning Configurations
+
+| Config | Unfreeze Layers | Batch Size | Encoder LR | Head LR |
+|--------|----------------|-----------|-----------|---------|
+| 4 layers | 4 | 2 | 1e-5 | 1e-3 |
+| 1 layer | 1 | 4 | 2e-5 | 1e-3 |
+| 2 layers | 2 | 4 | 2e-5 | 1e-3 |
+
+### Qwen Fine-tuned Results
+
+| Config | Layers | AUC | Bal Acc Tuned | F1 Tuned |
+|--------|--------|-----|---------------|----------|
+| **4 layers** | 4 | **0.682 +/- 0.046** | **0.736 +/- 0.014** | **0.737 +/- 0.043** |
+| 1 layer | 1 | 0.653 +/- 0.099 | 0.712 +/- 0.060 | 0.682 +/- 0.083 |
+| 2 layers | 2 | 0.640 +/- 0.131 | 0.664 +/- 0.078 | 0.650 +/- 0.159 |
+
+### Per-Fold AUC (Qwen Fine-tuned)
+
+| Config | Fold 1 | Fold 2 | Fold 3 | Fold 4 | Fold 5 |
+|--------|--------|--------|--------|--------|--------|
+| 4 layers | 0.647 | 0.748 | 0.727 | 0.632 | 0.657 |
+| 1 layer | 0.647 | 0.762 | 0.643 | 0.479 | 0.734 |
+| 2 layers | 0.692 | 0.832 | 0.650 | 0.431 | 0.594 |
+
+### Frozen vs Fine-tuned Comparison (All Models)
+
+| Model | Frozen AUC | Fine-tuned AUC | Delta |
+|-------|-----------|---------------|-------|
+| ClinicalBERT | 0.644 | 0.691 | **+0.047** |
+| Qwen 2.5 0.5B (4L) | 0.689 | 0.682 | -0.007 |
+| PubMedBERT | 0.635 | 0.638 | +0.003 |
+
+### Qwen Fine-tuning Key Observations
+
+1. **Qwen fine-tuning does not improve AUC** (-0.007) but dramatically reduces variance (std 0.046 vs 0.088 frozen)
+2. **Balanced accuracy improves** from 0.717 to 0.736 (+0.019) and F1 improves from 0.666 to 0.737 (+0.071) with 4-layer fine-tuning
+3. **4 unfrozen layers is optimal** for the decoder-only architecture - more depth allows adaptation of internal representations
+4. **2-layer fine-tuning is unstable** (AUC std 0.131) - intermediate unfreezing may create conflicting gradients between frozen and unfrozen blocks
+5. **Fold 4 no longer catastrophic** for 4-layer config (AUC 0.632 vs 0.542 frozen) - fine-tuning smooths per-fold variation
+6. **Smaller batch size (2) with lower encoder LR (1e-5)** works best for deeper unfreezing - prevents catastrophic forgetting
+7. **ClinicalBERT benefits most from fine-tuning** (+0.047 AUC) while Qwen and PubMedBERT show minimal or negative AUC gains - domain-specific models have more to gain from task adaptation
+8. **Qwen's balanced accuracy (0.736) is the highest** among all fine-tuned text models, despite lower AUC - threshold tuning effectiveness may differ across models
 
 ---
 
