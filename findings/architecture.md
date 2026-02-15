@@ -314,6 +314,7 @@ Raw Text -> Tokeniser -> LLM Encoder -> xD -> ModalityEncoder -> 64D --+
 | Experiment | Description | Params | Best AUC | Best Bal Acc |
 |------------|-------------|--------|----------|--------------|
 | **Exp7a** | **Quad MLP (All 4 modalities)** | **2M** | **0.798** | **0.814** |
+| Exp11 | Quad MLP (EEG2Vec) | ~2M | 0.791 | 0.776 |
 | Exp12 | Triple FuseMoE (tuned HP) | 4.7M | 0.760 | 0.760 |
 | Exp7b | Quad MoE (revised FuseMoE) | 4.7M | 0.753 | 0.754 |
 | Exp7a | Quad MLP (PubMedBERT) | 2M | 0.752 | 0.766 |
@@ -338,7 +339,7 @@ Raw Text -> Tokeniser -> LLM Encoder -> xD -> ModalityEncoder -> 64D --+
 | Exp2a | EEG+SMILES MLP | 1.2M | 0.634 | 0.699 |
 | Exp2b | EEG+SMILES FuseMoE (revised) | 2.8M | 0.611 | 0.621 |
 
-**Key finding:** Quad modality MLP (Exp7a) achieves best AUC (0.798) with ClinicalBERT + ChemBERTa. FuseMoE regression resolved via hyperparameter tuning (Exp12, AUC 0.760). EEG2Vec 128D upgrade improves triple MLP to AUC 0.736 (Exp11).
+**Key finding:** Quad modality MLP (Exp7a) achieves best AUC (0.798) with ClinicalBERT + ChemBERTa + SimpleCNN. EEG2Vec does not improve quad modality (0.791) but improves triple MLP to 0.736 (Exp11). FuseMoE regression resolved via hyperparameter tuning (Exp12, AUC 0.760).
 
 ---
 

@@ -21,7 +21,7 @@ Two aggregator types tested per configuration:
 |------|------------|---------|---------|
 | Exp3a | LLM + EEG + SMILES (triple MLP) | n=107 | 8 (2 text x 2 SMILES x 2 aggregators) |
 | Exp6b | Clinical + SMILES + EEG | n=151 | 4 (2 SMILES x 2 aggregators) |
-| Exp7a | Clinical + LLM + EEG + SMILES (quad MLP) | n=107 | 4 (2 text x 2 aggregators) - **DID NOT COMPLETE** |
+| Exp7a | Clinical + LLM + EEG + SMILES (quad MLP) | n=107 | 4 (2 text x 2 aggregators) |
 
 ---
 
@@ -72,9 +72,17 @@ Previous exp6b best (SimpleCNN): AUC 0.647 (SimpleCNN + SMILES-Trf).
 
 ---
 
-## Results: Exp7a Base (Quad MLP)
+## Results: Exp7a Base (Quad MLP, n=107)
 
-**Did not complete.** The exp7a EEG2Vec configs (4 configurations) did not return results. Re-submission required.
+| Text Model | SMILES Model | Aggregator | AUC | Bal Acc Tuned | F1 Tuned |
+|------------|--------------|-----------|-----|---------------|----------|
+| **ClinicalBERT** | **ChemBERTa** | **Transformer** | **0.791 +/- 0.081** | 0.776 +/- 0.052 | 0.794 +/- 0.061 |
+| PubMedBERT | ChemBERTa | MeanMax | 0.781 +/- 0.106 | **0.810 +/- 0.091** | **0.822 +/- 0.085** |
+| PubMedBERT | ChemBERTa | Transformer | 0.757 +/- 0.141 | 0.784 +/- 0.111 | 0.796 +/- 0.103 |
+| ClinicalBERT | ChemBERTa | MeanMax | 0.749 +/- 0.107 | 0.783 +/- 0.087 | 0.806 +/- 0.079 |
+
+Previous exp7a best (SimpleCNN): AUC 0.798 (ClinicalBERT + ChemBERTa + MLP).
+**EEG2Vec does not improve quad modality AUC** (0.791 vs 0.798), unlike the +0.049 improvement seen for triple modality.
 
 ---
 
@@ -94,6 +102,10 @@ Previous exp6b best (SimpleCNN): AUC 0.647 (SimpleCNN + SMILES-Trf).
 
 7. **MeanMax F1 tuned is remarkably stable** (std 0.020 for best config) - lowest F1 variance observed across all experiments
 
+8. **EEG2Vec does not improve quad modality** (0.791 vs 0.798 SimpleCNN) - unlike the clear gains in triple (+0.049) and clinical+EEG (+0.050). The additional clinical features may already compensate for SimpleCNN's weaker EEG encoding
+
+9. **PubMedBERT + MeanMax achieves best balanced metrics for quad** (Bal Acc 0.810, F1 0.822) despite lower AUC than ClinicalBERT + Transformer (0.781 vs 0.791)
+
 ---
 
 ## Files
@@ -107,7 +119,7 @@ Previous exp6b best (SimpleCNN): AUC 0.647 (SimpleCNN + SMILES-Trf).
 
 ## Next Steps
 
-1. Re-submit exp7a EEG2Vec configs (quad modality) - most important missing result
-2. If exp7a improves with EEG2Vec, it would set a new overall best (current: AUC 0.798 with SimpleCNN)
-3. Test EEG2Vec in exp2 (EEG + SMILES) base experiment
-4. Consider combining best aggregator (MeanMax) with best text model (ClinicalBERT) and best SMILES model (context-dependent) for final optimised configuration
+1. ~~Re-submit exp7a EEG2Vec configs (quad modality)~~ **DONE** - AUC 0.791 (vs 0.798 SimpleCNN). EEG2Vec does not improve quad modality
+2. Test EEG2Vec in exp2 (EEG + SMILES) base experiment
+3. Consider combining best aggregator (MeanMax) with best text model (ClinicalBERT) and best SMILES model (context-dependent) for final optimised configuration
+4. Investigate why EEG2Vec improves triple but not quad modality - clinical features may overlap with the signal EEG2Vec captures

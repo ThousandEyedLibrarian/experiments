@@ -25,7 +25,7 @@ We evaluated multimodal fusion approaches for predicting ASM treatment outcomes.
 
 The best performing model achieved **AUC 0.798** and **balanced accuracy of 0.814** using all four modalities with MLP fusion (Exp7a). Class weighting and threshold tuning (via Youden's J statistic) were applied to address class imbalance.
 
-**Key finding:** Quad modality fusion (Exp7a, AUC 0.798) outperforms triple modality (Exp3b, AUC 0.677). The revised FuseMoE regression was resolved via hyperparameter tuning (Exp12, AUC 0.760). EEG2Vec 128D upgrade improves triple MLP to AUC 0.736 (Exp11).
+**Key finding:** Quad modality fusion (Exp7a, AUC 0.798) outperforms triple modality (Exp3b, AUC 0.677). The revised FuseMoE regression was resolved via hyperparameter tuning (Exp12, AUC 0.760). EEG2Vec 128D upgrade improves triple MLP to AUC 0.736 but does not improve quad modality (0.791 vs 0.798 SimpleCNN), suggesting clinical features compensate for weaker EEG encoding.
 
 ---
 
@@ -384,6 +384,7 @@ Multi-label stratification (outcome + focal + sex) dramatically reduces fold-to-
 | Experiment | Modality | Best Model | AUC | Bal Acc Tuned | F1 Tuned |
 |------------|----------|------------|-----|---------------|----------|
 | **Exp7a** | **Clinical + LLM + EEG + SMILES** | ClinicalBERT + ChemBERTa + MLP | **0.798** | **0.814** | **0.813** |
+| Exp11 | Clinical + LLM + EEG + SMILES | ClinicalBERT + ChemBERTa + Transformer (EEG2Vec) | 0.791 | 0.776 | 0.794 |
 | Exp12 | LLM + EEG + SMILES | ClinicalBERT + ChemBERTa + FuseMoE (tuned) | 0.760 | 0.760 | 0.742 |
 | Exp7b | Clinical + LLM + EEG + SMILES | ClinicalBERT + ChemBERTa + FuseMoE | 0.753 | 0.754 | 0.716 |
 | Exp7a | Clinical + LLM + EEG + SMILES | PubMedBERT + ChemBERTa + MLP | 0.752 | 0.766 | 0.749 |
@@ -409,7 +410,7 @@ Multi-label stratification (outcome + focal + sex) dramatically reduces fold-to-
 **Key findings:**
 - Quad modality (Exp7a) achieves AUC 0.798 - best overall result with ClinicalBERT + ChemBERTa + MLP
 - FuseMoE regression resolved: tuned hyperparameters (Exp12) achieve AUC 0.760, surpassing the old malformed loss result (0.753)
-- EEG2Vec 128D upgrade (Exp11) improves triple MLP by +0.049 (0.687 -> 0.736) and exp6b by +0.050 (0.647 -> 0.697)
+- EEG2Vec 128D upgrade (Exp11) improves triple MLP by +0.049 (0.687 -> 0.736) and exp6b by +0.050 (0.647 -> 0.697), but does not improve quad modality (0.791 vs 0.798 SimpleCNN)
 - MLP fusion remains more stable than MoE on small datasets, but the gap narrows with proper MoE hyperparameters
 - Qwen 2.5 fine-tuning (Exp13) does not improve AUC but halves variance and improves balanced metrics substantially
 - ClinicalBERT is the most consistently strong text model across all experiment configurations
@@ -614,14 +615,25 @@ Previous exp3a best (SimpleCNN): AUC 0.687. **+0.049 AUC improvement.**
 
 Previous exp6b best (SimpleCNN): AUC 0.647. **+0.050 AUC improvement.**
 
-**Note:** Exp7a EEG2Vec configs (quad modality) did not complete. Re-submission required.
+### Exp7a Base: Quad MLP with EEG2Vec (n=107)
+
+| Text Model | SMILES Model | Aggregator | AUC | Bal Acc Tuned | F1 Tuned |
+|------------|--------------|-----------|-----|---------------|----------|
+| **ClinicalBERT** | **ChemBERTa** | **Transformer** | **0.791 +/- 0.081** | 0.776 +/- 0.052 | 0.794 +/- 0.061 |
+| PubMedBERT | ChemBERTa | MeanMax | 0.781 +/- 0.106 | **0.810 +/- 0.091** | **0.822 +/- 0.085** |
+| PubMedBERT | ChemBERTa | Transformer | 0.757 +/- 0.141 | 0.784 +/- 0.111 | 0.796 +/- 0.103 |
+| ClinicalBERT | ChemBERTa | MeanMax | 0.749 +/- 0.107 | 0.783 +/- 0.087 | 0.806 +/- 0.079 |
+
+Previous exp7a best (SimpleCNN): AUC 0.798. **EEG2Vec does not improve quad modality** (0.791 vs 0.798).
 
 ### Exp11 Key Observations
 
-- EEG2Vec is a clear upgrade over SimpleCNN across both base experiments (+0.049 and +0.050 AUC)
+- EEG2Vec is a clear upgrade over SimpleCNN for triple (+0.049 AUC) and clinical+EEG (+0.050 AUC) experiments
+- EEG2Vec does not improve quad modality (0.791 vs 0.798 SimpleCNN) - clinical features may already compensate for weaker EEG encoding
 - MeanMax aggregator confirms exp9 findings: competitive AUC with lower variance (std 0.036)
-- ClinicalBERT consistently outperforms PubMedBERT with EEG2Vec (all 4 ClinicalBERT configs above 0.721)
+- ClinicalBERT consistently outperforms PubMedBERT with EEG2Vec (all 4 ClinicalBERT configs above 0.721 for exp3a)
 - EEG fusion (0.697) now nearly matches text fusion (exp6a, 0.702) with proper EEG encoding
+- PubMedBERT + MeanMax achieves best balanced metrics for quad (Bal Acc 0.810, F1 0.822) despite lower AUC
 
 ---
 
@@ -695,12 +707,12 @@ Frozen Qwen baseline: AUC 0.689 +/- 0.088. Fine-tuned (4L): AUC 0.682 (-0.007).
 10. ~~Re-run Exp5c/Exp7 with pipeline improvements~~ **DONE** - Exp5c AUC 0.675 (was 0.644), Exp7a AUC 0.798 (was 0.762)
 11. ~~Execute EEG2Vec swap plan - swap EEG2Vec into exp5c, exp7, exp2, exp3, exp6b~~ **DONE**
 12. ~~Re-run exp1b, exp2b, exp3b with revised FuseMoE~~ **DONE** - Mixed results, exp3b regressed
-13. ~~Re-run exp3a/exp7a MLP baselines with EEG2Vec encoder~~ **PARTIALLY DONE** - Exp3a: AUC 0.736 (was 0.687). Exp7a did not complete, needs re-submission
+13. ~~Re-run exp3a/exp7a MLP baselines with EEG2Vec encoder~~ **DONE** - Exp3a: AUC 0.736 (was 0.687). Exp7a: AUC 0.791 (vs 0.798 SimpleCNN - no improvement)
 14. ~~Re-run exp6b with EEG2Vec encoder~~ **DONE** - AUC 0.697 (was 0.647)
 15. ~~Investigate exp3b FuseMoE regression~~ **DONE** - Exp12: tuned FuseMoE achieves AUC 0.760, regression fully resolved. Best config: lr=5e-5, 4 experts, no temperature decay
 16. ~~Run Qwen 2.5 fine-tuning~~ **DONE** - Exp13: AUC 0.682 (vs frozen 0.689), variance halved, balanced metrics improved
 17. ~~Consider MeanMax aggregator for EEG~~ **DONE** - Tested in Exp11. MeanMax achieves best exp3a result (AUC 0.736, std 0.036)
-18. Re-submit exp11 exp7a EEG2Vec configs (quad modality with EEG2Vec - did not complete)
+18. ~~Re-submit exp11 exp7a EEG2Vec configs (quad modality with EEG2Vec)~~ **DONE** - AUC 0.791 (vs 0.798 SimpleCNN). EEG2Vec does not improve quad modality
 19. Apply Exp12 best hyperparameters (lr=5e-5, 4 experts, no temp decay) to other FuseMoE experiments (exp1b, exp2b, exp7b)
 20. Hyperparameter optimisation for best-performing model (Optuna)
 21. External validation on further data if available

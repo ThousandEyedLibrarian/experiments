@@ -94,6 +94,17 @@ SMILES (768D) ────> Projection -> 256D ─┘
 
 5. **Fold 4 consistently strongest** (AUC 0.933) across re-runs
 
+### EEG2Vec Upgrade (Exp11, 15 February 2026)
+
+Exp11 replaced SimpleCNN with EEG2Vec encoder (128D embeddings) for the exp7a MLP architecture. See `findings/exp11_notes.md` for full details.
+
+| Text Model | SMILES Model | Aggregator | AUC | Bal Acc Tuned | F1 Tuned |
+|------------|--------------|-----------|-----|---------------|----------|
+| **ClinicalBERT** | **ChemBERTa** | **Transformer** | **0.791 +/- 0.081** | 0.776 +/- 0.052 | 0.794 +/- 0.061 |
+| PubMedBERT | ChemBERTa | MeanMax | 0.781 +/- 0.106 | **0.810 +/- 0.091** | **0.822 +/- 0.085** |
+
+EEG2Vec does not improve quad modality AUC (0.791 vs 0.798 SimpleCNN), unlike the +0.049 improvement seen for triple modality (exp3a). Clinical features may already compensate for SimpleCNN's weaker EEG encoding.
+
 ## Interpretation
 
 The substantial improvement over Exp3b (+0.121 AUC) confirms that clinical features provide meaningful additional signal when combined with all embedding modalities. Pipeline improvements (multi-label stratification, code review fixes) contributed to the overall gains.
