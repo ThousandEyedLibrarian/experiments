@@ -206,7 +206,7 @@ Late fusion: each modality encoded to 64D, concatenated (128D), then classified.
 | **Exp5a** | Clinical + SMILES | SMILES-Trf | 0.687 +/- 0.041 | 0.682 +/- 0.042 | 0.674 +/- 0.063 |
 | **Exp5b** | Clinical + Text | ClinicalBERT | 0.676 +/- 0.083 | **0.708 +/- 0.073** | 0.716 +/- 0.090 |
 | **Exp5b** | Clinical + Text | PubMedBERT | 0.620 +/- 0.038 | 0.690 +/- 0.060 | 0.729 +/- 0.043 |
-| **Exp5c** | Clinical + EEG | SimpleCNN | 0.644 +/- 0.113 | 0.690 +/- 0.089 | 0.693 +/- 0.120 |
+| **Exp5c** | Clinical + EEG | SimpleCNN | 0.675 +/- 0.061 | 0.698 +/- 0.057 | 0.689 +/- 0.091 |
 
 ### Comparison with Exp4a Baseline (AUC 0.664)
 
@@ -215,14 +215,15 @@ Late fusion: each modality encoded to 64D, concatenated (128D), then classified.
 | exp5a_chemberta | 0.689 | **+0.025** |
 | exp5a_smilestrf | 0.687 | **+0.023** |
 | exp5b_clinicalbert | 0.676 | +0.012 |
+| exp5c_simplecnn | 0.675 | +0.011 |
 | exp5b_pubmedbert | 0.620 | -0.044 |
-| exp5c_simplecnn | 0.644 | -0.020 |
 
 ### Key Observations
 
 - SMILES embeddings provide most consistent lift (~+0.02 AUC) with low variance
 - ClinicalBERT achieves highest balanced accuracy (0.708) but has high AUC variance
-- EEG fusion is unstable (std 0.113) - one fold hit 0.866, another 0.545
+- EEG fusion now stable (std 0.061, down from 0.113) due to multi-label stratification and pipeline improvements
+- EEG now provides a small positive lift over clinical baseline (+0.011 AUC)
 - Dataset size affects stability: text experiments have smallest dataset (121 patients)
 
 ---
@@ -273,28 +274,28 @@ Tested whether combining all four modalities improves upon triple modality (Exp3
 
 | Experiment | Text Model | Fusion | AUC | Bal Acc Tuned | F1 Tuned |
 |------------|------------|--------|-----|---------------|----------|
-| **exp7a** | **ClinicalBERT** | **MLP** | **0.762 +/- 0.093** | **0.774 +/- 0.071** | **0.786 +/- 0.073** |
-| exp7a | PubMedBERT | MLP | 0.746 +/- 0.059 | 0.741 +/- 0.057 | 0.751 +/- 0.045 |
-| exp7b | ClinicalBERT | MoE | 0.720 +/- 0.106 | 0.737 +/- 0.075 | 0.729 +/- 0.111 |
-| exp7b | PubMedBERT | MoE | 0.662 +/- 0.050 | 0.702 +/- 0.044 | 0.753 +/- 0.044 |
+| **exp7a** | **ClinicalBERT** | **MLP** | **0.798 +/- 0.093** | **0.814 +/- 0.069** | **0.813 +/- 0.071** |
+| exp7b | ClinicalBERT | MoE | 0.753 +/- 0.127 | 0.754 +/- 0.079 | 0.716 +/- 0.108 |
+| exp7a | PubMedBERT | MLP | 0.752 +/- 0.069 | 0.766 +/- 0.065 | 0.749 +/- 0.119 |
+| exp7b | PubMedBERT | MoE | 0.712 +/- 0.072 | 0.716 +/- 0.051 | 0.718 +/- 0.100 |
 
 ### Per-Fold AUC (Best Model: exp7a_clinicalbert)
 
 | Fold | AUC | Bal Acc | F1 (tuned) |
 |------|-----|---------|------------|
-| 1 | 0.667 | 0.727 | 0.800 |
-| 2 | 0.736 | 0.727 | 0.700 |
-| 3 | 0.700 | 0.725 | 0.750 |
+| 1 | 0.689 | 0.731 | 0.786 |
+| 2 | 0.818 | 0.864 | 0.842 |
+| 3 | 0.700 | 0.742 | 0.700 |
 | 4 | 0.933 | 0.908 | 0.917 |
-| 5 | 0.775 | 0.783 | 0.762 |
+| 5 | 0.850 | 0.825 | 0.818 |
 
 ### Key Observations
 
-- Best model: exp7a_clinicalbert_chemberta (MLP) with AUC 0.762
-- MLP fusion outperforms MoE for quad modality (0.762 vs 0.720)
-- Marginal improvement over Exp3b (+0.009 AUC)
-- Fold 4 shows unusually high performance (AUC 0.933) - potential outlier
-- Clinical features provide modest additional signal
+- **New overall best:** exp7a_clinicalbert_chemberta (MLP) with AUC 0.798 (up from 0.762)
+- MLP fusion still outperforms MoE (0.798 vs 0.753) but gap narrowed
+- Revised FuseMoE improved MoE substantially: ClinicalBERT +0.033 AUC, PubMedBERT +0.050 AUC
+- Fold 4 still shows highest performance (AUC 0.933) - consistent across re-runs
+- Multi-label stratification and pipeline improvements contributed to overall gains
 
 ### Meta-Analysis (Sidik-Jonkman + Knapp-Hartung)
 
