@@ -31,7 +31,7 @@ MAX_WINDOWS = int(EEG_CONFIG["use_duration_sec"] / EEG_CONFIG["window_sec"])  # 
 # Training configuration
 TRAIN_CONFIG = {
     "batch_size": 4,  # Reduced for memory efficiency with LaBraM
-    "learning_rate": 1e-4,
+    "learning_rate": 5e-5,
     "weight_decay": 1e-4,
     "epochs": 100,
     "patience": 20,

@@ -227,6 +227,10 @@ def train_fold(
     )
     model = model.to(device)
 
+    # Disable temperature annealing for FuseMoE (Exp12 finding)
+    if is_moe and hasattr(model, 'fuse_moe'):
+        model.fuse_moe.temperature_decay = 1.0
+
     # Class weighting for imbalanced datasets
     train_labels = [train_dataset[i][3].item() for i in range(len(train_dataset))]
     class_counts = np.bincount(train_labels)
