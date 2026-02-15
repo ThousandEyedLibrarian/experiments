@@ -57,6 +57,21 @@ Revised FuseMoE: Laplace gating, MI loss, 3-layer residual experts, temperature 
 
 > **Regression:** Best FuseMoE AUC dropped from 0.753 (old implementation, balanced accuracy threshold selection) to 0.677. The old softmax + malformed KL loss may have acted as accidental regularisation. MLP fusion (exp3a) now outperforms FuseMoE for triple modality.
 
+> **Regression resolved (Exp12):** Hyperparameter tuning (lr=5e-5, 4 experts, no temperature decay) recovers AUC to 0.760, surpassing the old result. See `findings/exp12_notes.md`.
+
+### Re-run Results: EEG2Vec 128D Upgrade (15 February 2026)
+
+Exp11 replaced SimpleCNN with EEG2Vec encoder (128D embeddings) for the exp3a MLP architecture, testing both transformer and MeanMax aggregators. See `findings/exp11_notes.md` for full details.
+
+| Text Model | SMILES Model | Aggregator | AUC | Bal Acc Tuned | F1 Tuned |
+|------------|--------------|-----------|-----|---------------|----------|
+| **ClinicalBERT** | **SMILES-Trf** | **MeanMax** | **0.736 +/- 0.036** | 0.752 +/- 0.034 | **0.779 +/- 0.020** |
+| ClinicalBERT | SMILES-Trf | Transformer | 0.733 +/- 0.087 | **0.777 +/- 0.056** | 0.764 +/- 0.085 |
+| ClinicalBERT | ChemBERTa | Transformer | 0.729 +/- 0.078 | 0.756 +/- 0.084 | 0.751 +/- 0.110 |
+| ClinicalBERT | ChemBERTa | MeanMax | 0.721 +/- 0.104 | 0.742 +/- 0.095 | 0.723 +/- 0.133 |
+
+Best result (ClinicalBERT + SMILES-Trf + MeanMax) improves over previous exp3a best by **+0.049 AUC** (0.687 -> 0.736) with substantially lower variance (std 0.036 vs 0.095). EEG2Vec is a clear upgrade over SimpleCNN for triple modality MLP.
+
 ---
 
 ## Key Findings
@@ -70,6 +85,10 @@ Revised FuseMoE: Laplace gating, MI loss, 3-layer residual experts, temperature 
 4. **FuseMoE regression with revised implementation:** Old FuseMoE achieved AUC 0.753 but used malformed loss. Revised implementation regressed to 0.677
 
 5. **Reduced dataset size:** Only 107 patients have all modalities (vs 151 for Exp2)
+
+6. **FuseMoE regression resolved (Exp12):** Hyperparameter tuning recovers FuseMoE to AUC 0.760, surpassing the old malformed result (0.753). The default learning rate (1e-3) was too high for FuseMoE.
+
+7. **EEG2Vec encoder upgrade (Exp11):** Replacing SimpleCNN with EEG2Vec 128D improves exp3a MLP from AUC 0.687 to 0.736 (+0.049), making triple MLP competitive with quad modality approaches
 
 ---
 

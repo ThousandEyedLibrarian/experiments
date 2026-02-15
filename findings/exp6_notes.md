@@ -67,6 +67,19 @@ Third Modality -----> Encoder --> 64D --|
 | SimpleCNN | SMILES-Trf | 0.647 +/- 0.061 | 0.663 +/- 0.035 | 0.631 +/- 0.135 |
 | SimpleCNN | ChemBERTa | 0.643 +/- 0.061 | 0.692 +/- 0.062 | 0.684 +/- 0.105 |
 
+### Exp6b: Clinical + SMILES + EEG (EEG2Vec 128D, 15 February 2026)
+
+Exp11 replaced SimpleCNN with EEG2Vec encoder (128D embeddings), testing both transformer and MeanMax aggregators. See `findings/exp11_notes.md` for full details.
+
+| EEG Model | SMILES Model | Aggregator | AUC | Bal Acc Tuned | F1 Tuned |
+|-----------|--------------|-----------|-----|---------------|----------|
+| **EEG2Vec** | **ChemBERTa** | **Transformer** | **0.697 +/- 0.070** | 0.694 +/- 0.050 | 0.672 +/- 0.096 |
+| EEG2Vec | ChemBERTa | MeanMax | 0.693 +/- 0.051 | **0.712 +/- 0.044** | 0.684 +/- 0.037 |
+| EEG2Vec | SMILES-Trf | Transformer | 0.685 +/- 0.089 | 0.722 +/- 0.084 | **0.742 +/- 0.073** |
+| EEG2Vec | SMILES-Trf | MeanMax | 0.654 +/- 0.065 | 0.685 +/- 0.052 | 0.639 +/- 0.162 |
+
+EEG2Vec improves exp6b by **+0.050 AUC** (0.647 -> 0.697). The gap between EEG fusion and text fusion narrows substantially (exp6b 0.697 vs exp6a 0.702).
+
 ### Per-Fold AUC Values
 
 | Fold | 6a PubMed+Chem | 6a PubMed+Trf | 6a Clinical+Trf | 6a Clinical+Chem | 6b CNN+Trf | 6b CNN+Chem |
@@ -84,6 +97,8 @@ Third Modality -----> Encoder --> 64D --|
 | Model | AUC | vs Exp4a | vs Exp5a | vs Exp3 |
 |-------|-----|----------|----------|---------|
 | **Exp6a best** (PubMedBERT+ChemBERTa) | 0.702 | **+0.038** | **+0.013** | -0.051 |
+| **Exp6b EEG2Vec** (ChemBERTa+Transformer) | 0.697 | +0.033 | +0.008 | -0.056 |
+| Exp6b SimpleCNN (SMILES-Trf) | 0.647 | -0.017 | -0.042 | -0.106 |
 | Exp5a best (ChemBERTa) | 0.689 | +0.025 | - | -0.064 |
 | Exp4a (Clinical only) | 0.664 | - | -0.025 | -0.089 |
 | Exp3 best (ClinicalBERT+ChemBERTa+FuseMoE) | 0.753 | +0.089 | +0.064 | - |
@@ -103,6 +118,8 @@ Third Modality -----> Encoder --> 64D --|
 5. **High variance persists**: ClinicalBERT+ChemBERTa has AUC std 0.145 (range 0.50-0.88), indicating model instability
 
 6. **PubMedBERT more stable**: Lower variance (std 0.067) compared to ClinicalBERT configurations
+
+7. **EEG2Vec upgrade (Exp11):** EEG2Vec 128D nearly closes the gap between EEG fusion (0.697) and text fusion (0.702) for Clinical + SMILES + third modality, suggesting EEG encoding quality was the bottleneck rather than EEG signal informativeness
 
 ---
 
