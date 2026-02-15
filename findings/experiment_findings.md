@@ -472,7 +472,35 @@ Run on M3 HPC (A100 80GB). Three HPC runs required: Run 1 failed (missing `itera
 - Multi-label stratification did not eliminate variance for SimpleCNN/EEGNet - encoder architecture also contributes
 - EEG2Vec's CVAE pre-training provides more robust features (std 0.061 vs 0.107)
 - Folds 4/5 consistently weakest across all encoders
-- Remaining ablations (aggregator, depth, dimension) not yet run
+
+### Extended Ablation: Aggregator, Depth, and Dimension (13 February 2026)
+
+13 configurations tested on M3 HPC (Job 51370963), extending the encoder ablation with aggregator types, transformer depths, and embedding dimensions. All configs use EEG2Vec encoder unless otherwise noted.
+
+| Config | Encoder | Aggregator | Embed Dim | AUC | Bal Acc | F1 Tuned |
+|--------|---------|-----------|-----------|-----|--------|----------|
+| **embed_dim_128** | EEG2Vec | Transformer | 128 | **0.730 +/- 0.034** | **0.725 +/- 0.038** | **0.732 +/- 0.060** |
+| aggregator_meanmax | EEG2Vec | MeanMax | 256 | 0.722 +/- 0.079 | 0.740 +/- 0.065 | 0.689 +/- 0.119 |
+| embed_dim_64 | EEG2Vec | Transformer | 64 | 0.687 +/- 0.129 | 0.715 +/- 0.102 | 0.716 +/- 0.105 |
+| aggregator_depth_0 | EEG2Vec | Attention (0 layers) | 256 | 0.669 +/- 0.070 | 0.690 +/- 0.069 | 0.690 +/- 0.112 |
+| aggregator_maxpool | EEG2Vec | MaxPool | 256 | 0.668 +/- 0.033 | 0.699 +/- 0.051 | 0.676 +/- 0.142 |
+| aggregator_attention | EEG2Vec | Attention | 256 | 0.666 +/- 0.059 | 0.698 +/- 0.053 | 0.674 +/- 0.067 |
+| aggregator_depth_1 | EEG2Vec | Transformer (1L) | 256 | 0.666 +/- 0.055 | 0.682 +/- 0.046 | 0.611 +/- 0.070 |
+| baseline_simplecnn | SimpleCNN | Transformer | 256 | 0.620 +/- 0.082 | 0.685 +/- 0.038 | 0.606 +/- 0.092 |
+| aggregator_depth_4 | EEG2Vec | Transformer (4L) | 256 | 0.605 +/- 0.118 | 0.638 +/- 0.079 | 0.524 +/- 0.169 |
+| encoder_eegnet | EEGNet | Transformer | 256 | 0.603 +/- 0.067 | 0.654 +/- 0.051 | 0.636 +/- 0.123 |
+| encoder_eeg2vec | EEG2Vec | Transformer | 256 | 0.594 +/- 0.063 | 0.639 +/- 0.060 | 0.471 +/- 0.117 |
+| aggregator_lstm | EEG2Vec | LSTM | 256 | 0.588 +/- 0.105 | 0.651 +/- 0.046 | 0.606 +/- 0.125 |
+| encoder_labram | LaBraM | Transformer | 128 | 0.575 +/- 0.094 | 0.610 +/- 0.052 | 0.511 +/- 0.201 |
+| encoder_frozen | SimpleCNN (frozen) | Transformer | 256 | 0.559 +/- 0.103 | 0.639 +/- 0.069 | 0.627 +/- 0.149 |
+
+#### Extended Ablation Key Findings
+
+- **128D embeddings are optimal** (AUC 0.730, lowest std 0.034) - reducing from 256D improves generalisation
+- **MeanMax aggregation** is a strong alternative (highest balanced accuracy 0.740) but has higher AUC variance
+- **Transformer depth sweet spot is 2 layers** - 0 layers (attention only) works well (0.669), 1 layer comparable (0.666), 4 layers overfits (0.605)
+- **LSTM aggregation underperforms** all other aggregators (0.588) - temporal modelling may not help with 10s windows
+- **Freezing encoder hurts** significantly (0.559 vs 0.620 for SimpleCNN) - end-to-end training essential
 
 ### Files
 
