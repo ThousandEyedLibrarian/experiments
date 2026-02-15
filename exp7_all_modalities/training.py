@@ -255,6 +255,11 @@ def train_fold(
         smiles_model=smiles_model,
         device=device,
     )
+
+    # Disable temperature annealing for MoE (Exp12 finding)
+    if fusion == "moe" and hasattr(model, 'fuse_moe'):
+        model.fuse_moe.temperature_decay = 1.0
+
     n_params = sum(p.numel() for p in model.parameters())
     logger.info(f"  Model parameters: {n_params:,}")
 
