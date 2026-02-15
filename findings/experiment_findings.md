@@ -20,9 +20,9 @@ We evaluated multimodal fusion approaches for predicting ASM treatment outcomes.
 - **Experiment 9:** EEG encoder ablation (SimpleCNN, EEGNet, LaBraM, EEG2Vec)
 - **Experiment 10:** Direct LLM text modality (frozen/fine-tuned encoder)
 
-The best performing model achieved **AUC 0.762** and **balanced accuracy of 0.774** using all four modalities with MLP fusion (Exp7a). Class weighting and threshold tuning (via Youden's J statistic) were applied to address class imbalance.
+The best performing model achieved **AUC 0.798** and **balanced accuracy of 0.814** using all four modalities with MLP fusion (Exp7a). Class weighting and threshold tuning (via Youden's J statistic) were applied to address class imbalance.
 
-**Key finding:** Quad modality fusion (Exp7a, AUC 0.762) marginally improves upon triple modality (Exp3b, AUC 0.753). Clinical features provide small but consistent improvement (+0.009 AUC) when added to embeddings.
+**Key finding:** Quad modality fusion (Exp7a, AUC 0.798) outperforms triple modality (Exp3b, AUC 0.677). The revised FuseMoE implementation (Laplace gating, MI loss, temperature annealing) improved results in most experiments, though Exp3b showed a regression from its previous AUC of 0.753 with the old implementation.
 
 ---
 
@@ -39,19 +39,20 @@ Combined clinical text report embeddings with molecular structure embeddings.
 
 | Experiment | Text Model | SMILES Model | AUC | Bal Acc Tuned | F1 Tuned |
 |------------|------------|--------------|-----|---------------|----------|
-| exp1b | ClinicalBERT | SMILES-Trf | **0.648 +/- 0.100** | 0.712 +/- 0.074 | 0.701 +/- 0.117 |
-| exp1b | ClinicalBERT | ChemBERTa | 0.643 +/- 0.128 | 0.670 +/- 0.078 | 0.597 +/- 0.142 |
+| exp1b | ClinicalBERT | SMILES-Trf | **0.674 +/- 0.139** | **0.720 +/- 0.079** | 0.664 +/- 0.147 |
 | exp1a | PubMedBERT | ChemBERTa | 0.641 +/- 0.070 | 0.699 +/- 0.033 | 0.676 +/- 0.082 |
-| exp1b | PubMedBERT | ChemBERTa | 0.641 +/- 0.071 | **0.713 +/- 0.047** | 0.670 +/- 0.125 |
+| exp1b | ClinicalBERT | ChemBERTa | 0.636 +/- 0.142 | 0.709 +/- 0.100 | 0.713 +/- 0.116 |
 | exp1a | PubMedBERT | SMILES-Trf | 0.632 +/- 0.106 | 0.676 +/- 0.073 | 0.624 +/- 0.198 |
 | exp1a | ClinicalBERT | SMILES-Trf | 0.623 +/- 0.112 | 0.677 +/- 0.073 | 0.557 +/- 0.110 |
+| exp1b | PubMedBERT | SMILES-Trf | 0.612 +/- 0.049 | 0.689 +/- 0.049 | 0.713 +/- 0.052 |
 | exp1a | ClinicalBERT | ChemBERTa | 0.609 +/- 0.099 | 0.669 +/- 0.067 | 0.707 +/- 0.061 |
-| exp1b | PubMedBERT | SMILES-Trf | 0.592 +/- 0.075 | 0.641 +/- 0.047 | 0.635 +/- 0.079 |
+| exp1b | PubMedBERT | ChemBERTa | 0.601 +/- 0.104 | 0.681 +/- 0.079 | 0.707 +/- 0.070 |
 
 ### Key Observations
-- Best balanced accuracy: exp1b_pubmedbert_chemberta (0.713) and exp1b_clinicalbert_smilestrf (0.712)
-- FuseMoE slightly outperforms MLP for balanced accuracy
-- High variance across folds (std 0.07-0.13) due to small dataset (n=121)
+- Best AUC: exp1b_clinicalbert_smilestrf (0.674) with revised FuseMoE (Laplace gating, MI loss, temperature annealing)
+- PubMedBERT + SMILES-Trf FuseMoE has lowest variance (AUC std 0.049) - most stable configuration
+- FuseMoE slightly outperforms MLP for best AUC (0.674 vs 0.641)
+- High variance across folds (std 0.05-0.14) due to small dataset (n=121)
 
 ---
 
