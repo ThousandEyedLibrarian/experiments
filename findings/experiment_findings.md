@@ -71,14 +71,15 @@ Combined EEG signal embeddings with molecular structure embeddings.
 |------------|--------------|--------|-----|---------------|----------|
 | exp2a | SMILES-Trf | MLP | **0.634 +/- 0.045** | **0.699 +/- 0.047** | **0.720 +/- 0.056** |
 | exp2a | ChemBERTa | MLP | 0.611 +/- 0.074 | 0.672 +/- 0.045 | 0.632 +/- 0.075 |
-| exp2b | SMILES-Trf | FuseMoE | 0.576 +/- 0.095 | 0.579 +/- 0.051 | 0.537 +/- 0.272 |
-| exp2b | ChemBERTa | FuseMoE | 0.562 +/- 0.084 | 0.583 +/- 0.054 | 0.554 +/- 0.278 |
+| exp2b | SMILES-Trf | FuseMoE | 0.611 +/- 0.056 | 0.621 +/- 0.049 | 0.556 +/- 0.175 |
+| exp2b | ChemBERTa | FuseMoE | 0.572 +/- 0.024 | 0.599 +/- 0.012 | 0.569 +/- 0.133 |
 
 ### Key Observations
 
-- MLP fusion significantly outperforms FuseMoE (Bal Acc 0.67-0.70 vs 0.58)
-- SMILES Transformer embeddings consistently outperform ChemBERTa
-- FuseMoE unstable with EEG data (F1 std 0.27-0.28)
+- MLP fusion still outperforms FuseMoE but gap narrowed (AUC 0.634 vs 0.611 for SMILES-Trf)
+- Revised FuseMoE substantially more stable than old implementation (AUC std 0.056 vs 0.095 for SMILES-Trf)
+- SMILES Transformer embeddings consistently outperform ChemBERTa across both fusion methods
+- FuseMoE F1 variance improved but still high (std 0.13-0.18 vs previous 0.27-0.28)
 - Class weighting added in re-run (previously missing)
 
 
@@ -124,14 +125,16 @@ Combined all three modalities: text report embeddings, EEG signal embeddings, an
 
 | Experiment | Text Model | SMILES Model | Fusion | AUC | Bal Acc Tuned | F1 Tuned |
 |------------|------------|--------------|--------|-----|---------------|----------|
-| exp3b | ClinicalBERT | ChemBERTa | FuseMoE | **0.753** | **0.774** | **0.801** |
-| exp3b | PubMedBERT | ChemBERTa | FuseMoE | 0.688 | 0.733 | 0.732 |
-| exp3b | ClinicalBERT | SMILES-Trf | FuseMoE | 0.675 | 0.725 | 0.733 |
 | exp3a | ClinicalBERT | ChemBERTa | MLP | 0.687 | 0.713 | 0.654 |
+| exp3b | ClinicalBERT | ChemBERTa | FuseMoE | **0.677 +/- 0.108** | **0.726 +/- 0.092** | **0.761 +/- 0.084** |
+| exp3b | PubMedBERT | SMILES-Trf | FuseMoE | 0.657 +/- 0.084 | 0.682 +/- 0.058 | 0.689 +/- 0.060 |
 | exp3a | ClinicalBERT | SMILES-Trf | MLP | 0.649 | 0.707 | 0.736 |
+| exp3b | ClinicalBERT | SMILES-Trf | FuseMoE | 0.628 +/- 0.124 | 0.684 +/- 0.092 | 0.693 +/- 0.057 |
 | exp3a | PubMedBERT | ChemBERTa | MLP | 0.625 | 0.686 | 0.630 |
-| exp3b | PubMedBERT | SMILES-Trf | FuseMoE | 0.618 | 0.681 | 0.739 |
 | exp3a | PubMedBERT | SMILES-Trf | MLP | 0.620 | 0.673 | 0.624 |
+| exp3b | PubMedBERT | ChemBERTa | FuseMoE | 0.604 +/- 0.088 | 0.680 +/- 0.061 | 0.658 +/- 0.106 |
+
+> **FuseMoE regression note:** The revised FuseMoE (Laplace gating, MI loss) reduced Exp3b AUC from 0.753 to 0.677 compared to the previous implementation. The old softmax + malformed KL loss may have acted as accidental regularisation. The exp3a MLP results (unchanged at AUC 0.687-0.701) now outperform FuseMoE for triple modality, consistent with the pattern that simpler fusion methods perform better on small datasets (n=107).
 
 ### Fold Deviation Statistics (5-fold CV, Jan 28 run)
 
@@ -148,11 +151,11 @@ Combined all three modalities: text report embeddings, EEG signal embeddings, an
 
 ### Key Observations (Updated)
 
-- **Best model:** ClinicalBERT + ChemBERTa + FuseMoE (AUC 0.753, Balanced Accuracy 0.774)
-- FuseMoE consistently outperforms MLP when using balanced accuracy threshold
-- ChemBERTa now outperforms SMILES-Trf (different from F1-optimised results)
-- Balanced accuracy and F1 are well-aligned for the best model
-- Fold variance reasonable (std ~0.06 for balanced accuracy)
+- **Best model:** ClinicalBERT + ChemBERTa + MLP (AUC 0.687, Balanced Accuracy 0.713) - MLP now outperforms FuseMoE
+- **FuseMoE regression:** Revised FuseMoE reduced best AUC from 0.753 to 0.677 - old malformed KL loss may have provided accidental regularisation
+- MLP fusion more reliable than MoE for triple modality on small datasets (n=107)
+- ChemBERTa outperforms SMILES-Trf for both fusion methods
+- Fold variance remains moderate (AUC std 0.088-0.124 for FuseMoE)
 
 
 ---
