@@ -222,7 +222,7 @@ class QuadMLPv2(nn.Module):
 
     def __init__(
         self,
-        clinical_dim=20,
+        clinical_dim=19,
         text_dim=768,
         smiles_dim=768,
         hidden_dim=64,
