@@ -595,12 +595,12 @@ Run on M3 HPC (Job 51370915, A100 80GB). Last 2 transformer layers unfrozen with
 8. ~~Run Exp10 fine-tuning experiments (Phase 2) - unfreeze last 2 transformer layers~~ **DONE** - ClinicalBERT +0.047 AUC, PubMedBERT +0.003 AUC
 9. ~~Replace FuseMoE implementation with revised version~~ **DONE** - Re-run results: exp1b/2b/7b improved, exp3b regressed
 10. ~~Re-run Exp5c/Exp7 with pipeline improvements~~ **DONE** - Exp5c AUC 0.675 (was 0.644), Exp7a AUC 0.798 (was 0.762)
-11. Execute EEG2Vec swap plan - swap EEG2Vec into exp5c, exp7, exp2, exp3, exp6b
+11. ~~Execute EEG2Vec swap plan - swap EEG2Vec into exp5c, exp7, exp2, exp3, exp6b~~ **DONE**
 12. ~~Re-run exp1b, exp2b, exp3b with revised FuseMoE~~ **DONE** - Mixed results, exp3b regressed
-13. Re-run exp3a/exp7a MLP baselines with EEG2Vec encoder (use 128D based on exp9 findings) - **Code ready:** `sbatch submit_job.sh -e exp11 -a "--base exp3a"` and `sbatch submit_job.sh -e exp11 -a "--base exp7a"`
-14. Re-run exp6b with EEG2Vec encoder - **Code ready:** `sbatch submit_job.sh -e exp11 -a "--base exp6b"`
-15. Investigate exp3b FuseMoE regression - test hyperparameter tuning (learning rate, num_experts, temperature decay) - **Code ready:** `sbatch submit_job.sh -e exp12`
-16. Run Qwen 2.5 fine-tuning (only BERT models fine-tuned so far) - **Code ready:** `sbatch submit_job.sh -e exp13`
-17. Consider MeanMax aggregator for EEG in multi-modal experiments (exp9 finding: AUC 0.722, Bal Acc 0.740) - **Code ready:** `sbatch submit_job.sh -e exp11 -a "--aggregator meanmax"`
+13. Re-run exp3a/exp7a MLP baselines with EEG2Vec encoder (use 128D based on exp9 findings) - **RUNNING** `sbatch submit_job.sh -e exp11 -a "--base exp3a"` and `sbatch submit_job.sh -e exp11 -a "--base exp7a"`
+14. Re-run exp6b with EEG2Vec encoder - **RUNNING** `sbatch submit_job.sh -e exp11 -a "--base exp6b"`
+15. Investigate exp3b FuseMoE regression - test hyperparameter tuning (learning rate, num_experts, temperature decay) - **RUNNING** `sbatch submit_job.sh -e exp12`
+16. Run Qwen 2.5 fine-tuning (only BERT models fine-tuned so far) - **RUNNING** `sbatch submit_job.sh -e exp13`
+17. Consider MeanMax aggregator for EEG in multi-modal experiments (exp9 finding: AUC 0.722, Bal Acc 0.740) - **RUNNING** `sbatch submit_job.sh -e exp11 -a "--aggregator meanmax"`
 18. Hyperparameter optimisation for best-performing model (Optuna)
 19. External validation on further data if available
