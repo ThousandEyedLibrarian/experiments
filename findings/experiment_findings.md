@@ -1,6 +1,6 @@
 # ASM Outcome Prediction: Experimental Findings
 
-**Date:** 13 February 2026 (updated)
+**Date:** 15 February 2026 (updated)
 **Dataset:** 151 patients with EEG recordings and anti-seizure medication (ASM) outcomes
 
 ---
@@ -384,15 +384,19 @@ Multi-label stratification (outcome + focal + sex) dramatically reduces fold-to-
 | Experiment | Modality | Best Model | AUC | Bal Acc Tuned | F1 Tuned |
 |------------|----------|------------|-----|---------------|----------|
 | **Exp7a** | **Clinical + LLM + EEG + SMILES** | ClinicalBERT + ChemBERTa + MLP | **0.798** | **0.814** | **0.813** |
+| Exp12 | LLM + EEG + SMILES | ClinicalBERT + ChemBERTa + FuseMoE (tuned) | 0.760 | 0.760 | 0.742 |
 | Exp7b | Clinical + LLM + EEG + SMILES | ClinicalBERT + ChemBERTa + FuseMoE | 0.753 | 0.754 | 0.716 |
 | Exp7a | Clinical + LLM + EEG + SMILES | PubMedBERT + ChemBERTa + MLP | 0.752 | 0.766 | 0.749 |
+| Exp11 | LLM + EEG + SMILES | ClinicalBERT + SMILES-Trf + MeanMax (EEG2Vec) | 0.736 | 0.752 | 0.779 |
 | Exp9 | EEG + SMILES (ablation) | EEG2Vec 128D + Transformer | 0.730 | 0.725 | 0.732 |
 | Exp7b | Clinical + LLM + EEG + SMILES | PubMedBERT + ChemBERTa + FuseMoE | 0.712 | 0.716 | 0.718 |
 | Exp6a | Clinical + SMILES + Text | PubMedBERT + ChemBERTa | 0.702 | 0.705 | 0.738 |
+| Exp11 | Clinical + SMILES + EEG | ChemBERTa + Transformer (EEG2Vec) | 0.697 | 0.694 | 0.672 |
 | Exp10 | Clinical + Direct LLM (fine-tuned) | ClinicalBERT | 0.691 | 0.723 | 0.698 |
 | Exp5a | Clinical + SMILES | ChemBERTa | 0.689 | 0.680 | 0.638 |
 | Exp10 | Clinical + Direct LLM (frozen) | Qwen 2.5 0.5B | 0.689 | 0.717 | 0.666 |
-| Exp3a | LLM + EEG + SMILES | ClinicalBERT + ChemBERTa + MLP | 0.687 | 0.713 | 0.654 |
+| Exp3a | LLM + EEG + SMILES | ClinicalBERT + ChemBERTa + MLP (SimpleCNN) | 0.687 | 0.713 | 0.654 |
+| Exp13 | Clinical + Direct LLM (fine-tuned) | Qwen 2.5 0.5B (4L) | 0.682 | 0.736 | 0.737 |
 | Exp3b | LLM + EEG + SMILES | ClinicalBERT + ChemBERTa + FuseMoE | 0.677 | 0.726 | 0.761 |
 | Exp5b | Clinical + Text | ClinicalBERT | 0.676 | 0.708 | 0.716 |
 | Exp5c | Clinical + EEG | SimpleCNN | 0.675 | 0.698 | 0.689 |
@@ -403,13 +407,13 @@ Multi-label stratification (outcome + focal + sex) dramatically reduces fold-to-
 | Exp2b | EEG + SMILES | SimpleCNN + SMILES-Trf + FuseMoE | 0.611 | 0.621 | 0.556 |
 
 **Key findings:**
-- Quad modality (Exp7a) now achieves AUC 0.798, a larger improvement over triple (Exp3b, 0.677) than previously observed
-- Revised FuseMoE improved exp1b, exp2b, exp7b results but regressed exp3b (0.753 -> 0.677)
-- MLP fusion remains more stable than MoE on small datasets (107 patients)
-- EEG2Vec with 128D embeddings achieves AUC 0.730 as standalone EEG+SMILES - strong signal
-- Fine-tuned ClinicalBERT (0.691) marginally outperforms frozen Qwen 2.5 (0.689)
-- Text fusion consistently outperforms EEG fusion across all experiments
-- SMILES embeddings provide complementary signal to other modalities
+- Quad modality (Exp7a) achieves AUC 0.798 - best overall result with ClinicalBERT + ChemBERTa + MLP
+- FuseMoE regression resolved: tuned hyperparameters (Exp12) achieve AUC 0.760, surpassing the old malformed loss result (0.753)
+- EEG2Vec 128D upgrade (Exp11) improves triple MLP by +0.049 (0.687 -> 0.736) and exp6b by +0.050 (0.647 -> 0.697)
+- MLP fusion remains more stable than MoE on small datasets, but the gap narrows with proper MoE hyperparameters
+- Qwen 2.5 fine-tuning (Exp13) does not improve AUC but halves variance and improves balanced metrics substantially
+- ClinicalBERT is the most consistently strong text model across all experiment configurations
+- SMILES embeddings provide complementary signal to all other modalities
 
 ---
 
@@ -420,9 +424,9 @@ Multi-label stratification (outcome + focal + sex) dramatically reduces fold-to-
 - Wide 95% CIs due to small k (5 folds) and high heterogeneity (I²=80%)
 - Overlapping CIs between best models prevent definitive ranking
 - LaBraM EEG encoder underperforms (AUC 0.549) - architecture may be unsuitable for 27-channel clinical EEG with small dataset
-- No hyperparameter tuning performed
 - Quad-modality limited by intersection of all data sources (107 patients)
-- Revised FuseMoE regression on Exp3b suggests the MoE architecture may need per-experiment hyperparameter tuning rather than a one-size-fits-all configuration
+- FuseMoE requires careful hyperparameter tuning per experiment - default configuration caused significant regression in Exp3b (resolved in Exp12)
+- Exp7a EEG2Vec results (Exp11) did not complete - most important missing result for determining ceiling performance
 
 ---
 
@@ -691,10 +695,12 @@ Frozen Qwen baseline: AUC 0.689 +/- 0.088. Fine-tuned (4L): AUC 0.682 (-0.007).
 10. ~~Re-run Exp5c/Exp7 with pipeline improvements~~ **DONE** - Exp5c AUC 0.675 (was 0.644), Exp7a AUC 0.798 (was 0.762)
 11. ~~Execute EEG2Vec swap plan - swap EEG2Vec into exp5c, exp7, exp2, exp3, exp6b~~ **DONE**
 12. ~~Re-run exp1b, exp2b, exp3b with revised FuseMoE~~ **DONE** - Mixed results, exp3b regressed
-13. Re-run exp3a/exp7a MLP baselines with EEG2Vec encoder (use 128D based on exp9 findings) - **RUNNING** `sbatch submit_job.sh -e exp11 -a "--base exp3a"` and `sbatch submit_job.sh -e exp11 -a "--base exp7a"`
-14. Re-run exp6b with EEG2Vec encoder - **RUNNING** `sbatch submit_job.sh -e exp11 -a "--base exp6b"`
-15. Investigate exp3b FuseMoE regression - test hyperparameter tuning (learning rate, num_experts, temperature decay) - **RUNNING** `sbatch submit_job.sh -e exp12`
-16. Run Qwen 2.5 fine-tuning (only BERT models fine-tuned so far) - **RUNNING** `sbatch submit_job.sh -e exp13`
-17. Consider MeanMax aggregator for EEG in multi-modal experiments (exp9 finding: AUC 0.722, Bal Acc 0.740) - **RUNNING** `sbatch submit_job.sh -e exp11 -a "--aggregator meanmax"`
-18. Hyperparameter optimisation for best-performing model (Optuna)
-19. External validation on further data if available
+13. ~~Re-run exp3a/exp7a MLP baselines with EEG2Vec encoder~~ **PARTIALLY DONE** - Exp3a: AUC 0.736 (was 0.687). Exp7a did not complete, needs re-submission
+14. ~~Re-run exp6b with EEG2Vec encoder~~ **DONE** - AUC 0.697 (was 0.647)
+15. ~~Investigate exp3b FuseMoE regression~~ **DONE** - Exp12: tuned FuseMoE achieves AUC 0.760, regression fully resolved. Best config: lr=5e-5, 4 experts, no temperature decay
+16. ~~Run Qwen 2.5 fine-tuning~~ **DONE** - Exp13: AUC 0.682 (vs frozen 0.689), variance halved, balanced metrics improved
+17. ~~Consider MeanMax aggregator for EEG~~ **DONE** - Tested in Exp11. MeanMax achieves best exp3a result (AUC 0.736, std 0.036)
+18. Re-submit exp11 exp7a EEG2Vec configs (quad modality with EEG2Vec - did not complete)
+19. Apply Exp12 best hyperparameters (lr=5e-5, 4 experts, no temp decay) to other FuseMoE experiments (exp1b, exp2b, exp7b)
+20. Hyperparameter optimisation for best-performing model (Optuna)
+21. External validation on further data if available
