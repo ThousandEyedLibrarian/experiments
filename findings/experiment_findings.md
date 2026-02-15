@@ -256,8 +256,8 @@ Late fusion with three modality streams: each modality encoded to 64D, concatena
 
 - Best Exp6 model: PubMedBERT + ChemBERTa (AUC 0.702, +0.038 vs Exp4a, +0.013 vs Exp5a)
 - Text fusion (Exp6a) outperforms EEG fusion (Exp6b)
-- Exp3 (triple without clinical) still achieves highest AUC (0.753)
-- Clinical features provide diminishing returns when embeddings are available
+- Exp6a (AUC 0.702) now outperforms Exp3 triple modality (best MLP AUC 0.687, best FuseMoE AUC 0.677) - clinical features add value
+- Clinical features provide meaningful lift when combined with embedding modalities
 
 ---
 
@@ -389,6 +389,7 @@ Multi-label stratification (outcome + focal + sex) dramatically reduces fold-to-
 | Exp10 | Clinical + Direct LLM (fine-tuned) | ClinicalBERT | 0.691 | 0.723 | 0.698 |
 | Exp5a | Clinical + SMILES | ChemBERTa | 0.689 | 0.680 | 0.638 |
 | Exp10 | Clinical + Direct LLM (frozen) | Qwen 2.5 0.5B | 0.689 | 0.717 | 0.666 |
+| Exp3a | LLM + EEG + SMILES | ClinicalBERT + ChemBERTa + MLP | 0.687 | 0.713 | 0.654 |
 | Exp3b | LLM + EEG + SMILES | ClinicalBERT + ChemBERTa + FuseMoE | 0.677 | 0.726 | 0.761 |
 | Exp5b | Clinical + Text | ClinicalBERT | 0.676 | 0.708 | 0.716 |
 | Exp5c | Clinical + EEG | SimpleCNN | 0.675 | 0.698 | 0.689 |
