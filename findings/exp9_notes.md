@@ -291,6 +291,14 @@ Based on these findings, the recommended EEG configuration for exp5c, exp7, and 
 - **Aggregator:** Transformer (2 layers) or MeanMax
 - **Training:** End-to-end (not frozen)
 
+### Multi-modal Validation (Exp11, 15 February 2026)
+
+The exp9 ablation findings were validated in multi-modal experiments (Exp11):
+- **128D embeddings confirmed optimal:** EEG2Vec 128D improves exp3a MLP from AUC 0.687 to 0.736 (+0.049) and exp6b from 0.647 to 0.697 (+0.050)
+- **MeanMax aggregator confirmed competitive:** Achieves best exp3a result (AUC 0.736, std 0.036) with lowest variance, validating the exp9 finding (AUC 0.722, Bal Acc 0.740)
+- **Exp7a EEG2Vec configs did not complete** - re-submission required for quad modality validation
+- See `findings/exp11_notes.md` for full results
+
 ---
 
 ## Encoder Inventory (Updated)
@@ -332,5 +340,7 @@ EEG2Vec encoder added 12 February 2026, based on arxiv 2207.08002.
 8. ~~Run dimension ablations (embed_dim 64, 128, 256) with EEG2Vec encoder~~ **DONE** (Run 4)
 9. Re-run Exp5c with EEG2Vec encoder (currently still SimpleCNN; multi-label stratification already applied)
 10. Investigate fold 4/5 weakness across encoders
-11. Swap EEG2Vec (128D) into exp2, exp3, exp6b, exp7 for consistent encoder across all EEG experiments
-12. Test MeanMax aggregator in multi-modal experiments (highest balanced accuracy in ablation)
+11. ~~Swap EEG2Vec (128D) into exp3, exp6b~~ **PARTIALLY DONE** (Exp11) - exp3a +0.049 AUC, exp6b +0.050 AUC. Exp7a did not complete. Exp2 not yet tested.
+12. ~~Test MeanMax aggregator in multi-modal experiments~~ **DONE** (Exp11) - MeanMax achieves best exp3a result (AUC 0.736, std 0.036)
+13. Re-submit exp7a EEG2Vec configs (quad modality validation)
+14. Test EEG2Vec in exp2 (EEG + SMILES dual modality)
