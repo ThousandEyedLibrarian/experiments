@@ -256,6 +256,12 @@ def run_experiment(
         model = create_model(fusion_type, TEXT_DIM, smiles_dim, config)
         model.to(device)
 
+        # Disable temperature annealing (Exp12 finding: no temp decay is optimal)
+        if use_aux_loss and hasattr(model, 'fusion_layers'):
+            for layer in model.fusion_layers:
+                if hasattr(layer, 'fuse_moe'):
+                    layer.fuse_moe.temperature_decay = 1.0
+
         # Optimizer and scheduler
         optimizer = torch.optim.AdamW(
             model.parameters(),
