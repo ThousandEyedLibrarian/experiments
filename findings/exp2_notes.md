@@ -48,6 +48,29 @@ Window embeddings (256D) aggregated via 2-layer Transformer encoder.
 
 *Note: Exp2b rows updated 13 February 2026 with revised FuseMoE (Laplace gating, MI loss, 3-layer residual experts, temperature annealing). Previous Exp2b results: SMILES-Trf AUC 0.576, ChemBERTa AUC 0.562.*
 
+### Exp2b Results: Exp12 Tuned HP (17 February 2026)
+
+Applied Exp12 best hyperparameters (lr=5e-5, 4 experts, no temp decay) to exp2b.
+
+| SMILES Model | Fusion | AUC | Bal Acc Tuned | F1 Tuned |
+|--------------|--------|-----|---------------|----------|
+| ChemBERTa | FuseMoE (Exp12 HP) | 0.585 +/- 0.077 | 0.603 +/- 0.056 | 0.524 +/- 0.178 |
+| SMILES-Trf | FuseMoE (Exp12 HP) | 0.569 +/- 0.087 | 0.602 +/- 0.055 | 0.640 +/- 0.067 |
+
+**Comparison with default revised FuseMoE HP:**
+
+| SMILES Model | Default HP AUC | Exp12 HP AUC | Delta | Std Change |
+|--------------|---------------|-------------|-------|------------|
+| ChemBERTa | 0.572 +/- 0.024 | 0.585 +/- 0.077 | +0.013 | +0.053 |
+| SMILES-Trf | 0.611 +/- 0.056 | 0.569 +/- 0.087 | -0.042 | +0.031 |
+
+**Observations:**
+- ChemBERTa gains +0.013 AUC but variance increases substantially (0.024 -> 0.077)
+- SMILES-Trf regresses -0.042 AUC - temperature annealing was beneficial for this pairing
+- Unlike exp1b/exp7b, exp2b shows increased variance with Exp12 HP for both configs
+- EEG + SMILES may need different FuseMoE HP than text-containing experiments
+- Best exp2b FuseMoE remains SMILES-Trf at 0.611 with default revised HP
+
 ### Per-Fold AUC Values (Best Model: Exp2a SMILES-Trf MLP)
 
 | Fold | AUC | Bal Acc Tuned |
@@ -69,6 +92,8 @@ Window embeddings (256D) aggregated via 2-layer Transformer encoder.
 3. **SMILES-Trf outperforms ChemBERTa:** Consistent across both fusion methods
 
 4. **Revised FuseMoE substantially more stable:** AUC std 0.056 (was 0.095), F1 std 0.175 (was 0.272) for SMILES-Trf
+
+5. **Exp12 HP not beneficial for EEG + SMILES FuseMoE:** Both variance and AUC worsen for SMILES-Trf (-0.042 AUC). The EEG modality may benefit from temperature annealing's gradual specialisation of experts.
 
 ---
 
@@ -103,6 +128,7 @@ EEG-based fusion (Exp2) achieves comparable balanced accuracy to text-based fusi
 - Only SimpleCNN encoder tested (LaBraM not available)
 - FuseMoE appears unsuitable for EEG fusion at this dataset size
 - High variance in some folds
+- FuseMoE HP tuning needs to be experiment-specific - Exp12 HP (optimised for triple modality) does not transfer to dual EEG + SMILES
 
 ---
 

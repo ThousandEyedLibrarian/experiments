@@ -98,8 +98,44 @@ Total: 3 x 2 x 2 = **12 configurations**, all with top_k=2.
 
 ---
 
+## Cross-Experiment Validation (17 February 2026)
+
+Applied Exp12 best HP (lr=5e-5, 4 experts, no temp decay) to all other FuseMoE experiments.
+
+| Experiment | Config | Default HP AUC | Exp12 HP AUC | Delta | Std Change |
+|------------|--------|---------------|--------------|-------|------------|
+| exp1b | ClinicalBERT + ChemBERTa | 0.636 +/- 0.142 | 0.650 +/- 0.111 | +0.014 | -0.031 |
+| exp1b | ClinicalBERT + SMILES-Trf | 0.674 +/- 0.139 | 0.647 +/- 0.062 | -0.027 | **-0.077** |
+| exp1b | PubMedBERT + ChemBERTa | 0.601 +/- 0.104 | 0.649 +/- 0.089 | **+0.048** | -0.015 |
+| exp1b | PubMedBERT + SMILES-Trf | 0.612 +/- 0.049 | 0.629 +/- 0.077 | +0.017 | +0.028 |
+| exp2b | SimpleCNN + ChemBERTa | 0.572 +/- 0.024 | 0.585 +/- 0.077 | +0.013 | +0.053 |
+| exp2b | SimpleCNN + SMILES-Trf | 0.611 +/- 0.056 | 0.569 +/- 0.087 | -0.042 | +0.031 |
+| exp7b | ClinicalBERT + ChemBERTa | 0.753 +/- 0.127 | 0.746 +/- 0.098 | -0.007 | -0.029 |
+| exp7b | PubMedBERT + ChemBERTa | 0.712 +/- 0.072 | 0.738 +/- 0.084 | **+0.026** | +0.012 |
+
+### Cross-Experiment Insights
+
+1. **Not a universal improvement** - 3 of 8 configurations regressed. The best per-experiment FuseMoE result should use whichever HP config produced the higher AUC.
+
+2. **PubMedBERT benefits more than ClinicalBERT consistently:**
+   - exp1b ChemBERTa: PubMedBERT +0.048 vs ClinicalBERT +0.014
+   - exp7b: PubMedBERT +0.026 vs ClinicalBERT -0.007
+   - Hypothesis: PubMedBERT's biomedical pre-training creates stronger initial representations that benefit from the lower learning rate (less forgetting), while ClinicalBERT's clinical-specific features are more sensitive to the loss of temperature annealing's regularisation effect.
+
+3. **Variance reduction is the most consistent benefit for ClinicalBERT:**
+   - exp1b ChemBERTa: std 0.142 -> 0.111
+   - exp1b SMILES-Trf: std 0.139 -> 0.062 (largest reduction)
+   - exp7b: std 0.127 -> 0.098
+   - Removing temperature annealing prevents the expert specialisation instability that affects ClinicalBERT more than PubMedBERT.
+
+4. **EEG-only experiments (exp2b) respond differently** - both configs see increased variance with Exp12 HP. The EEG modality's temporal structure may benefit from temperature annealing's gradual expert specialisation.
+
+5. **Per-experiment HP tuning is warranted** - a universal FuseMoE configuration is suboptimal. Next step #3 is validated by these results.
+
+---
+
 ## Next Steps
 
-1. Apply best hyperparameters (lr=5e-5, 4 experts, no temp decay) to other FuseMoE experiments (exp1b, exp2b, exp7b)
+1. ~~Apply best hyperparameters (lr=5e-5, 4 experts, no temp decay) to other FuseMoE experiments (exp1b, exp2b, exp7b)~~ **DONE** - Mixed results: PubMedBERT benefits most (+0.048 exp1b, +0.026 exp7b). Not a universal improvement.
 2. Test whether the lr=1e-4, 2 experts, temp 0.9995 config (most stable, AUC 0.749) is preferable for deployment given lower variance
 3. Consider per-experiment HP tuning rather than a universal configuration

@@ -51,9 +51,9 @@ SMILES (768D) ────> Projection -> 256D ─┘
 | **exp7a_clinicalbert** | ClinicalBERT | MLP | **0.798** | 0.093 | **0.814** | 0.069 |
 | exp7b_clinicalbert | ClinicalBERT | MoE | 0.753 | 0.127 | 0.754 | 0.079 |
 | exp7a_pubmedbert | PubMedBERT | MLP | 0.752 | 0.069 | 0.766 | 0.065 |
-| exp7b_pubmedbert | PubMedBERT | MoE | 0.712 | 0.072 | 0.716 | 0.051 |
+| exp7b_pubmedbert | PubMedBERT | MoE (Exp12 HP) | 0.738 | 0.084 | 0.737 | 0.062 |
 
-*Updated 13 February 2026 with pipeline improvements (multi-label stratification, code review fixes) for exp7a, and revised FuseMoE (Laplace gating, MI loss, temperature annealing) for exp7b. Previous best: exp7a ClinicalBERT AUC 0.762.*
+*Updated 17 February 2026. exp7a: pipeline improvements (multi-label stratification, code review fixes). exp7b ClinicalBERT: revised FuseMoE (Laplace gating, MI loss, temperature annealing). exp7b PubMedBERT: Exp12 tuned HP (lr=5e-5, 4 experts, no temp decay). Previous: exp7a ClinicalBERT AUC 0.762, exp7b PubMedBERT AUC 0.712.*
 
 ### Per-Fold AUC (Best Model: exp7a_clinicalbert)
 
@@ -94,6 +94,11 @@ SMILES (768D) ────> Projection -> 256D ─┘
 
 5. **Fold 4 consistently strongest** (AUC 0.933) across re-runs
 
+6. **Exp12 HP benefits PubMedBERT FuseMoE (+0.026) but not ClinicalBERT (-0.007)**
+   - Consistent with the pattern seen across all FuseMoE experiments
+   - PubMedBERT FuseMoE now at 0.738, narrowing gap with ClinicalBERT MoE (0.753)
+   - ClinicalBERT variance reduction (0.127 -> 0.098) may be valuable for deployment stability
+
 ### EEG2Vec Upgrade (Exp11, 15 February 2026)
 
 Exp11 replaced SimpleCNN with EEG2Vec encoder (128D embeddings) for the exp7a MLP architecture. See `findings/exp11_notes.md` for full details.
@@ -105,19 +110,55 @@ Exp11 replaced SimpleCNN with EEG2Vec encoder (128D embeddings) for the exp7a ML
 
 EEG2Vec does not improve quad modality AUC (0.791 vs 0.798 SimpleCNN), unlike the +0.049 improvement seen for triple modality (exp3a). Clinical features may already compensate for SimpleCNN's weaker EEG encoding.
 
+### Exp7b Results: Exp12 Tuned HP (17 February 2026)
+
+Applied Exp12 best hyperparameters (lr=5e-5, 4 experts, no temp decay) to exp7b FuseMoE.
+
+| Text Model | Fusion | AUC | Std | Bal Acc Tuned | Std | F1 Tuned | Std |
+|------------|--------|-----|-----|---------------|-----|----------|-----|
+| ClinicalBERT | MoE (Exp12 HP) | 0.746 | 0.098 | 0.779 | 0.078 | 0.788 | 0.077 |
+| **PubMedBERT** | **MoE (Exp12 HP)** | **0.738** | **0.084** | **0.737** | **0.062** | **0.721** | **0.073** |
+
+**Per-Fold AUC (Exp12 HP):**
+
+| Fold | ClinicalBERT AUC | ClinicalBERT Bal Acc | PubMedBERT AUC | PubMedBERT Bal Acc |
+|------|-------------------|---------------------|----------------|-------------------|
+| 1 | 0.636 | 0.693 | 0.614 | 0.659 |
+| 2 | 0.711 | 0.727 | 0.678 | 0.682 |
+| 3 | 0.683 | 0.742 | 0.750 | 0.733 |
+| 4 | 0.917 | 0.908 | 0.842 | 0.825 |
+| 5 | 0.783 | 0.825 | 0.808 | 0.783 |
+
+**Comparison with default revised FuseMoE HP:**
+
+| Text Model | Default HP AUC | Exp12 HP AUC | Delta | Std Change |
+|------------|---------------|-------------|-------|------------|
+| ClinicalBERT | 0.753 +/- 0.127 | 0.746 +/- 0.098 | -0.007 | -0.029 |
+| PubMedBERT | 0.712 +/- 0.072 | 0.738 +/- 0.084 | **+0.026** | +0.012 |
+
+**Observations:**
+- PubMedBERT FuseMoE improves substantially (+0.026 AUC) - moves from 8th to 7th in global comparison table
+- ClinicalBERT FuseMoE marginally declines in AUC (-0.007) but variance reduces meaningfully (0.127 -> 0.098)
+- PubMedBERT FuseMoE (0.738) now surpasses Exp9 EEG2Vec ablation (0.730) in ranking
+- ClinicalBERT MLP (0.798) still clearly outperforms both FuseMoE variants
+- Best exp7b configuration remains ClinicalBERT at 0.753 (default HP) for peak AUC
+- For PubMedBERT, Exp12 HP is unambiguously better (0.738 vs 0.712)
+
 ## Interpretation
 
 The substantial improvement over Exp3b (+0.121 AUC) confirms that clinical features provide meaningful additional signal when combined with all embedding modalities. Pipeline improvements (multi-label stratification, code review fixes) contributed to the overall gains.
 
 ## Training Configuration
 
-| Parameter | MLP (7a) | MoE (7b) |
-|-----------|----------|----------|
-| Learning rate | 1e-3 | 5e-4 |
-| Batch size | 8 | 8 |
-| Epochs | 100 | 100 |
-| Early stopping | 20 | 20 |
-| Weight decay | 1e-4 | 1e-4 |
+| Parameter | MLP (7a) | MoE (7b, default) | MoE (7b, Exp12 HP) |
+|-----------|----------|----------|----------|
+| Learning rate | 1e-3 | 5e-4 | 5e-5 |
+| Batch size | 8 | 8 | 8 |
+| Epochs | 100 | 100 | 100 |
+| Early stopping | 20 | 20 | 20 |
+| Weight decay | 1e-4 | 1e-4 | 1e-4 |
+| Num experts | - | 4 | 4 |
+| Temp decay | - | 0.9995 | None |
 
 ## Files
 

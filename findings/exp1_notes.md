@@ -68,6 +68,33 @@ Revised FuseMoE: Laplace gating, MI loss, 3-layer residual experts, temperature 
 
 Best AUC improved from 0.648 to 0.674. PubMedBERT + SMILES-Trf now has lowest variance (AUC std 0.049).
 
+### Exp1b Results: Exp12 Tuned HP (17 February 2026)
+
+Applied Exp12 best hyperparameters (lr=5e-5, 4 experts, no temp decay) to all exp1b configurations.
+
+| Text Model | SMILES Model | AUC | Bal Acc Tuned | F1 Tuned |
+|------------|--------------|-----|---------------|----------|
+| ClinicalBERT | ChemBERTa | 0.650 +/- 0.111 | 0.706 +/- 0.082 | 0.626 +/- 0.205 |
+| PubMedBERT | ChemBERTa | 0.649 +/- 0.089 | 0.701 +/- 0.078 | 0.706 +/- 0.083 |
+| ClinicalBERT | SMILES-Trf | 0.647 +/- 0.062 | 0.690 +/- 0.018 | 0.704 +/- 0.070 |
+| PubMedBERT | SMILES-Trf | 0.629 +/- 0.077 | 0.671 +/- 0.050 | 0.709 +/- 0.027 |
+
+**Comparison with default revised FuseMoE HP:**
+
+| Text Model | SMILES Model | Default HP AUC | Exp12 HP AUC | Delta | Std Change |
+|------------|--------------|---------------|-------------|-------|------------|
+| ClinicalBERT | ChemBERTa | 0.636 +/- 0.142 | 0.650 +/- 0.111 | +0.014 | -0.031 |
+| ClinicalBERT | SMILES-Trf | 0.674 +/- 0.139 | 0.647 +/- 0.062 | -0.027 | **-0.077** |
+| PubMedBERT | ChemBERTa | 0.601 +/- 0.104 | 0.649 +/- 0.089 | **+0.048** | -0.015 |
+| PubMedBERT | SMILES-Trf | 0.612 +/- 0.049 | 0.629 +/- 0.077 | +0.017 | +0.028 |
+
+**Observations:**
+- PubMedBERT + ChemBERTa shows the largest improvement (+0.048 AUC) - most underperforming config benefits most
+- ClinicalBERT + SMILES-Trf AUC regresses (-0.027) but variance drops massively (0.139 -> 0.062) - training much more stable
+- Removing temperature annealing is particularly beneficial for ClinicalBERT variance reduction
+- Best overall exp1b AUC remains 0.674 (ClinicalBERT + SMILES-Trf, default HP)
+- Best exp1b config for deployment may be ClinicalBERT + SMILES-Trf with Exp12 HP (AUC 0.647, std 0.062) due to much lower variance
+
 ---
 
 ## Key Findings
@@ -79,6 +106,10 @@ Best AUC improved from 0.648 to 0.674. PubMedBERT + SMILES-Trf now has lowest va
 3. **Revised FuseMoE improved stability for PubMedBERT:** PubMedBERT + SMILES-Trf std dropped from 0.075 to 0.049
 
 4. **Threshold tuning critical:** F1_tuned (0.56-0.71) substantially better than raw F1 (0.35-0.68)
+
+5. **Exp12 HP benefits PubMedBERT more than ClinicalBERT:** PubMedBERT configs gain +0.017 to +0.048 AUC, while ClinicalBERT configs are mixed (+0.014 and -0.027). PubMedBERT may respond better to lower learning rates.
+
+6. **Variance reduction from removing temp annealing:** ClinicalBERT + SMILES-Trf std drops from 0.139 to 0.062 - the largest variance reduction across all FuseMoE experiments.
 
 ---
 
@@ -102,3 +133,4 @@ Note: AUC differences due to random seed variation; tuned metrics now available 
 - Threshold selection: Youden's J statistic (TPR - FPR)
 - Training: 100 epochs, early stopping (patience 15/20), batch size 16
 - Optimiser: AdamW, LR 1e-4 (MLP) / 5e-5 (FuseMoE)
+- FuseMoE (Exp12 HP): AdamW, LR 5e-5, 4 experts, top-2 routing, no temperature decay
