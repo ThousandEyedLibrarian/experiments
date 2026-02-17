@@ -420,46 +420,6 @@ Multi-label stratification (outcome + focal + sex) dramatically reduces fold-to-
 
 ---
 
-## Comparison: All Experiments
-
-| Experiment | Modality | Best Model | AUC | Bal Acc Tuned | F1 Tuned |
-|------------|----------|------------|-----|---------------|----------|
-| **Exp7a** | **Clinical + LLM + EEG + SMILES** | ClinicalBERT + ChemBERTa + MLP | **0.798** | **0.814** | **0.813** |
-| Exp11 | Clinical + LLM + EEG + SMILES | ClinicalBERT + ChemBERTa + Transformer (EEG2Vec) | 0.791 | 0.776 | 0.794 |
-| Exp12 | LLM + EEG + SMILES | ClinicalBERT + ChemBERTa + FuseMoE (tuned) | 0.760 | 0.760 | 0.742 |
-| Exp7b | Clinical + LLM + EEG + SMILES | ClinicalBERT + ChemBERTa + FuseMoE | 0.753 | 0.754 | 0.716 |
-| Exp7a | Clinical + LLM + EEG + SMILES | PubMedBERT + ChemBERTa + MLP | 0.752 | 0.766 | 0.749 |
-| Exp7b | Clinical + LLM + EEG + SMILES | PubMedBERT + ChemBERTa + FuseMoE (Exp12 HP) | 0.738 | 0.737 | 0.721 |
-| Exp11 | LLM + EEG + SMILES | ClinicalBERT + SMILES-Trf + MeanMax (EEG2Vec) | 0.736 | 0.752 | 0.779 |
-| Exp9 | EEG + SMILES (ablation) | EEG2Vec 128D + Transformer | 0.730 | 0.725 | 0.732 |
-| Exp6a | Clinical + SMILES + Text | PubMedBERT + ChemBERTa | 0.702 | 0.705 | 0.738 |
-| Exp11 | Clinical + SMILES + EEG | ChemBERTa + Transformer (EEG2Vec) | 0.697 | 0.694 | 0.672 |
-| Exp10 | Clinical + Direct LLM (fine-tuned) | ClinicalBERT | 0.691 | 0.723 | 0.698 |
-| Exp5a | Clinical + SMILES | ChemBERTa | 0.689 | 0.680 | 0.638 |
-| Exp10 | Clinical + Direct LLM (frozen) | Qwen 2.5 0.5B | 0.689 | 0.717 | 0.666 |
-| Exp3a | LLM + EEG + SMILES | ClinicalBERT + ChemBERTa + MLP (SimpleCNN) | 0.687 | 0.713 | 0.654 |
-| Exp13 | Clinical + Direct LLM (fine-tuned) | Qwen 2.5 0.5B (4L) | 0.682 | 0.736 | 0.737 |
-| Exp3b | LLM + EEG + SMILES | ClinicalBERT + ChemBERTa + FuseMoE | 0.677 | 0.726 | 0.761 |
-| Exp5b | Clinical + Text | ClinicalBERT | 0.676 | 0.708 | 0.716 |
-| Exp5c | Clinical + EEG | SimpleCNN | 0.675 | 0.698 | 0.689 |
-| Exp1b | LLM + SMILES | ClinicalBERT + SMILES-Trf + FuseMoE | 0.674 | 0.720 | 0.664 |
-| Exp4a | Clinical only | MLP | 0.664 | 0.675 | 0.627 |
-| Exp6b | Clinical + SMILES + EEG | SimpleCNN + SMILES-Trf | 0.647 | 0.663 | 0.631 |
-| Exp2a | EEG + SMILES | SimpleCNN + SMILES-Trf + MLP | 0.634 | 0.699 | 0.720 |
-| Exp2b | EEG + SMILES | SimpleCNN + SMILES-Trf + FuseMoE | 0.611 | 0.621 | 0.556 |
-
-**Key findings:**
-- Quad modality (Exp7a) achieves AUC 0.798 - best overall result with ClinicalBERT + ChemBERTa + MLP
-- FuseMoE regression resolved: tuned hyperparameters (Exp12) achieve AUC 0.760, surpassing the old malformed loss result (0.753)
-- EEG2Vec 128D upgrade (Exp11) improves triple MLP by +0.049 (0.687 -> 0.736) and exp6b by +0.050 (0.647 -> 0.697), but does not improve quad modality (0.791 vs 0.798 SimpleCNN)
-- MLP fusion remains more stable than MoE on small datasets, but the gap narrows with proper MoE hyperparameters
-- Qwen 2.5 fine-tuning (Exp13) does not improve AUC but halves variance and improves balanced metrics substantially
-- ClinicalBERT is the most consistently strong text model across all experiment configurations
-- SMILES embeddings provide complementary signal to all other modalities
-- Exp12 tuned HP (lr=5e-5, no temp decay) is not a universal FuseMoE improvement - 5/8 configs improve, 3/8 regress. PubMedBERT benefits most; variance reduction is the most consistent benefit for ClinicalBERT
-
----
-
 ## Limitations
 
 - Relatively small sample size (n=151 for dual-modality, n=107 for triple/quad-modality, n=205 for clinical-only)
@@ -752,6 +712,46 @@ Frozen Qwen baseline: AUC 0.689 +/- 0.088. Fine-tuned (4L): AUC 0.682 (-0.007).
 
 ---
 
+## Comparison: All Experiments
+
+| Experiment | Modality | Best Model | AUC | Bal Acc Tuned | F1 Tuned |
+|------------|----------|------------|-----|---------------|----------|
+| **Exp7a** | **Clinical + LLM + EEG + SMILES** | ClinicalBERT + ChemBERTa + MLP | **0.798** | **0.814** | **0.813** |
+| Exp11 | Clinical + LLM + EEG + SMILES | ClinicalBERT + ChemBERTa + Transformer (EEG2Vec) | 0.791 | 0.776 | 0.794 |
+| Exp12 | LLM + EEG + SMILES | ClinicalBERT + ChemBERTa + FuseMoE (tuned) | 0.760 | 0.760 | 0.742 |
+| Exp7b | Clinical + LLM + EEG + SMILES | ClinicalBERT + ChemBERTa + FuseMoE | 0.753 | 0.754 | 0.716 |
+| Exp7a | Clinical + LLM + EEG + SMILES | PubMedBERT + ChemBERTa + MLP | 0.752 | 0.766 | 0.749 |
+| Exp7b | Clinical + LLM + EEG + SMILES | PubMedBERT + ChemBERTa + FuseMoE (Exp12 HP) | 0.738 | 0.737 | 0.721 |
+| Exp11 | LLM + EEG + SMILES | ClinicalBERT + SMILES-Trf + MeanMax (EEG2Vec) | 0.736 | 0.752 | 0.779 |
+| Exp9 | EEG + SMILES (ablation) | EEG2Vec 128D + Transformer | 0.730 | 0.725 | 0.732 |
+| Exp6a | Clinical + SMILES + Text | PubMedBERT + ChemBERTa | 0.702 | 0.705 | 0.738 |
+| Exp11 | Clinical + SMILES + EEG | ChemBERTa + Transformer (EEG2Vec) | 0.697 | 0.694 | 0.672 |
+| Exp10 | Clinical + Direct LLM (fine-tuned) | ClinicalBERT | 0.691 | 0.723 | 0.698 |
+| Exp5a | Clinical + SMILES | ChemBERTa | 0.689 | 0.680 | 0.638 |
+| Exp10 | Clinical + Direct LLM (frozen) | Qwen 2.5 0.5B | 0.689 | 0.717 | 0.666 |
+| Exp3a | LLM + EEG + SMILES | ClinicalBERT + ChemBERTa + MLP (SimpleCNN) | 0.687 | 0.713 | 0.654 |
+| Exp13 | Clinical + Direct LLM (fine-tuned) | Qwen 2.5 0.5B (4L) | 0.682 | 0.736 | 0.737 |
+| Exp3b | LLM + EEG + SMILES | ClinicalBERT + ChemBERTa + FuseMoE | 0.677 | 0.726 | 0.761 |
+| Exp5b | Clinical + Text | ClinicalBERT | 0.676 | 0.708 | 0.716 |
+| Exp5c | Clinical + EEG | SimpleCNN | 0.675 | 0.698 | 0.689 |
+| Exp1b | LLM + SMILES | ClinicalBERT + SMILES-Trf + FuseMoE | 0.674 | 0.720 | 0.664 |
+| Exp4a | Clinical only | MLP | 0.664 | 0.675 | 0.627 |
+| Exp6b | Clinical + SMILES + EEG | SimpleCNN + SMILES-Trf | 0.647 | 0.663 | 0.631 |
+| Exp2a | EEG + SMILES | SimpleCNN + SMILES-Trf + MLP | 0.634 | 0.699 | 0.720 |
+| Exp2b | EEG + SMILES | SimpleCNN + SMILES-Trf + FuseMoE | 0.611 | 0.621 | 0.556 |
+
+**Key findings:**
+- Quad modality (Exp7a) achieves AUC 0.798 - best overall result with ClinicalBERT + ChemBERTa + MLP
+- FuseMoE regression resolved: tuned hyperparameters (Exp12) achieve AUC 0.760, surpassing the old malformed loss result (0.753)
+- EEG2Vec 128D upgrade (Exp11) improves triple MLP by +0.049 (0.687 -> 0.736) and exp6b by +0.050 (0.647 -> 0.697), but does not improve quad modality (0.791 vs 0.798 SimpleCNN)
+- MLP fusion remains more stable than MoE on small datasets, but the gap narrows with proper MoE hyperparameters
+- Qwen 2.5 fine-tuning (Exp13) does not improve AUC but halves variance and improves balanced metrics substantially
+- ClinicalBERT is the most consistently strong text model across all experiment configurations
+- SMILES embeddings provide complementary signal to all other modalities
+- Exp12 tuned HP (lr=5e-5, no temp decay) is not a universal FuseMoE improvement - 5/8 configs improve, 3/8 regress. PubMedBERT benefits most; variance reduction is the most consistent benefit for ClinicalBERT
+
+---
+
 ## Next Steps
 
 1. ~~Look at torch api key padding mask and add to code~~ **DONE** - Already implemented in `exp2_fusion/models/eeg_transformer.py`
@@ -773,5 +773,5 @@ Frozen Qwen baseline: AUC 0.689 +/- 0.088. Fine-tuned (4L): AUC 0.682 (-0.007).
 17. ~~Consider MeanMax aggregator for EEG~~ **DONE** - Tested in Exp11. MeanMax achieves best exp3a result (AUC 0.736, std 0.036)
 18. ~~Re-submit exp11 exp7a EEG2Vec configs (quad modality with EEG2Vec)~~ **DONE** - AUC 0.791 (vs 0.798 SimpleCNN). EEG2Vec does not improve quad modality
 19. ~~Apply Exp12 best hyperparameters (lr=5e-5, 4 experts, no temp decay) to other FuseMoE experiments (exp1b, exp2b, exp7b)~~ **DONE** - Mixed results: PubMedBERT benefits most (+0.048 exp1b, +0.026 exp7b), ClinicalBERT sees mostly variance reduction. Not a universal improvement.
-20. Hyperparameter optimisation for best-performing model (Optuna)
+20. ~~Hyperparameter optimisation for best-performing model (Optuna)~~ **IN PROG**
 21. External validation on further data if available
