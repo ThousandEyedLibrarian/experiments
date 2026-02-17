@@ -180,11 +180,13 @@ if [ -n "$MODULE" ]; then
         exit 1
     fi
 else
-    # Default: look for run_experiments.py
+    # Default: look for run_experiments.py, fall back to __main__.py
     if [ -f "${EXP_DIR}/run_experiments.py" ]; then
         ENTRY_MODULE="run_experiments"
+    elif [ -f "${EXP_DIR}/__main__.py" ]; then
+        ENTRY_MODULE="__main__"
     else
-        echo "ERROR: No run_experiments.py found in ${EXP_DIRNAME}/."
+        echo "ERROR: No run_experiments.py or __main__.py found in ${EXP_DIRNAME}/."
         echo "Use -m to specify the entry point module."
         echo "Available modules:"
         for f in "${EXP_DIR}"/*.py; do
@@ -197,7 +199,12 @@ else
     fi
 fi
 
-CMD="python -m ${EXP_DIRNAME}.${ENTRY_MODULE} ${EXTRA_ARGS}"
+# Use python -m package for __main__.py, python -m package.module otherwise
+if [ "$ENTRY_MODULE" = "__main__" ]; then
+    CMD="python -m ${EXP_DIRNAME} ${EXTRA_ARGS}"
+else
+    CMD="python -m ${EXP_DIRNAME}.${ENTRY_MODULE} ${EXTRA_ARGS}"
+fi
 
 #==============================================================================
 # JOB EXECUTION

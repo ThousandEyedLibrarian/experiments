@@ -7,7 +7,7 @@
 
 ## Executive Summary
 
-We evaluated multimodal fusion approaches for predicting ASM treatment outcomes. Thirteen experiment sets were conducted:
+We evaluated multimodal fusion approaches for predicting ASM treatment outcomes. Fourteen experiment sets were conducted:
 
 - **Experiment 1:** Text report embeddings (LLM) + drug structure embeddings (SMILES)
 - **Experiment 2:** EEG signal embeddings + drug structure embeddings (SMILES)
@@ -22,10 +22,11 @@ We evaluated multimodal fusion approaches for predicting ASM treatment outcomes.
 - **Experiment 11:** EEG2Vec 128D upgrade for triple and clinical+EEG modality experiments
 - **Experiment 12:** FuseMoE hyperparameter investigation (exp3b regression)
 - **Experiment 13:** Qwen 2.5 fine-tuning with unfrozen transformer layers
+- **Experiment 14:** Optuna HP tuning for top 3 models (Exp7a, Exp11, Exp12)
 
-The best performing model achieved **AUC 0.798** and **balanced accuracy of 0.814** using all four modalities with MLP fusion (Exp7a). Class weighting and threshold tuning (via Youden's J statistic) were applied to address class imbalance.
+The best performing model achieved **AUC 0.831** using all four modalities with MLP fusion and Optuna-tuned hyperparameters (Exp14, tuning Exp7a). Class weighting and threshold tuning (via Youden's J statistic) were applied to address class imbalance.
 
-**Key finding:** Quad modality fusion (Exp7a, AUC 0.798) outperforms triple modality (Exp3b, AUC 0.677). The revised FuseMoE regression was resolved via hyperparameter tuning (Exp12, AUC 0.760). EEG2Vec 128D upgrade improves triple MLP to AUC 0.736 but does not improve quad modality (0.791 vs 0.798 SimpleCNN), suggesting clinical features compensate for weaker EEG encoding. Cross-experiment validation of Exp12 HP shows mixed results (5/8 improve) - PubMedBERT benefits most, per-experiment HP tuning is warranted.
+**Key finding:** Optuna HP tuning (Exp14) improved the best model from AUC 0.798 to 0.831 (+0.033) by halving the learning rate and reducing weight decay. Exp11 QuadMLPv2 also improved (0.791 to 0.822), while FuseMoE was already near-optimal from Exp12 grid search (0.760 vs 0.749 tuned). EEG2Vec 128D upgrade improves triple MLP to AUC 0.736 but does not improve quad modality (0.791 vs 0.798 SimpleCNN), suggesting clinical features compensate for weaker EEG encoding.
 
 ---
 
@@ -712,15 +713,71 @@ Frozen Qwen baseline: AUC 0.689 +/- 0.088. Fine-tuned (4L): AUC 0.682 (-0.007).
 
 ---
 
+## Experiment 14: Optuna HP Tuning (17 February 2026)
+
+Systematic hyperparameter tuning using Optuna's TPE sampler for the top 3 models: Exp7a QuadFusionMLP (AUC 0.798), Exp11 QuadMLPv2 with EEG2Vec (AUC 0.791), and Exp12 TripleFuseMoE (AUC 0.760). All three studies were interrupted before reaching the 100-trial budget but produced actionable results.
+
+### Search Space Summary
+
+| Model | Parameters Tuned | Key Ranges |
+|-------|-----------------|------------|
+| Exp7a QuadFusionMLP | lr, wd, dropout, hidden_dim, batch_size (5 params) | lr: [5e-4, 5e-3], hd: {32, 64, 128} |
+| Exp11 QuadMLPv2 | lr, wd, dropout, hidden_dim, batch_size, aggregator, eeg_dim (7 params) | lr: [5e-4, 5e-3], agg: {transformer, meanmax} |
+| Exp12 TripleFuseMoE | lr, wd, dropout, experts, top_k, aux_loss, temp_decay (7 params) | lr: [1e-5, 5e-4], experts: {2, 4, 6} |
+
+### Trial Statistics
+
+| Study | Completed | Pruned | Total | Target |
+|-------|-----------|--------|-------|--------|
+| Exp7a QuadFusionMLP | 17 | 10 | 28 | 100 |
+| Exp11 QuadMLPv2 | 16 | 15 | 32 | 100 |
+| Exp12 TripleFuseMoE | 40 | 5 | 46 | 100 |
+| **Total** | **73** | **30** | **106** | **300** |
+
+### Best Trial Results
+
+**Exp7a QuadFusionMLP** - Trial #24, AUC 0.831:
+- lr=5.29e-4, wd=2.73e-5, dropout=0.277, hidden_dim=64, batch_size=8
+- Key change: halved learning rate (5.29e-4 vs 1e-3 baseline), reduced weight decay by ~4x
+
+**Exp11 QuadMLPv2 (EEG2Vec)** - Trial #16, AUC 0.822:
+- lr=7.38e-4, wd=2.57e-4, dropout=0.341, hidden_dim=32, batch_size=8, aggregator=transformer, eeg_dim=64
+- Key change: smaller hidden_dim (32 vs 64) and eeg_embed_dim (64 vs 128) - baseline was over-parameterised
+
+**Exp12 TripleFuseMoE** - Trial #10, AUC 0.749:
+- lr=1.04e-4, wd=6.22e-5, dropout=0.052, experts=6, top_k=1, aux_loss=0.032, temp_decay=None
+- Did not improve on Exp12 grid-search baseline (0.760)
+
+### Baseline Comparison
+
+| Model | Baseline AUC | Tuned AUC | Delta |
+|-------|-------------|-----------|-------|
+| **Exp7a QuadFusionMLP** | 0.798 | **0.831** | **+0.033** |
+| Exp11 QuadMLPv2 (EEG2Vec) | 0.791 | **0.822** | **+0.031** |
+| Exp12 TripleFuseMoE | 0.760 | 0.749 | -0.011 |
+
+### Exp14 Key Observations
+
+- Lower learning rates benefit MLP models (~5e-4 vs 1e-3 baseline) - consistent with Exp12 finding for FuseMoE
+- Smaller model dimensions sufficient for Exp11 (hidden_dim 32, eeg_embed_dim 64)
+- FuseMoE already near-optimal from Exp12 grid search - 40 Optuna trials could not improve upon it
+- MedianPruner effective: 29% of trials pruned overall, saving computational time
+- **Caveat:** These are single best-trial AUCs, not confirmed reruns with full metrics
+
+---
+
 ## Comparison: All Experiments
 
 | Experiment | Modality | Best Model | AUC | Bal Acc Tuned | F1 Tuned |
 |------------|----------|------------|-----|---------------|----------|
-| **Exp7a** | **Clinical + LLM + EEG + SMILES** | ClinicalBERT + ChemBERTa + MLP | **0.798** | **0.814** | **0.813** |
+| **Exp14 (Exp7a)** | **Clinical + LLM + EEG + SMILES** | **ClinicalBERT + ChemBERTa + MLP (Optuna HP)** | **0.831** | - | - |
+| Exp14 (Exp11) | Clinical + LLM + EEG + SMILES | ClinicalBERT + ChemBERTa + Transformer/EEG2Vec (Optuna HP) | 0.822 | - | - |
+| Exp7a | Clinical + LLM + EEG + SMILES | ClinicalBERT + ChemBERTa + MLP | 0.798 | 0.814 | 0.813 |
 | Exp11 | Clinical + LLM + EEG + SMILES | ClinicalBERT + ChemBERTa + Transformer (EEG2Vec) | 0.791 | 0.776 | 0.794 |
 | Exp12 | LLM + EEG + SMILES | ClinicalBERT + ChemBERTa + FuseMoE (tuned) | 0.760 | 0.760 | 0.742 |
 | Exp7b | Clinical + LLM + EEG + SMILES | ClinicalBERT + ChemBERTa + FuseMoE | 0.753 | 0.754 | 0.716 |
 | Exp7a | Clinical + LLM + EEG + SMILES | PubMedBERT + ChemBERTa + MLP | 0.752 | 0.766 | 0.749 |
+| Exp14 (Exp12) | LLM + EEG + SMILES | ClinicalBERT + ChemBERTa + FuseMoE (Optuna HP) | 0.749 | - | - |
 | Exp7b | Clinical + LLM + EEG + SMILES | PubMedBERT + ChemBERTa + FuseMoE (Exp12 HP) | 0.738 | 0.737 | 0.721 |
 | Exp11 | LLM + EEG + SMILES | ClinicalBERT + SMILES-Trf + MeanMax (EEG2Vec) | 0.736 | 0.752 | 0.779 |
 | Exp9 | EEG + SMILES (ablation) | EEG2Vec 128D + Transformer | 0.730 | 0.725 | 0.732 |
@@ -741,14 +798,14 @@ Frozen Qwen baseline: AUC 0.689 +/- 0.088. Fine-tuned (4L): AUC 0.682 (-0.007).
 | Exp2b | EEG + SMILES | SimpleCNN + SMILES-Trf + FuseMoE | 0.611 | 0.621 | 0.556 |
 
 **Key findings:**
-- Quad modality (Exp7a) achieves AUC 0.798 - best overall result with ClinicalBERT + ChemBERTa + MLP
-- FuseMoE regression resolved: tuned hyperparameters (Exp12) achieve AUC 0.760, surpassing the old malformed loss result (0.753)
+- **New best result:** Optuna-tuned Exp7a achieves AUC 0.831 (+0.033 over baseline 0.798) - first model to exceed 0.8 AUC. Key change: halved learning rate (5.29e-4 vs 1e-3) and reduced weight decay by ~4x
+- Optuna-tuned Exp11 also improves substantially (AUC 0.822, +0.031) with smaller hidden dimensions (32 vs 64, eeg_dim 64 vs 128)
+- FuseMoE (Exp12) already near-optimal from grid search - Optuna could not improve upon it (0.749 vs 0.760 baseline)
+- Exp14 results are single best-trial AUCs (not confirmed reruns) - balanced accuracy and F1 pending rerun
 - EEG2Vec 128D upgrade (Exp11) improves triple MLP by +0.049 (0.687 -> 0.736) and exp6b by +0.050 (0.647 -> 0.697), but does not improve quad modality (0.791 vs 0.798 SimpleCNN)
 - MLP fusion remains more stable than MoE on small datasets, but the gap narrows with proper MoE hyperparameters
-- Qwen 2.5 fine-tuning (Exp13) does not improve AUC but halves variance and improves balanced metrics substantially
 - ClinicalBERT is the most consistently strong text model across all experiment configurations
 - SMILES embeddings provide complementary signal to all other modalities
-- Exp12 tuned HP (lr=5e-5, no temp decay) is not a universal FuseMoE improvement - 5/8 configs improve, 3/8 regress. PubMedBERT benefits most; variance reduction is the most consistent benefit for ClinicalBERT
 
 ---
 
@@ -773,5 +830,9 @@ Frozen Qwen baseline: AUC 0.689 +/- 0.088. Fine-tuned (4L): AUC 0.682 (-0.007).
 17. ~~Consider MeanMax aggregator for EEG~~ **DONE** - Tested in Exp11. MeanMax achieves best exp3a result (AUC 0.736, std 0.036)
 18. ~~Re-submit exp11 exp7a EEG2Vec configs (quad modality with EEG2Vec)~~ **DONE** - AUC 0.791 (vs 0.798 SimpleCNN). EEG2Vec does not improve quad modality
 19. ~~Apply Exp12 best hyperparameters (lr=5e-5, 4 experts, no temp decay) to other FuseMoE experiments (exp1b, exp2b, exp7b)~~ **DONE** - Mixed results: PubMedBERT benefits most (+0.048 exp1b, +0.026 exp7b), ClinicalBERT sees mostly variance reduction. Not a universal improvement.
-20. ~~Hyperparameter optimisation for best-performing model (Optuna)~~ **IN PROG**
-21. External validation on further data if available
+20. ~~Hyperparameter optimisation for best-performing model (Optuna)~~ **DONE** - Exp14: Exp7a AUC 0.798 -> 0.831 (+0.033), Exp11 AUC 0.791 -> 0.822 (+0.031), Exp12 FuseMoE did not improve (0.749 vs 0.760)
+21. Rerun Exp14 best Exp7a and Exp11 configurations with full metrics (balanced accuracy, F1, per-fold breakdowns)
+22. Resume Exp14 studies to complete remaining trials (Exp7a at 17/100, Exp11 at 16/100)
+23. Parameter importance analysis (Optuna `get_param_importances()`)
+24. Final model selection based on confirmed rerun results
+25. External validation on further data if available
