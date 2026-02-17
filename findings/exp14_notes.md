@@ -1,6 +1,6 @@
 # Experiment 14: Optuna HP Tuning for Top 3 Models
 
-**Date:** 17 February 2026
+**Date:** 18 February 2026 (updated)
 **Dataset:** n=107 (quad modality intersection)
 
 ---
@@ -75,16 +75,16 @@ Fixed: ClinicalBERT text, ChemBERTa SMILES, SimpleCNN EEG, hidden_dim=256, num_h
 
 ## Trial Statistics
 
-All three studies were interrupted before reaching the 100-trial budget (each has 1 stale RUNNING trial from the interruption).
+After HPC resume jobs (Job 51546904 for Exp7a, Job 51546909 for Exp11), studies are effectively complete. Exp7a was cancelled at 99/100 trials due to 8h time limit (2 stale RUNNING trials). Exp11 reached 100/100 trials. Exp12 was not resumed (already well-explored at 46 trials).
 
 | Study | Completed | Pruned | Total | Target |
 |-------|-----------|--------|-------|--------|
-| Exp7a QuadFusionMLP | 17 | 10 | 28 | 100 |
-| Exp11 QuadMLPv2 | 16 | 15 | 32 | 100 |
+| Exp7a QuadFusionMLP | 26 | 71 | 99 | 100 |
+| Exp11 QuadMLPv2 | 27 | 72 | 100 | 100 |
 | Exp12 TripleFuseMoE | 40 | 5 | 46 | 100 |
-| **Total** | **73** | **30** | **106** | **300** |
+| **Total** | **93** | **148** | **245** | **300** |
 
-Pruning rate: 29% overall (10/28 for Exp7a, 15/32 for Exp11, 5/46 for Exp12).
+Pruning rate: 60% overall (71/99 for Exp7a, 72/100 for Exp11, 5/46 for Exp12).
 
 ---
 
@@ -120,6 +120,20 @@ Completed trial distribution: mean=0.775, std=0.033, min=0.690, max=0.822.
 
 Smaller hidden_dim (32 vs 64) and smaller eeg_embed_dim (64 vs 128) suggest the baseline was slightly over-parameterised. Aggregator stayed as transformer.
 
+**Updated best after resume (Job 51546909): Trial #81, AUC 0.825**
+
+| Parameter | Trial #81 Value | Trial #16 Value | Baseline |
+|-----------|----------------|----------------|----------|
+| learning_rate | 3.73e-3 | 7.38e-4 | 1e-3 |
+| weight_decay | 7.82e-4 | 2.57e-4 | 1e-4 |
+| dropout | 0.483 | 0.341 | 0.3 |
+| hidden_dim | 32 | 32 | 64 |
+| batch_size | 4 | 8 | 8 |
+| aggregator_type | meanmax | transformer | transformer |
+| eeg_embed_dim | 64 | 64 | 128 |
+
+Trial #81 switches from transformer to meanmax aggregation and uses a much higher learning rate (3.73e-3 vs 7.38e-4) with smaller batch size (4 vs 8). The meanmax aggregator finding aligns with Exp9 extended ablation results where MeanMax was a strong alternative (Bal Acc 0.740). This trial has not yet been confirmed with a rerun.
+
 ### Exp12 TripleFuseMoE - Best: Trial #10, AUC 0.749
 
 | Parameter | Best Value | Baseline |
@@ -140,33 +154,113 @@ FuseMoE's best tuned result (0.749) is worse than its Exp12 grid-search baseline
 
 ## Baseline Comparison
 
-| Model | Baseline AUC | Tuned AUC | Delta | Trials (complete/pruned) |
-|-------|-------------|-----------|-------|--------------------------|
-| **Exp7a QuadFusionMLP** | 0.798 | **0.831** | **+0.033** | 17/10 (28 total) |
-| Exp11 QuadMLPv2 (EEG2Vec) | 0.791 | **0.822** | **+0.031** | 16/15 (32 total) |
-| Exp12 TripleFuseMoE | 0.760 | 0.749 | -0.011 | 40/5 (46 total) |
+| Model | Baseline AUC | Best Trial AUC | Delta | Trials (complete/pruned) |
+|-------|-------------|---------------|-------|--------------------------|
+| **Exp7a QuadFusionMLP** | 0.798 | **0.831** (Trial #24) | **+0.033** | 26/71 (99 total) |
+| Exp11 QuadMLPv2 (EEG2Vec) | 0.791 | **0.825** (Trial #81) | **+0.034** | 27/72 (100 total) |
+| Exp11 QuadMLPv2 (EEG2Vec) | 0.791 | 0.822 (Trial #16) | +0.031 | (from initial run) |
+| Exp12 TripleFuseMoE | 0.760 | 0.749 (Trial #10) | -0.011 | 40/5 (46 total) |
 
-**New best overall result:** Exp7a QuadFusionMLP with Optuna-tuned HP achieves AUC 0.831, up from 0.798 (+0.033).
+**Important:** These are single best-trial AUCs (mean across 5 CV folds within one trial). See "Confirmed Results (Rerun)" below for actual rerun performance.
+
+---
+
+## Confirmed Results (Rerun)
+
+Best configurations from the initial Optuna run were rerun with full metrics (HPC Job 51546896). **None of the Optuna-tuned configurations reproduced their trial AUC on rerun.** The gap between trial AUC and rerun AUC is 0.03-0.06, caused by training variance (different weight initialisations, data shuffling order).
+
+### Rerun Summary
+
+| Model | Optuna Best | Rerun AUC | Rerun Bal Acc | Rerun F1 Tuned | vs Baseline |
+|-------|------------|-----------|---------------|----------------|-------------|
+| Exp7a QuadFusionMLP | 0.831 | 0.770 +/- 0.053 | 0.760 +/- 0.045 | 0.759 +/- 0.049 | -0.028 vs 0.798 |
+| Exp11 QuadMLPv2 (EEG2Vec) | 0.822 | 0.789 +/- 0.088 | 0.768 +/- 0.062 | 0.777 +/- 0.047 | -0.002 vs 0.791 |
+| Exp12 TripleFuseMoE | 0.749 | 0.697 +/- 0.110 | 0.720 +/- 0.094 | 0.698 +/- 0.131 | -0.063 vs 0.760 |
+
+Note: Exp11 rerun used Trial #16 params (transformer aggregator). Trial #81 (meanmax, AUC 0.825) has not yet been rerun.
+
+### Per-Fold AUC (Rerun)
+
+| Model | Fold 1 | Fold 2 | Fold 3 | Fold 4 | Fold 5 |
+|-------|--------|--------|--------|--------|--------|
+| Exp7a QuadFusionMLP | 0.674 | 0.793 | 0.767 | 0.783 | 0.833 |
+| Exp11 QuadMLPv2 | 0.674 | 0.744 | 0.792 | 0.942 | 0.792 |
+| Exp12 TripleFuseMoE | 0.606 | 0.810 | 0.567 | 0.842 | 0.658 |
+
+### Rerun Key Findings
+
+- **Optuna trial AUCs are optimistic and do not reproduce.** The variance gap between trial AUC and rerun AUC ranges from 0.033 (Exp11) to 0.061 (Exp7a). This is expected - each trial's AUC is a single sample from the distribution of possible training runs.
+- **Exp7a rerun (0.770) is worse than its baseline (0.798).** The Optuna-tuned HP do not reliably improve upon the original configuration.
+- **Exp11 rerun (0.789) essentially matches its baseline (0.791).** Delta is only -0.002, within noise.
+- **Exp12 rerun (0.697) is substantially worse than its baseline (0.760).** FuseMoE shows the highest variance (std 0.110) and least reliable results.
+- **The original Exp7a baseline (AUC 0.798) remains the best confirmed result.**
+- Exp12 FuseMoE has extreme fold variance: Fold 3 AUC 0.567 vs Fold 4 AUC 0.842 (range 0.275).
+
+---
+
+## Parameter Importance (fANOVA)
+
+Hyperparameter importance scores computed using Optuna's fANOVA analysis.
+
+### Exp7a QuadFusionMLP
+
+| Parameter | Importance | |
+|-----------|-----------|---|
+| learning_rate | 0.676 | ################ |
+| dropout | 0.160 | #### |
+| hidden_dim | 0.102 | ## |
+| batch_size | 0.040 | # |
+| weight_decay | 0.022 | |
+
+Learning rate dominates (68%), consistent with the finding that halving LR from 1e-3 to ~5e-4 was the key change.
+
+### Exp11 QuadMLPv2 (EEG2Vec)
+
+| Parameter | Importance | |
+|-----------|-----------|---|
+| aggregator_type | 0.519 | ############# |
+| batch_size | 0.219 | ###### |
+| learning_rate | 0.088 | ## |
+| weight_decay | 0.072 | ## |
+| eeg_embed_dim | 0.054 | # |
+| hidden_dim | 0.026 | # |
+| dropout | 0.023 | |
+
+Aggregator type (transformer vs meanmax) is by far the most important parameter (52%). This aligns with Trial #81 switching to meanmax and achieving the new best (AUC 0.825). Batch size is unexpectedly the second most important parameter (22%).
+
+### Exp12 TripleFuseMoE
+
+| Parameter | Importance | |
+|-----------|-----------|---|
+| weight_decay | 0.293 | ####### |
+| learning_rate | 0.234 | ###### |
+| dropout | 0.206 | ##### |
+| temp_decay | 0.109 | ### |
+| aux_loss_weight | 0.061 | ## |
+| num_experts | 0.054 | # |
+| top_k | 0.044 | # |
+
+FuseMoE importance is more evenly distributed - no single parameter dominates. The top three (weight_decay, learning_rate, dropout) account for 73% and are all continuous regularisation parameters, suggesting FuseMoE performance is highly sensitive to the regularisation-capacity tradeoff.
 
 ---
 
 ## Key Observations
 
-1. **New overall best result:** Exp7a MLP achieves AUC 0.831, surpassing the previous best of 0.798 - the first model to exceed 0.8 AUC.
+1. **Optuna trial AUCs are optimistic and do not reproduce.** Rerunning the best Optuna configurations yields AUCs 0.03-0.06 lower than the trial values. Exp7a rerun (0.770) is worse than its baseline (0.798), Exp11 rerun (0.789) matches its baseline (0.791), and Exp12 rerun (0.697) is substantially worse than its baseline (0.760). The original Exp7a baseline (AUC 0.798) remains the best confirmed result.
 
-2. **Lower learning rates benefit MLP models:** Both Exp7a and Exp11 improved by roughly halving the learning rate (~5e-4 to 7e-4 vs the 1e-3 baseline). This mirrors the Exp12 grid search finding that 1e-3 was too high for FuseMoE.
+2. **Lower learning rates benefit MLP models:** Both Exp7a and Exp11 best trials used lower learning rates (~5e-4 to 7e-4 vs the 1e-3 baseline). However, this did not translate to reproducible improvements on rerun.
 
-3. **Weight decay reduction helps Exp7a:** Reducing weight decay by ~4x (2.73e-5 vs 1e-4) alongside the lower LR suggests the baseline was over-regularised for the MLP architecture.
+3. **Weight decay reduction helps Exp7a:** Reducing weight decay by ~4x (2.73e-5 vs 1e-4) alongside the lower LR was found by Optuna, but the combined effect is not reliably reproduced.
 
-4. **Smaller dimensions sufficient for Exp11:** Hidden dim 32 (vs 64) and EEG embed dim 64 (vs 128) improved Exp11, suggesting the baseline was slightly over-parameterised. The transformer aggregator remained optimal.
+4. **Aggregator type is the most important parameter for Exp11:** fANOVA shows aggregator_type accounts for 52% of variance. Trial #81 (AUC 0.825) switches from transformer to meanmax, consistent with Exp9 extended ablation findings. This trial has not yet been rerun.
 
-5. **FuseMoE already near-optimal from Exp12 grid search:** With 40 completed trials, Optuna could not improve upon the Exp12 best configuration (AUC 0.760 vs 0.749). The Exp12 grid search was more targeted and already found a strong configuration.
+5. **FuseMoE already near-optimal from Exp12 grid search:** With 40 completed trials, Optuna could not improve upon the Exp12 best configuration (AUC 0.760 vs 0.749). The rerun (0.697) confirms FuseMoE is the least reliable architecture.
 
-6. **MedianPruner is effective:** 29% of trials were pruned overall, saving computational time. Exp11 had the highest pruning rate (47%), likely due to its larger search space (7 parameters vs 5 for Exp7a).
+6. **MedianPruner is highly effective:** 60% of trials were pruned overall (148/245). Exp7a and Exp11 had pruning rates of 72%, indicating the TPE sampler explored many configurations that were quickly identified as unpromising.
 
-7. **Studies interrupted before target:** All three studies ran only 28-46% of the 100-trial budget. Exp7a and Exp11 may have further room for improvement with additional trials, though the FuseMoE study appears to have converged.
+7. **Studies effectively complete:** Exp7a reached 99/100 trials (cancelled at 8h time limit), Exp11 completed 100/100 trials. Best trials were found early (Trial #24 for Exp7a, Trial #81 for Exp11), suggesting diminishing returns from additional trials.
 
-8. **Single best-trial caveat:** These AUC values are from the best single trial (mean across 5 folds within that trial), not confirmed reruns. Rerunning the best configurations with full metrics is recommended.
+8. **Training variance is the dominant source of uncertainty.** The gap between Optuna trial AUC and rerun AUC (0.033-0.061) is larger than the Optuna improvement over baseline (0.031-0.033). This confirms that on small datasets (n=107), single-trial optimisation cannot overcome inherent training variance.
 
 ---
 
@@ -184,7 +278,8 @@ FuseMoE's best tuned result (0.749) is worse than its Exp12 grid-search baseline
 
 ## Next Steps
 
-1. Rerun best Exp7a and Exp11 configurations with full metrics (balanced accuracy, F1, per-fold breakdowns) to confirm improvements
-2. Resume studies to complete remaining trials (particularly Exp7a at 17/100 and Exp11 at 16/100)
-3. Parameter importance analysis (Optuna `get_param_importances()`) to identify which hyperparameters matter most
-4. Final model selection based on confirmed rerun results
+1. ~~Rerun best Exp7a and Exp11 configurations with full metrics~~ **DONE** - Reruns complete (Job 51546896). Optuna AUCs not reproduced; baseline Exp7a (0.798) remains best confirmed result.
+2. ~~Resume studies to complete remaining trials~~ **DONE** - Exp11 100/100 complete (Job 51546909). Exp7a 99/100, cancelled at 8h time limit (Job 51546904).
+3. ~~Parameter importance analysis (fANOVA)~~ **DONE** - learning_rate most important for Exp7a (0.676), aggregator_type most important for Exp11 (0.519), weight_decay most important for Exp12 (0.293).
+4. Rerun Exp11 Trial #81 parameters (meanmax aggregator, lr=3.73e-3, batch_size=4) - new best from resumed study (AUC 0.825), not yet confirmed.
+5. Final model selection based on confirmed rerun results.

@@ -1,6 +1,6 @@
 # ASM Outcome Prediction: Experimental Findings
 
-**Date:** 17 February 2026 (updated)
+**Date:** 18 February 2026 (updated)
 **Dataset:** 151 patients with EEG recordings and anti-seizure medication (ASM) outcomes
 
 ---
@@ -24,9 +24,9 @@ We evaluated multimodal fusion approaches for predicting ASM treatment outcomes.
 - **Experiment 13:** Qwen 2.5 fine-tuning with unfrozen transformer layers
 - **Experiment 14:** Optuna HP tuning for top 3 models (Exp7a, Exp11, Exp12)
 
-The best performing model achieved **AUC 0.831** using all four modalities with MLP fusion and Optuna-tuned hyperparameters (Exp14, tuning Exp7a). Class weighting and threshold tuning (via Youden's J statistic) were applied to address class imbalance.
+The best performing model achieved **AUC 0.798** with a **balanced accuracy of 0.814** using all four modalities with MLP fusion (Exp7a, ClinicalBERT + ChemBERTa + SimpleCNN). Class weighting and threshold tuning (via Youden's J statistic) were applied to address class imbalance. Exp14 HP tuning did not yield reproducible improvements.
 
-**Key finding:** Optuna HP tuning (Exp14) improved the best model from AUC 0.798 to 0.831 (+0.033) by halving the learning rate and reducing weight decay. Exp11 QuadMLPv2 also improved (0.791 to 0.822), while FuseMoE was already near-optimal from Exp12 grid search (0.760 vs 0.749 tuned). EEG2Vec 128D upgrade improves triple MLP to AUC 0.736 but does not improve quad modality (0.791 vs 0.798 SimpleCNN), suggesting clinical features compensate for weaker EEG encoding.
+**Key finding:** Optuna HP tuning (Exp14) found trial AUCs of 0.831 (Exp7a) and 0.825 (Exp11), but these did not reproduce on rerun (0.770 and 0.789 respectively). Training variance on small datasets (n=107) causes single-trial AUCs to be optimistic. The original Exp7a baseline (AUC 0.798) remains the best confirmed result. EEG2Vec 128D upgrade improves triple MLP to AUC 0.736 but does not improve quad modality (0.791 vs 0.798 SimpleCNN), suggesting clinical features compensate for weaker EEG encoding.
 
 ---
 
@@ -713,9 +713,9 @@ Frozen Qwen baseline: AUC 0.689 +/- 0.088. Fine-tuned (4L): AUC 0.682 (-0.007).
 
 ---
 
-## Experiment 14: Optuna HP Tuning (17 February 2026)
+## Experiment 14: Optuna HP Tuning (18 February 2026, updated)
 
-Systematic hyperparameter tuning using Optuna's TPE sampler for the top 3 models: Exp7a QuadFusionMLP (AUC 0.798), Exp11 QuadMLPv2 with EEG2Vec (AUC 0.791), and Exp12 TripleFuseMoE (AUC 0.760). All three studies were interrupted before reaching the 100-trial budget but produced actionable results.
+Systematic hyperparameter tuning using Optuna's TPE sampler for the top 3 models: Exp7a QuadFusionMLP (AUC 0.798), Exp11 QuadMLPv2 with EEG2Vec (AUC 0.791), and Exp12 TripleFuseMoE (AUC 0.760). Studies resumed on HPC and are now effectively complete. **Rerun results show Optuna trial AUCs do not reproduce.**
 
 ### Search Space Summary
 
@@ -729,10 +729,10 @@ Systematic hyperparameter tuning using Optuna's TPE sampler for the top 3 models
 
 | Study | Completed | Pruned | Total | Target |
 |-------|-----------|--------|-------|--------|
-| Exp7a QuadFusionMLP | 17 | 10 | 28 | 100 |
-| Exp11 QuadMLPv2 | 16 | 15 | 32 | 100 |
+| Exp7a QuadFusionMLP | 26 | 71 | 99 | 100 |
+| Exp11 QuadMLPv2 | 27 | 72 | 100 | 100 |
 | Exp12 TripleFuseMoE | 40 | 5 | 46 | 100 |
-| **Total** | **73** | **30** | **106** | **300** |
+| **Total** | **93** | **148** | **245** | **300** |
 
 ### Best Trial Results
 
@@ -740,29 +740,33 @@ Systematic hyperparameter tuning using Optuna's TPE sampler for the top 3 models
 - lr=5.29e-4, wd=2.73e-5, dropout=0.277, hidden_dim=64, batch_size=8
 - Key change: halved learning rate (5.29e-4 vs 1e-3 baseline), reduced weight decay by ~4x
 
-**Exp11 QuadMLPv2 (EEG2Vec)** - Trial #16, AUC 0.822:
-- lr=7.38e-4, wd=2.57e-4, dropout=0.341, hidden_dim=32, batch_size=8, aggregator=transformer, eeg_dim=64
-- Key change: smaller hidden_dim (32 vs 64) and eeg_embed_dim (64 vs 128) - baseline was over-parameterised
+**Exp11 QuadMLPv2 (EEG2Vec)** - Trial #81 (new best from resume), AUC 0.825:
+- lr=3.73e-3, wd=7.82e-4, dropout=0.483, hidden_dim=32, batch_size=4, aggregator=meanmax, eeg_dim=64
+- Key change: switches from transformer to meanmax aggregator. Not yet confirmed with rerun.
+- Previous best: Trial #16, AUC 0.822 (transformer aggregator)
 
 **Exp12 TripleFuseMoE** - Trial #10, AUC 0.749:
 - lr=1.04e-4, wd=6.22e-5, dropout=0.052, experts=6, top_k=1, aux_loss=0.032, temp_decay=None
 - Did not improve on Exp12 grid-search baseline (0.760)
 
-### Baseline Comparison
+### Confirmed Rerun Results
 
-| Model | Baseline AUC | Tuned AUC | Delta |
-|-------|-------------|-----------|-------|
-| **Exp7a QuadFusionMLP** | 0.798 | **0.831** | **+0.033** |
-| Exp11 QuadMLPv2 (EEG2Vec) | 0.791 | **0.822** | **+0.031** |
-| Exp12 TripleFuseMoE | 0.760 | 0.749 | -0.011 |
+Best configurations rerun with full metrics (HPC Job 51546896). **None reproduced their Optuna trial AUC.**
+
+| Model | Optuna Best | Rerun AUC | Rerun Bal Acc | Rerun F1 Tuned | vs Baseline |
+|-------|------------|-----------|---------------|----------------|-------------|
+| Exp7a QuadFusionMLP | 0.831 | 0.770 +/- 0.053 | 0.760 +/- 0.045 | 0.759 +/- 0.049 | -0.028 vs 0.798 |
+| Exp11 QuadMLPv2 (EEG2Vec) | 0.822 | 0.789 +/- 0.088 | 0.768 +/- 0.062 | 0.777 +/- 0.047 | -0.002 vs 0.791 |
+| Exp12 TripleFuseMoE | 0.749 | 0.697 +/- 0.110 | 0.720 +/- 0.094 | 0.698 +/- 0.131 | -0.063 vs 0.760 |
 
 ### Exp14 Key Observations
 
-- Lower learning rates benefit MLP models (~5e-4 vs 1e-3 baseline) - consistent with Exp12 finding for FuseMoE
-- Smaller model dimensions sufficient for Exp11 (hidden_dim 32, eeg_embed_dim 64)
-- FuseMoE already near-optimal from Exp12 grid search - 40 Optuna trials could not improve upon it
-- MedianPruner effective: 29% of trials pruned overall, saving computational time
-- **Caveat:** These are single best-trial AUCs, not confirmed reruns with full metrics
+- **Optuna trial AUCs are optimistic and do not reproduce.** Rerun AUCs are 0.033-0.061 lower than trial values due to training variance (different weight initialisations, data shuffling).
+- Exp7a rerun (0.770) is worse than baseline (0.798). Exp11 rerun (0.789) matches baseline (0.791). Exp12 rerun (0.697) is much worse than baseline (0.760).
+- **The original Exp7a baseline (AUC 0.798) remains the best confirmed result.**
+- fANOVA analysis: learning_rate dominates for Exp7a (68%), aggregator_type for Exp11 (52%), weight_decay for Exp12 (29%).
+- Exp11 Trial #81 (meanmax, AUC 0.825) from resumed study still needs rerun confirmation.
+- MedianPruner highly effective: 60% of trials pruned overall (148/245).
 
 ---
 
@@ -770,18 +774,18 @@ Systematic hyperparameter tuning using Optuna's TPE sampler for the top 3 models
 
 | Experiment | Modality | Best Model | AUC | Bal Acc Tuned | F1 Tuned |
 |------------|----------|------------|-----|---------------|----------|
-| **Exp14 (Exp7a)** | **Clinical + LLM + EEG + SMILES** | **ClinicalBERT + ChemBERTa + MLP (Optuna HP)** | **0.831** | - | - |
-| Exp14 (Exp11) | Clinical + LLM + EEG + SMILES | ClinicalBERT + ChemBERTa + Transformer/EEG2Vec (Optuna HP) | 0.822 | - | - |
-| Exp7a | Clinical + LLM + EEG + SMILES | ClinicalBERT + ChemBERTa + MLP | 0.798 | 0.814 | 0.813 |
+| **Exp7a** | **Clinical + LLM + EEG + SMILES** | **ClinicalBERT + ChemBERTa + MLP** | **0.798** | **0.814** | **0.813** |
 | Exp11 | Clinical + LLM + EEG + SMILES | ClinicalBERT + ChemBERTa + Transformer (EEG2Vec) | 0.791 | 0.776 | 0.794 |
+| Exp14 (Exp11) | Clinical + LLM + EEG + SMILES | ClinicalBERT + ChemBERTa + Transformer/EEG2Vec (Optuna HP, rerun) | 0.789 | 0.768 | 0.777 |
+| Exp14 (Exp7a) | Clinical + LLM + EEG + SMILES | ClinicalBERT + ChemBERTa + MLP (Optuna HP, rerun) | 0.770 | 0.760 | 0.759 |
 | Exp12 | LLM + EEG + SMILES | ClinicalBERT + ChemBERTa + FuseMoE (tuned) | 0.760 | 0.760 | 0.742 |
 | Exp7b | Clinical + LLM + EEG + SMILES | ClinicalBERT + ChemBERTa + FuseMoE | 0.753 | 0.754 | 0.716 |
 | Exp7a | Clinical + LLM + EEG + SMILES | PubMedBERT + ChemBERTa + MLP | 0.752 | 0.766 | 0.749 |
-| Exp14 (Exp12) | LLM + EEG + SMILES | ClinicalBERT + ChemBERTa + FuseMoE (Optuna HP) | 0.749 | - | - |
 | Exp7b | Clinical + LLM + EEG + SMILES | PubMedBERT + ChemBERTa + FuseMoE (Exp12 HP) | 0.738 | 0.737 | 0.721 |
 | Exp11 | LLM + EEG + SMILES | ClinicalBERT + SMILES-Trf + MeanMax (EEG2Vec) | 0.736 | 0.752 | 0.779 |
 | Exp9 | EEG + SMILES (ablation) | EEG2Vec 128D + Transformer | 0.730 | 0.725 | 0.732 |
 | Exp6a | Clinical + SMILES + Text | PubMedBERT + ChemBERTa | 0.702 | 0.705 | 0.738 |
+| Exp14 (Exp12) | LLM + EEG + SMILES | ClinicalBERT + ChemBERTa + FuseMoE (Optuna HP, rerun) | 0.697 | 0.720 | 0.698 |
 | Exp11 | Clinical + SMILES + EEG | ChemBERTa + Transformer (EEG2Vec) | 0.697 | 0.694 | 0.672 |
 | Exp10 | Clinical + Direct LLM (fine-tuned) | ClinicalBERT | 0.691 | 0.723 | 0.698 |
 | Exp5a | Clinical + SMILES | ChemBERTa | 0.689 | 0.680 | 0.638 |
@@ -798,10 +802,9 @@ Systematic hyperparameter tuning using Optuna's TPE sampler for the top 3 models
 | Exp2b | EEG + SMILES | SimpleCNN + SMILES-Trf + FuseMoE | 0.611 | 0.621 | 0.556 |
 
 **Key findings:**
-- **New best result:** Optuna-tuned Exp7a achieves AUC 0.831 (+0.033 over baseline 0.798) - first model to exceed 0.8 AUC. Key change: halved learning rate (5.29e-4 vs 1e-3) and reduced weight decay by ~4x
-- Optuna-tuned Exp11 also improves substantially (AUC 0.822, +0.031) with smaller hidden dimensions (32 vs 64, eeg_dim 64 vs 128)
-- FuseMoE (Exp12) already near-optimal from grid search - Optuna could not improve upon it (0.749 vs 0.760 baseline)
-- Exp14 results are single best-trial AUCs (not confirmed reruns) - balanced accuracy and F1 pending rerun
+- **Exp7a baseline (AUC 0.798) remains the best confirmed result.** Optuna HP tuning (Exp14) found optimistic trial AUCs (0.831 for Exp7a, 0.825 for Exp11) that did not reproduce on rerun (0.770 and 0.789 respectively). Training variance on small datasets (n=107) means single-trial optimisation cannot overcome inherent noise.
+- Exp14 Exp11 rerun (0.789) essentially matches the Exp11 baseline (0.791), while Exp7a rerun (0.770) and Exp12 rerun (0.697) are substantially worse than their baselines.
+- Exp14 Exp11 Trial #81 (meanmax aggregator, AUC 0.825 from resumed study) has not yet been rerun - this is the most promising remaining configuration.
 - EEG2Vec 128D upgrade (Exp11) improves triple MLP by +0.049 (0.687 -> 0.736) and exp6b by +0.050 (0.647 -> 0.697), but does not improve quad modality (0.791 vs 0.798 SimpleCNN)
 - MLP fusion remains more stable than MoE on small datasets, but the gap narrows with proper MoE hyperparameters
 - ClinicalBERT is the most consistently strong text model across all experiment configurations
@@ -831,8 +834,8 @@ Systematic hyperparameter tuning using Optuna's TPE sampler for the top 3 models
 18. ~~Re-submit exp11 exp7a EEG2Vec configs (quad modality with EEG2Vec)~~ **DONE** - AUC 0.791 (vs 0.798 SimpleCNN). EEG2Vec does not improve quad modality
 19. ~~Apply Exp12 best hyperparameters (lr=5e-5, 4 experts, no temp decay) to other FuseMoE experiments (exp1b, exp2b, exp7b)~~ **DONE** - Mixed results: PubMedBERT benefits most (+0.048 exp1b, +0.026 exp7b), ClinicalBERT sees mostly variance reduction. Not a universal improvement.
 20. ~~Hyperparameter optimisation for best-performing model (Optuna)~~ **DONE** - Exp14: Exp7a AUC 0.798 -> 0.831 (+0.033), Exp11 AUC 0.791 -> 0.822 (+0.031), Exp12 FuseMoE did not improve (0.749 vs 0.760)
-21. Rerun Exp14 best Exp7a and Exp11 configurations with full metrics (balanced accuracy, F1, per-fold breakdowns)
-22. Resume Exp14 studies to complete remaining trials (Exp7a at 17/100, Exp11 at 16/100)
-23. Parameter importance analysis (Optuna `get_param_importances()`)
-24. Final model selection based on confirmed rerun results
+21. ~~Rerun Exp14 best Exp7a and Exp11 configurations with full metrics~~ **DONE** - Reruns complete (Job 51546896). Optuna AUCs not reproduced; Exp7a rerun 0.770 (vs baseline 0.798), Exp11 rerun 0.789 (vs baseline 0.791), Exp12 rerun 0.697 (vs baseline 0.760).
+22. ~~Resume Exp14 studies to complete remaining trials~~ **DONE** - Exp11 100/100 complete (Job 51546909). Exp7a 99/100, cancelled at 8h time limit (Job 51546904). New Exp11 best: Trial #81 (meanmax, AUC 0.825).
+23. ~~Parameter importance analysis (fANOVA)~~ **DONE** - learning_rate most important for Exp7a (0.676), aggregator_type for Exp11 (0.519), weight_decay for Exp12 (0.293).
+24. Exp7a baseline (AUC 0.798) confirmed as best result. Rerun Exp11 Trial #81 (meanmax, lr=3.73e-3, batch_size=4) - new best from resumed study, not yet confirmed.
 25. External validation on further data if available
