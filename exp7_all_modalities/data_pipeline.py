@@ -156,6 +156,8 @@ class QuadModalityDataset(Dataset):
         asm_drugs: List[str],
         labels: np.ndarray,
         max_channels: int = 27,
+        pids: List = None,
+        return_pid: bool = False,
     ):
         """Initialise dataset.
 
@@ -169,6 +171,10 @@ class QuadModalityDataset(Dataset):
             asm_drugs: List of ASM drug abbreviations per patient.
             labels: Label array (n_samples,).
             max_channels: Maximum number of EEG channels.
+            pids: Optional list of patient IDs aligned with the other arrays.
+            return_pid: If True, ``__getitem__`` appends the pid as an extra
+                element. Defaults to False so existing call sites are
+                unaffected.
         """
         self.clinical_features = torch.from_numpy(clinical_features).float()
         self.text_embeddings = torch.from_numpy(text_embeddings).float()
@@ -179,15 +185,21 @@ class QuadModalityDataset(Dataset):
         self.asm_drugs = asm_drugs
         self.labels = torch.from_numpy(labels).long()
         self.max_channels = max_channels
+        self.pids = [str(p) for p in pids] if pids is not None else None
+        self.return_pid = return_pid
+        if self.return_pid and self.pids is None:
+            raise ValueError("return_pid=True requires pids to be supplied.")
 
     def __len__(self) -> int:
         return len(self.labels)
 
-    def __getitem__(self, idx: int) -> Tuple[torch.Tensor, ...]:
+    def __getitem__(self, idx: int) -> Tuple:
         """Get a sample.
 
         Returns:
             Tuple of (clinical, text, eeg_windows, padding_mask, smiles, label).
+            If ``return_pid`` was set on the dataset, the patient ID string is
+            appended as a final element.
         """
         clinical = self.clinical_features[idx]
         text = self.text_embeddings[idx]
@@ -215,6 +227,8 @@ class QuadModalityDataset(Dataset):
 
         label = self.labels[idx]
 
+        if self.return_pid:
+            return clinical, text, eeg, mask, smiles, label, self.pids[idx]
         return clinical, text, eeg, mask, smiles, label
 
 
@@ -299,6 +313,7 @@ def create_quad_modality_datasets(
     train_indices: np.ndarray,
     val_indices: np.ndarray,
     max_channels: int = 27,
+    return_pid: bool = False,
 ) -> Tuple[QuadModalityDataset, QuadModalityDataset, ClinicalFeaturePreprocessor]:
     """Create train/val datasets for all 4 modalities.
 
@@ -340,6 +355,10 @@ def create_quad_modality_datasets(
     train_labels = train_df["outcome"].values
     val_labels = val_df["outcome"].values
 
+    # Carry pids through so callers can opt in to pid-aware sampling.
+    train_pids = train_df["pid"].astype(str).tolist()
+    val_pids = val_df["pid"].astype(str).tolist()
+
     # Create datasets
     train_dataset = QuadModalityDataset(
         clinical_features=train_clinical,
@@ -351,6 +370,8 @@ def create_quad_modality_datasets(
         asm_drugs=train_asm,
         labels=train_labels,
         max_channels=max_channels,
+        pids=train_pids,
+        return_pid=return_pid,
     )
 
     val_dataset = QuadModalityDataset(
@@ -363,6 +384,8 @@ def create_quad_modality_datasets(
         asm_drugs=val_asm,
         labels=val_labels,
         max_channels=max_channels,
+        pids=val_pids,
+        return_pid=return_pid,
     )
 
     return train_dataset, val_dataset, preprocessor

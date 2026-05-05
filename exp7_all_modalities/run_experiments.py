@@ -4,6 +4,7 @@ Usage:
     python -m exp7_all_modalities.run_experiments
     python -m exp7_all_modalities.run_experiments --exp 7a
     python -m exp7_all_modalities.run_experiments --exp 7b
+    python -m exp7_all_modalities.run_experiments --mode predictions --output_dir outputs/exp7_predictions
 """
 
 import argparse
@@ -15,9 +16,11 @@ from typing import Dict, List, Optional
 
 import numpy as np
 import torch
+from sklearn.model_selection import StratifiedKFold
 
-from .config import EXPERIMENTS, RESULTS_DIR
-from .training import run_cross_validation
+from .config import ASM_NAME_MAPPING, CV_CONFIG, EXPERIMENTS, RESULTS_DIR
+from .data_pipeline import create_quad_modality_datasets, prepare_quad_modality_data
+from .training import run_cross_validation, train_fold_with_predictions
 
 logger = logging.getLogger("exp7")
 
@@ -171,23 +174,317 @@ def save_results(all_results: Dict[str, Dict], output_path: Path):
     logger.info(f"Results saved to {output_path}")
 
 
+def _normalise_asm(name: str) -> str:
+    """Normalise an ASM string via ASM_NAME_MAPPING."""
+    s = str(name).strip()
+    return ASM_NAME_MAPPING.get(s, s)
+
+
+def _top_n_asms_for_cohort(df, n: int = 5) -> List[str]:
+    """Return the top-n most-prescribed ASM short codes in this cohort.
+
+    The shortcode is the original CSV abbreviation (e.g. 'LEV', 'VPA') after
+    string strip and case normalisation through ASM_NAME_MAPPING. We collapse
+    duplicates that map to the same canonical full name so 'CBZ' and 'cBZ'
+    count as one.
+    """
+    counts: Dict[str, int] = {}
+    short_for_canon: Dict[str, str] = {}
+    for raw in df["ASM"].astype(str):
+        short = raw.strip()
+        canon = ASM_NAME_MAPPING.get(short, short)
+        # Pick the upper-cased shortcode if available, otherwise keep raw.
+        preferred = short.upper() if short.upper() in ASM_NAME_MAPPING else short
+        counts[canon] = counts.get(canon, 0) + 1
+        # First seen preferred form for this canonical name.
+        short_for_canon.setdefault(canon, preferred)
+
+    ordered = sorted(counts.items(), key=lambda kv: kv[1], reverse=True)
+    top = [short_for_canon[canon] for canon, _ in ordered[:n]]
+    return top
+
+
+def _build_candidate_smiles(
+    top_asms: List[str],
+    smiles_embeddings: np.ndarray,
+    smiles_indices: Dict[str, int],
+) -> Dict[str, np.ndarray]:
+    """Resolve each top ASM shortcode to its SMILES embedding vector."""
+    out: Dict[str, np.ndarray] = {}
+    for short in top_asms:
+        canon = ASM_NAME_MAPPING.get(short, short)
+        if canon not in smiles_indices:
+            logger.warning(f"  Skipping ASM '{short}' (canon '{canon}') - not in smiles_indices.")
+            continue
+        idx = smiles_indices[canon]
+        out[short] = np.asarray(smiles_embeddings[idx], dtype=np.float32)
+    return out
+
+
+def _save_predictions_json(payload: Dict, path: Path):
+    """Serialise prediction payload, converting numpy/torch types as needed."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+
+    def _convert(obj):
+        if isinstance(obj, np.ndarray):
+            return obj.tolist()
+        if isinstance(obj, (np.floating,)):
+            return float(obj)
+        if isinstance(obj, (np.integer,)):
+            return int(obj)
+        if isinstance(obj, dict):
+            return {k: _convert(v) for k, v in obj.items()}
+        if isinstance(obj, list):
+            return [_convert(v) for v in obj]
+        return obj
+
+    with open(path, "w") as f:
+        json.dump(_convert(payload), f, indent=2)
+    logger.info(f"Predictions saved to {path}")
+
+
+def run_exp7a_with_predictions(
+    output_dir: Path,
+    top_n_asms: int = 5,
+    text_model: str = "clinicalbert",
+    smiles_model: str = "chemberta",
+    device: torch.device = None,
+) -> Dict[str, Path]:
+    """Run Exp7a with per-patient and ASM-swap prediction logging.
+
+    Performs 5-fold CV: trains on 4 folds, predicts on the held-out fold,
+    and also predicts each held-out patient under each of the top-n
+    most-prescribed ASMs (counterfactual SMILES swap). Then refits a final
+    model on the full cohort using a 10% random early-stopping split and
+    predicts for all patients across the same top-n ASMs (in-sample).
+
+    Writes ``predictions_oof.json`` and ``predictions_in_sample.json``
+    inside ``output_dir``.
+    """
+    output_dir = Path(output_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    if device is None:
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    logger.info(f"Using device: {device}")
+
+    logger.info("Preparing quad-modality data for Exp7a predictions run")
+    df, smiles_embeddings, smiles_indices, text_embeddings, eeg_data = prepare_quad_modality_data(
+        text_model, smiles_model
+    )
+    outcomes = df["outcome"].values
+    logger.info(f"  Cohort size: {len(df)} patients")
+
+    # Determine top-N ASMs from this cohort.
+    top_asms = _top_n_asms_for_cohort(df, n=top_n_asms)
+    logger.info(f"  Top-{top_n_asms} ASMs: {top_asms}")
+    candidate_smiles = _build_candidate_smiles(top_asms, smiles_embeddings, smiles_indices)
+    asms_used = list(candidate_smiles.keys())
+
+    # ------------------------------------------------------------------
+    # 5-fold CV with prediction logging.
+    # ------------------------------------------------------------------
+    kfold = StratifiedKFold(
+        n_splits=CV_CONFIG["n_splits"],
+        shuffle=CV_CONFIG["shuffle"],
+        random_state=CV_CONFIG["random_state"],
+    )
+
+    folds_payload: List[Dict] = []
+    for fold, (train_idx, val_idx) in enumerate(kfold.split(np.zeros(len(outcomes)), outcomes)):
+        logger.info(f"Fold {fold + 1}/{CV_CONFIG['n_splits']}")
+        train_ds, val_ds, _ = create_quad_modality_datasets(
+            df,
+            smiles_embeddings,
+            smiles_indices,
+            text_embeddings,
+            eeg_data,
+            train_idx,
+            val_idx,
+            return_pid=True,
+        )
+        logger.info(f"  Train: {len(train_ds)}, Val: {len(val_ds)}")
+
+        result = train_fold_with_predictions(
+            train_ds,
+            val_ds,
+            fusion="mlp",
+            text_model=text_model,
+            smiles_model=smiles_model,
+            device=device,
+            fold=fold,
+            candidate_smiles=candidate_smiles,
+        )
+
+        folds_payload.append({
+            "fold": fold,
+            "metrics": {k: float(v) for k, v in result["metrics"].items()},
+            "pids": result["val_pids"],
+            "y_true": result["val_y_true"],
+            "y_prob": result["val_y_prob"],
+            "y_prob_per_asm": {a: result["val_y_prob_per_asm"].get(a, []) for a in asms_used},
+        })
+        logger.info(
+            f"  Fold {fold + 1}: AUC={result['metrics'].get('auc', float('nan')):.4f}, "
+            f"BalAcc_tuned={result['metrics'].get('balanced_acc_tuned', float('nan')):.4f}"
+        )
+
+    oof_payload = {
+        "experiment": "exp7a",
+        "text_model": text_model,
+        "smiles_model": smiles_model,
+        "asms": asms_used,
+        "cv_random_state": CV_CONFIG["random_state"],
+        "n_splits": CV_CONFIG["n_splits"],
+        "folds": folds_payload,
+    }
+    oof_path = output_dir / "predictions_oof.json"
+    _save_predictions_json(oof_payload, oof_path)
+
+    # ------------------------------------------------------------------
+    # Final all-data refit with 10% random early-stop split.
+    # ------------------------------------------------------------------
+    logger.info("Final all-data refit (90/10 random split for early stopping)")
+    rng = np.random.RandomState(CV_CONFIG["random_state"])
+    n = len(df)
+    perm = rng.permutation(n)
+    n_val = max(1, int(round(0.1 * n)))
+    val_idx_full = perm[:n_val]
+    train_idx_full = perm[n_val:]
+
+    train_ds_full, val_ds_full, _ = create_quad_modality_datasets(
+        df,
+        smiles_embeddings,
+        smiles_indices,
+        text_embeddings,
+        eeg_data,
+        train_idx_full,
+        val_idx_full,
+        return_pid=True,
+    )
+    logger.info(f"  Refit train: {len(train_ds_full)}, early-stop val: {len(val_ds_full)}")
+
+    refit_result = train_fold_with_predictions(
+        train_ds_full,
+        val_ds_full,
+        fusion="mlp",
+        text_model=text_model,
+        smiles_model=smiles_model,
+        device=device,
+        fold=-1,
+        candidate_smiles=candidate_smiles,
+    )
+
+    # Predict on the FULL cohort using the refit model. Build a "val
+    # dataset" that contains every patient by passing all indices as the
+    # val split.
+    logger.info("Predicting on full cohort with refit model")
+    all_idx = np.arange(n)
+    # The training preprocessor in create_quad_modality_datasets is fitted
+    # on the train split and applied to the val split. To avoid refitting
+    # on different data, we re-build using the same train indices used
+    # above so the preprocessor is identical, but with val_idx = all
+    # indices.
+    train_ds_for_pp, full_eval_ds, _ = create_quad_modality_datasets(
+        df,
+        smiles_embeddings,
+        smiles_indices,
+        text_embeddings,
+        eeg_data,
+        train_idx_full,
+        all_idx,
+        return_pid=True,
+    )
+    del train_ds_for_pp
+
+    # Inference on full cohort using the model we just trained (load best
+    # weights manually from refit_result and run predictions).
+    from torch.utils.data import DataLoader as _DL
+    from .models import get_model as _get_model
+    from .training import _predict_with_smiles_override
+    from .config import MLP_CONFIG as _MLP_CONFIG
+
+    model_full = _get_model(fusion="mlp", text_model=text_model, smiles_model=smiles_model, device=device)
+    if refit_result["model_state_dict"] is not None:
+        model_full.load_state_dict(refit_result["model_state_dict"])
+
+    full_loader = _DL(
+        full_eval_ds,
+        batch_size=_MLP_CONFIG["batch_size"],
+        shuffle=False,
+        drop_last=False,
+        num_workers=0,
+    )
+
+    pids_full, y_true_full, y_prob_full = _predict_with_smiles_override(
+        model_full, full_loader, device, fusion="mlp", smiles_override=None
+    )
+    y_prob_per_asm_full: Dict[str, List[float]] = {}
+    for asm_name, smiles_vec in candidate_smiles.items():
+        override = torch.from_numpy(np.asarray(smiles_vec, dtype=np.float32))
+        _, _, probs = _predict_with_smiles_override(
+            model_full, full_loader, device, fusion="mlp", smiles_override=override
+        )
+        y_prob_per_asm_full[asm_name] = probs
+
+    in_sample_payload = {
+        "experiment": "exp7a",
+        "text_model": text_model,
+        "smiles_model": smiles_model,
+        "asms": asms_used,
+        "refit_random_state": CV_CONFIG["random_state"],
+        "early_stop_frac": 0.1,
+        "metrics": {k: float(v) for k, v in refit_result["metrics"].items()},
+        "pids": pids_full,
+        "y_true": y_true_full,
+        "y_prob": y_prob_full,
+        "y_prob_per_asm": y_prob_per_asm_full,
+    }
+    in_sample_path = output_dir / "predictions_in_sample.json"
+    _save_predictions_json(in_sample_payload, in_sample_path)
+
+    return {"oof": oof_path, "in_sample": in_sample_path}
+
+
 def main():
     """CLI entry point."""
     parser = argparse.ArgumentParser(
         description="Run Experiment 7: All Four Modalities Fusion"
     )
     parser.add_argument(
+        "--mode",
+        type=str,
+        choices=["cv", "predictions"],
+        default="cv",
+        help="'cv' (default) runs the standard CV loop. 'predictions' runs "
+             "Exp7a with per-patient and ASM-swap prediction logging.",
+    )
+    parser.add_argument(
+        "--output_dir",
+        type=str,
+        default=None,
+        help="Output directory for the predictions mode "
+             "(default: outputs/exp7_predictions).",
+    )
+    parser.add_argument(
+        "--top_n_asms",
+        type=int,
+        default=5,
+        help="Number of top-prescribed ASMs to include for counterfactual "
+             "swaps (default: 5).",
+    )
+    parser.add_argument(
         "--exp",
         type=str,
         choices=["7a", "7b", "all"],
         default="all",
-        help="Experiment to run (default: all)",
+        help="Experiment to run in cv mode (default: all)",
     )
     parser.add_argument(
         "--output",
         type=str,
         default=None,
-        help="Output file path (default: outputs/exp7_results/results_TIMESTAMP.json)",
+        help="Output file path for cv mode (default: outputs/exp7_results/results_TIMESTAMP.json)",
     )
     parser.add_argument(
         "--device",
@@ -210,7 +507,16 @@ def main():
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     logger.info(f"Using device: {device}")
 
-    # Filter experiments
+    if args.mode == "predictions":
+        out_dir = Path(args.output_dir) if args.output_dir else (RESULTS_DIR.parent / "exp7_predictions")
+        run_exp7a_with_predictions(
+            output_dir=out_dir,
+            top_n_asms=args.top_n_asms,
+            device=device,
+        )
+        return
+
+    # Default cv mode (legacy flow).
     if args.exp == "all":
         experiments = EXPERIMENTS
     elif args.exp == "7a":

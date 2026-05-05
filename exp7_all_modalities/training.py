@@ -1,7 +1,8 @@
 """Training utilities for Experiment 7: All Four Modalities Fusion."""
 
+import copy
 import logging
-from typing import Dict, List, Tuple
+from typing import Any, Dict, List, Tuple
 
 import numpy as np
 import torch
@@ -390,6 +391,242 @@ def log_cv_summary(fold_metrics: Dict[str, List[float]]):
         mean, std = np.mean(values), np.std(values)
         min_val, max_val = np.min(values), np.max(values)
         logger.info(f"  {key}: {mean:.4f} +/- {std:.4f} (min={min_val:.4f}, max={max_val:.4f})")
+
+
+# ============================================================================
+# Prediction-logging variant for downstream bootstrap CIs / clinical utility
+# ============================================================================
+
+
+def _predict_with_smiles_override(
+    model: nn.Module,
+    val_loader: DataLoader,
+    device: torch.device,
+    fusion: str,
+    smiles_override: torch.Tensor = None,
+) -> Tuple[List[str], List[int], List[float]]:
+    """Run inference over ``val_loader`` and return pids, labels, probs.
+
+    If ``smiles_override`` is provided (a 1D tensor of shape (smiles_dim,)),
+    it is broadcast across the batch and substituted for the dataset's SMILES
+    tensor. This is the counterfactual ASM-swap path. The val dataset must
+    have been built with ``return_pid=True``.
+    """
+    model.eval()
+    pids_out: List[str] = []
+    y_true: List[int] = []
+    y_prob: List[float] = []
+
+    with torch.no_grad():
+        for batch in val_loader:
+            # Dataset built with return_pid=True yields a 7-tuple where the
+            # final element is a tuple of pid strings produced by the default
+            # collate.
+            clinical, text, eeg, mask, smiles, labels, pids = batch
+            clinical = clinical.to(device)
+            text = text.to(device)
+            eeg = eeg.to(device)
+            mask = mask.to(device)
+            labels = labels.to(device)
+
+            if smiles_override is not None:
+                batch_size = clinical.shape[0]
+                smiles_in = smiles_override.to(device).unsqueeze(0).expand(batch_size, -1).contiguous()
+            else:
+                smiles_in = smiles.to(device)
+
+            if fusion == "moe":
+                logits, _aux = model(clinical, text, eeg, mask, smiles_in)
+            else:
+                logits = model(clinical, text, eeg, mask, smiles_in)
+
+            probs = torch.softmax(logits, dim=1)[:, 1]
+            y_prob.extend(probs.cpu().numpy().tolist())
+            y_true.extend(labels.cpu().numpy().tolist())
+            # The default collate turns a list of strings into a tuple/list.
+            pids_out.extend([str(p) for p in pids])
+
+    return pids_out, y_true, y_prob
+
+
+def train_fold_with_predictions(
+    train_dataset,
+    val_dataset,
+    fusion: str,
+    text_model: str,
+    smiles_model: str,
+    device: torch.device,
+    fold: int = 0,
+    candidate_smiles: Dict[str, np.ndarray] = None,
+) -> Dict[str, Any]:
+    """Train one fold and return per-patient predictions plus ASM-swap predictions.
+
+    Mirrors :func:`train_fold` but additionally:
+      - Tracks the best ``model.state_dict()`` (not just metrics) by val AUC.
+      - After training, restores the best weights and predicts on the val
+        loader once for the prescribed ASM and once per candidate ASM with
+        the SMILES tensor swapped at inference time.
+      - Returns metrics, val pids, true labels, predicted probabilities under
+        the prescribed ASM, and a dict mapping each candidate ASM to its
+        per-patient predicted probabilities.
+
+    The ``val_dataset`` must have been constructed with ``return_pid=True``.
+    """
+    if not getattr(val_dataset, "return_pid", False):
+        raise ValueError("val_dataset must be built with return_pid=True for prediction logging.")
+
+    config = MLP_CONFIG if fusion == "mlp" else MOE_CONFIG
+
+    train_loader = DataLoader(
+        train_dataset,
+        batch_size=config["batch_size"],
+        shuffle=True,
+        drop_last=False,
+        num_workers=0,
+    )
+    val_loader = DataLoader(
+        val_dataset,
+        batch_size=config["batch_size"],
+        shuffle=False,
+        drop_last=False,
+        num_workers=0,
+    )
+
+    model = get_model(
+        fusion=fusion,
+        text_model=text_model,
+        smiles_model=smiles_model,
+        device=device,
+    )
+
+    if fusion == "moe" and hasattr(model, "fuse_moe"):
+        model.fuse_moe.temperature_decay = 1.0
+
+    n_params = sum(p.numel() for p in model.parameters())
+    logger.info(f"  Model parameters: {n_params:,}")
+
+    # Class weights from training labels. With return_pid, train_dataset
+    # may also yield pids; the label is at index 5 either way.
+    train_labels_list = [train_dataset[i][5].item() for i in range(len(train_dataset))]
+    class_counts = np.bincount(train_labels_list)
+    class_weights = 1.0 / class_counts
+    class_weights = class_weights / class_weights.sum()
+    class_weights = torch.tensor(class_weights, dtype=torch.float32).to(device)
+
+    optimizer = torch.optim.AdamW(
+        model.parameters(),
+        lr=config["learning_rate"],
+        weight_decay=config["weight_decay"],
+    )
+    criterion = nn.CrossEntropyLoss(weight=class_weights)
+
+    if fusion == "mlp":
+        train_fn = train_epoch_mlp
+        eval_fn = evaluate_mlp
+    else:
+        train_fn = train_epoch_moe
+        eval_fn = evaluate_moe
+
+    best_val_auc = -1.0
+    best_metrics: Dict[str, float] = {}
+    best_state_dict = None
+    patience_counter = 0
+    global_step = 0
+
+    # During training we use the regular val_loader-style evaluation. The
+    # train_dataset and val_dataset both yield a pid as a trailing element
+    # when return_pid=True; train/eval loops here unpack only the first six,
+    # so we wrap the loader with a custom collate that drops the pid for
+    # the non-prediction passes.
+    train_loader_for_loss = DataLoader(
+        _DropPidWrapper(train_dataset),
+        batch_size=config["batch_size"],
+        shuffle=True,
+        drop_last=False,
+        num_workers=0,
+    )
+    val_loader_for_loss = DataLoader(
+        _DropPidWrapper(val_dataset),
+        batch_size=config["batch_size"],
+        shuffle=False,
+        drop_last=False,
+        num_workers=0,
+    )
+
+    for epoch in range(config["epochs"]):
+        if fusion == "moe":
+            train_loss, global_step = train_fn(model, train_loader_for_loss, optimizer, criterion, device, global_step)
+        else:
+            train_loss = train_fn(model, train_loader_for_loss, optimizer, criterion, device)
+        val_loss, val_metrics = eval_fn(model, val_loader_for_loss, criterion, device)
+
+        if val_metrics["auc"] > best_val_auc:
+            best_val_auc = val_metrics["auc"]
+            best_metrics = val_metrics.copy()
+            best_state_dict = copy.deepcopy(model.state_dict())
+            patience_counter = 0
+        else:
+            patience_counter += 1
+
+        if (epoch + 1) % 10 == 0:
+            logger.info(
+                f"    Epoch {epoch + 1}: train_loss={train_loss:.4f}, "
+                f"val_loss={val_loss:.4f}, val_auc={val_metrics['auc']:.4f}"
+            )
+
+        if patience_counter >= config["patience"]:
+            logger.info(f"    Early stopping at epoch {epoch + 1}")
+            break
+
+    # Restore best weights for inference.
+    if best_state_dict is not None:
+        model.load_state_dict(best_state_dict)
+
+    # Per-patient predictions under the prescribed ASM.
+    val_pids, val_y_true, val_y_prob = _predict_with_smiles_override(
+        model, val_loader, device, fusion, smiles_override=None
+    )
+
+    # Counterfactual predictions under each candidate ASM.
+    val_y_prob_per_asm: Dict[str, List[float]] = {}
+    if candidate_smiles is not None:
+        for asm_name, smiles_vec in candidate_smiles.items():
+            override = torch.from_numpy(np.asarray(smiles_vec, dtype=np.float32))
+            _, _, probs = _predict_with_smiles_override(
+                model, val_loader, device, fusion, smiles_override=override
+            )
+            val_y_prob_per_asm[asm_name] = probs
+
+    return {
+        "metrics": best_metrics,
+        "val_pids": val_pids,
+        "val_y_true": val_y_true,
+        "val_y_prob": val_y_prob,
+        "val_y_prob_per_asm": val_y_prob_per_asm,
+        "model_state_dict": best_state_dict,
+    }
+
+
+class _DropPidWrapper(torch.utils.data.Dataset):
+    """Wrap a return_pid dataset so it yields the legacy 6-tuple.
+
+    Used internally so the existing train/eval loops (which expect 6-tuples)
+    can be reused without modification when the underlying dataset has been
+    built with ``return_pid=True``.
+    """
+
+    def __init__(self, base):
+        self.base = base
+
+    def __len__(self):
+        return len(self.base)
+
+    def __getitem__(self, idx):
+        item = self.base[idx]
+        # If the base dataset returns pid, drop it; else pass through.
+        if len(item) == 7:
+            return item[:6]
+        return item
 
 
 if __name__ == "__main__":
