@@ -18,7 +18,9 @@
 #   python -m thesisStandalone.analysis.consume_stage_a_predictions
 #==============================================================================
 
-set -e
+# NB: do NOT set -e here. We want one bad sbatch invocation (e.g. an
+# invalid partition name on a particular cluster) to log an error and
+# move on to the remaining experiments, not abort the whole batch.
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
@@ -89,16 +91,23 @@ for row in "${EXPERIMENTS[@]}"; do
     else
         SBATCH_FLAGS="--time=$WALL_TIME --job-name=stageA_${EXP_ID}"
         if [ "$NEEDS_GPU" = "false" ]; then
-            SBATCH_FLAGS="$SBATCH_FLAGS --partition=cpu --gres= --mem=16G"
+            # M3 has no 'cpu' partition; 'short' is CPU-only with a 30 min
+            # cap (fine for exp4). Explicitly request zero GPUs to
+            # override the --gres=gpu:1 SBATCH directive in submit_job.sh.
+            SBATCH_FLAGS="$SBATCH_FLAGS --partition=short --gres=gpu:0 --mem=16G --cpus-per-task=4"
         fi
         CMD="sbatch $SBATCH_FLAGS submit_job.sh -e $EXP_ID -a \"$EXP_ARGS\""
         echo ""
         echo ">> $EXP_ID: $CMD"
         if [ "$DRY_RUN" = "false" ]; then
-            JOB_OUTPUT=$(sbatch $SBATCH_FLAGS submit_job.sh -e "$EXP_ID" -a "$EXP_ARGS")
-            echo "  $JOB_OUTPUT"
-            JOB_ID=$(echo "$JOB_OUTPUT" | grep -oE '[0-9]+')
-            JOB_IDS+=("$JOB_ID:$EXP_ID")
+            if JOB_OUTPUT=$(sbatch $SBATCH_FLAGS submit_job.sh -e "$EXP_ID" -a "$EXP_ARGS" 2>&1); then
+                echo "  $JOB_OUTPUT"
+                JOB_ID=$(echo "$JOB_OUTPUT" | grep -oE '[0-9]+')
+                JOB_IDS+=("$JOB_ID:$EXP_ID")
+            else
+                echo "  FAILED: $JOB_OUTPUT"
+                echo "  (continuing with remaining experiments)"
+            fi
         fi
     fi
 done
