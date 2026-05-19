@@ -99,7 +99,7 @@ def _train_fold_generic(model, train_loader, val_loader, config, device, train_f
     return best_metrics
 
 
-def run_cv_exp3a(exp_config, device):
+def run_cv_exp3a(exp_config, device, prediction_logger=None):
     """Run CV for exp3a-type experiment (Triple MLP: Text + EEG + SMILES)."""
     text_model = exp_config["text"]
     smiles_model = exp_config["smiles"]
@@ -149,12 +149,21 @@ def run_cv_exp3a(exp_config, device):
 
         for key in fold_metrics:
             fold_metrics[key].append(metrics[key])
+        if prediction_logger is not None and "y_prob" in metrics:
+            pid_series = df["pid"].astype(str).values
+            prediction_logger.log_fold(
+                fold=fold,
+                pids=[pid_series[i] for i in val_idx],
+                y_true=metrics["y_true"],
+                y_prob=metrics["y_prob"],
+                threshold=metrics.get("optimal_threshold"),
+            )
         logger.info(f"    AUC={metrics['auc']:.4f}, BalAcc={metrics['balanced_acc_tuned']:.4f}")
 
     return fold_metrics
 
 
-def run_cv_exp6b(exp_config, device):
+def run_cv_exp6b(exp_config, device, prediction_logger=None):
     """Run CV for exp6b-type experiment (Clinical + SMILES + EEG)."""
     smiles_model = exp_config["smiles"]
     aggregator = exp_config["aggregator"]
@@ -199,12 +208,21 @@ def run_cv_exp6b(exp_config, device):
 
         for key in fold_metrics:
             fold_metrics[key].append(metrics[key])
+        if prediction_logger is not None and "y_prob" in metrics:
+            pid_series = df["pid"].astype(str).values
+            prediction_logger.log_fold(
+                fold=fold,
+                pids=[pid_series[i] for i in val_idx],
+                y_true=metrics["y_true"],
+                y_prob=metrics["y_prob"],
+                threshold=metrics.get("optimal_threshold"),
+            )
         logger.info(f"    AUC={metrics['auc']:.4f}, BalAcc={metrics['balanced_acc_tuned']:.4f}")
 
     return fold_metrics
 
 
-def run_cv_exp7a(exp_config, device):
+def run_cv_exp7a(exp_config, device, prediction_logger=None):
     """Run CV for exp7a-type experiment (Quad MLP: Clinical + Text + EEG + SMILES)."""
     text_model = exp_config["text"]
     smiles_model = exp_config["smiles"]
@@ -251,6 +269,15 @@ def run_cv_exp7a(exp_config, device):
 
         for key in fold_metrics:
             fold_metrics[key].append(metrics[key])
+        if prediction_logger is not None and "y_prob" in metrics:
+            pid_series = df["pid"].astype(str).values
+            prediction_logger.log_fold(
+                fold=fold,
+                pids=[pid_series[i] for i in val_idx],
+                y_true=metrics["y_true"],
+                y_prob=metrics["y_prob"],
+                threshold=metrics.get("optimal_threshold"),
+            )
         logger.info(f"    AUC={metrics['auc']:.4f}, BalAcc={metrics['balanced_acc_tuned']:.4f}")
 
     return fold_metrics
@@ -270,7 +297,15 @@ def main():
     parser.add_argument("--device", choices=["cuda", "cpu", "auto"], default="auto")
     parser.add_argument("--output", type=str, help="Override output path")
     parser.add_argument("--dry-run", action="store_true", help="Test configuration only")
+    parser.add_argument("--log-predictions", action="store_true",
+                        help="Dump per-fold OOF predictions to outputs/exp11_predictions/")
+    parser.add_argument("--deterministic", action="store_true",
+                        help="Enable deterministic training (seeds, cuDNN deterministic)")
     args = parser.parse_args()
+
+    if args.deterministic:
+        from shared.determinism import enable_determinism
+        enable_determinism()
 
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(levelname)s %(message)s")
 
@@ -303,7 +338,18 @@ def main():
         logger.info(f"{'='*60}")
 
         runner = CV_RUNNERS[exp["base"]]
-        fold_metrics = runner(exp, device)
+        pred_logger = None
+        if args.log_predictions:
+            from shared.prediction_logger import PredictionLogger
+            pred_dir = RESULTS_DIR.parent / "exp11_predictions"
+            pred_logger = PredictionLogger(
+                exp_id=f"exp11_{exp['name']}",
+                output_dir=pred_dir,
+                filename=f"predictions_oof_exp11_{exp['name']}.json",
+            )
+        fold_metrics = runner(exp, device, prediction_logger=pred_logger)
+        if pred_logger is not None:
+            pred_logger.save()
 
         # Compute summary
         summary = {}

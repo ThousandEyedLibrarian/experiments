@@ -103,16 +103,27 @@ def dry_run():
 def run_all_experiments(
     experiments: List[Dict],
     verbose: bool = True,
+    log_predictions: bool = False,
+    predictions_dir: str = None,
 ) -> List[Dict]:
     """Run all specified experiments."""
+    from shared.prediction_logger import PredictionLogger
     all_results = []
 
     print("="*60)
     print(f"Running {len(experiments)} experiments")
     print("="*60)
 
+    if predictions_dir is None:
+        predictions_dir = os.path.join(os.path.dirname(RESULTS_DIR), "exp1_predictions")
+
     for i, exp in enumerate(experiments):
         print(f"\n[{i+1}/{len(experiments)}] {exp['name']}")
+
+        pred_logger = None
+        if log_predictions:
+            pred_logger = PredictionLogger(exp_id=exp['name'], output_dir=predictions_dir,
+                                            filename=f"predictions_oof_{exp['name']}.json")
 
         results = run_experiment(
             experiment_name=exp['name'],
@@ -120,7 +131,12 @@ def run_all_experiments(
             smiles_model=exp['smiles'],
             fusion_type=exp['fusion'],
             verbose=verbose,
+            prediction_logger=pred_logger,
         )
+
+        if pred_logger is not None:
+            saved = pred_logger.save()
+            print(f"  Per-fold predictions written to {saved}")
 
         save_results(results)
         all_results.append(results)
@@ -187,8 +203,16 @@ def main():
                         help='Run only Experiment 1b (FuseMoE)')
     parser.add_argument('--quiet', action='store_true',
                         help='Reduce output verbosity')
+    parser.add_argument('--log-predictions', action='store_true',
+                        help='Dump per-fold OOF predictions to outputs/exp1_predictions/')
+    parser.add_argument('--deterministic', action='store_true',
+                        help='Enable deterministic training (seeds, cuDNN deterministic)')
 
     args = parser.parse_args()
+
+    if args.deterministic:
+        from shared.determinism import enable_determinism
+        enable_determinism()
 
     if args.dry_run:
         success = dry_run()
@@ -202,7 +226,11 @@ def main():
         experiments = [e for e in EXPERIMENTS if e['fusion'] == 'fusemoe']
 
     # Run experiments
-    results = run_all_experiments(experiments, verbose=not args.quiet)
+    results = run_all_experiments(
+        experiments,
+        verbose=not args.quiet,
+        log_predictions=args.log_predictions,
+    )
 
     # Print and save summary
     print_summary(results)

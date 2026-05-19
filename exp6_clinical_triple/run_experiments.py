@@ -38,6 +38,7 @@ def compute_summary(values: List[float]) -> Dict[str, float]:
 def run_experiment(
     exp_config: Dict,
     device: torch.device,
+    log_predictions: bool = False,
 ) -> Dict:
     """Run a single experiment configuration.
 
@@ -56,20 +57,34 @@ def run_experiment(
     logger.info(f"Running experiment: {exp_name}")
     logger.info(f"{'='*60}")
 
+    pred_logger = None
+    if log_predictions:
+        from shared.prediction_logger import PredictionLogger
+        import os
+        pred_dir = os.path.join(os.path.dirname(RESULTS_DIR), "exp6_predictions")
+        pred_logger = PredictionLogger(exp_id=exp_name, output_dir=pred_dir,
+                                        filename=f"predictions_oof_{exp_name}.json")
+
     if modality == "text":
         fold_metrics = run_cross_validation_text(
             smiles_model=smiles_model,
             text_model=exp_config["text_model"],
             device=device,
+            prediction_logger=pred_logger,
         )
     elif modality == "eeg":
         fold_metrics = run_cross_validation_eeg(
             smiles_model=smiles_model,
             eeg_model=exp_config["eeg_model"],
             device=device,
+            prediction_logger=pred_logger,
         )
     else:
         raise ValueError(f"Unknown modality: {modality}")
+
+    if pred_logger is not None:
+        saved = pred_logger.save()
+        logger.info(f"Per-fold predictions written to {saved}")
 
     # Compute summary statistics
     summary = {}
@@ -86,16 +101,9 @@ def run_experiment(
 def run_all_experiments(
     experiments: Optional[List[Dict]] = None,
     device: torch.device = None,
+    log_predictions: bool = False,
 ) -> Dict[str, Dict]:
-    """Run all experiments and collect results.
-
-    Args:
-        experiments: List of experiment configs. Defaults to EXPERIMENTS.
-        device: Device to use.
-
-    Returns:
-        Dictionary mapping experiment names to results.
-    """
+    """Run all experiments and collect results."""
     if experiments is None:
         experiments = EXPERIMENTS
 
@@ -106,7 +114,7 @@ def run_all_experiments(
 
     for exp_config in experiments:
         exp_name = exp_config["name"]
-        results = run_experiment(exp_config, device)
+        results = run_experiment(exp_config, device, log_predictions=log_predictions)
         all_results[exp_name] = results
 
     return all_results
@@ -205,7 +213,21 @@ def main():
         default=None,
         help="Device to use (default: auto-detect)",
     )
+    parser.add_argument(
+        "--log-predictions",
+        action="store_true",
+        help="Dump per-fold OOF predictions to outputs/exp6_predictions/",
+    )
+    parser.add_argument(
+        "--deterministic",
+        action="store_true",
+        help="Enable deterministic training (seeds, cuDNN deterministic)",
+    )
     args = parser.parse_args()
+
+    if args.deterministic:
+        from shared.determinism import enable_determinism
+        enable_determinism()
 
     # Setup logging
     logging.basicConfig(
@@ -233,7 +255,11 @@ def main():
     logger.info(f"Running {len(experiments)} experiment(s)")
 
     # Run experiments
-    all_results = run_all_experiments(experiments=experiments, device=device)
+    all_results = run_all_experiments(
+        experiments=experiments,
+        device=device,
+        log_predictions=args.log_predictions,
+    )
 
     # Print results
     print_results_table(all_results)

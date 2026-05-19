@@ -16,6 +16,8 @@ from typing import Dict, List, Optional
 import numpy as np
 import torch
 
+from shared.prediction_logger import PredictionLogger
+
 from .config import EXPERIMENTS, RESULTS_DIR
 from .training import run_cross_validation
 
@@ -42,6 +44,8 @@ def compute_summary(values: List[float]) -> Dict[str, float]:
 def run_all_experiments(
     experiments: Optional[List[Dict]] = None,
     device: torch.device = None,
+    log_predictions: bool = False,
+    predictions_dir: Optional[Path] = None,
 ) -> Dict[str, Dict]:
     """Run all experiments and collect results.
 
@@ -68,7 +72,20 @@ def run_all_experiments(
         logger.info(f"Running experiment: {exp_name}")
         logger.info(f"{'='*60}")
 
-        fold_metrics = run_cross_validation(model_type=model_type, device=device)
+        pred_logger = None
+        if log_predictions:
+            target_dir = predictions_dir if predictions_dir is not None else RESULTS_DIR.parent / "exp4_predictions"
+            pred_logger = PredictionLogger(exp_id=exp_name, output_dir=target_dir)
+
+        fold_metrics = run_cross_validation(
+            model_type=model_type,
+            device=device,
+            prediction_logger=pred_logger,
+        )
+
+        if pred_logger is not None:
+            saved_path = pred_logger.save()
+            logger.info(f"Per-fold predictions written to {saved_path}")
 
         # Compute summary statistics
         summary = {}
@@ -172,7 +189,21 @@ def main():
         default=None,
         help="Device to use (default: auto-detect)",
     )
+    parser.add_argument(
+        "--log-predictions",
+        action="store_true",
+        help="Dump per-fold OOF predictions to outputs/exp4_predictions/predictions_oof.json",
+    )
+    parser.add_argument(
+        "--deterministic",
+        action="store_true",
+        help="Enable deterministic training (seeds, cuDNN deterministic)",
+    )
     args = parser.parse_args()
+
+    if args.deterministic:
+        from shared.determinism import enable_determinism
+        enable_determinism()
 
     # Setup logging
     logging.basicConfig(
@@ -194,7 +225,11 @@ def main():
         experiments = [exp for exp in EXPERIMENTS if exp["model"] == args.model]
 
     # Run experiments
-    all_results = run_all_experiments(experiments=experiments, device=device)
+    all_results = run_all_experiments(
+        experiments=experiments,
+        device=device,
+        log_predictions=args.log_predictions,
+    )
 
     # Print results
     print_results_table(all_results)

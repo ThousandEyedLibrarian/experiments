@@ -53,6 +53,8 @@ def run_all_experiments(
     fusion_type: str = None,
     dry_run: bool = False,
     output_dir: Path = OUTPUTS_DIR / "exp2_results",
+    log_predictions: bool = False,
+    predictions_dir: Path = None,
 ):
     """Run all configured experiments.
 
@@ -107,6 +109,13 @@ def run_all_experiments(
 
             # Run cross-validation
             logger.info("Starting cross-validation...")
+            pred_logger = None
+            if log_predictions:
+                from shared.prediction_logger import PredictionLogger
+                pred_dir = predictions_dir if predictions_dir is not None else OUTPUTS_DIR / "exp2_predictions"
+                exp_id = f"exp2_{exp['eeg_model']}_{smiles_model_name}_{exp['fusion']}"
+                pred_logger = PredictionLogger(exp_id=exp_id, output_dir=pred_dir,
+                                                filename=f"predictions_oof_{exp_id}.json")
             results = run_cross_validation(
                 eeg_data=eeg_data,
                 smiles_embeddings=smiles_embeddings,
@@ -117,7 +126,11 @@ def run_all_experiments(
                 smiles_model=smiles_model_name,
                 device=device,
                 verbose=True,
+                prediction_logger=pred_logger,
             )
+            if pred_logger is not None:
+                saved = pred_logger.save()
+                logger.info(f"Per-fold predictions written to {saved}")
 
             results["timestamp"] = datetime.now().isoformat()
             all_results.append(results)
@@ -188,8 +201,16 @@ def main():
     parser.add_argument("--log-level", type=str, default="INFO",
                         choices=["DEBUG", "INFO", "WARNING", "ERROR"],
                         help="Logging level (default: INFO)")
+    parser.add_argument("--log-predictions", action="store_true",
+                        help="Dump per-fold OOF predictions to outputs/exp2_predictions/")
+    parser.add_argument("--deterministic", action="store_true",
+                        help="Enable deterministic training (seeds, cuDNN deterministic)")
 
     args = parser.parse_args()
+
+    if args.deterministic:
+        from shared.determinism import enable_determinism
+        enable_determinism()
 
     # Set up logging
     log_level = getattr(logging, args.log_level)
@@ -219,6 +240,7 @@ def main():
             smiles_model=args.smiles_model,
             fusion_type=args.fusion,
             dry_run=args.dry_run,
+            log_predictions=args.log_predictions,
         )
         logger.info("Experiment 2 completed successfully")
     except KeyboardInterrupt:

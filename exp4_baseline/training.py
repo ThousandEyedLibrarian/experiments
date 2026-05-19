@@ -112,6 +112,8 @@ def evaluate(
     metrics = {
         "accuracy": accuracy_score(all_labels, all_preds),
         "f1": f1_score(all_labels, all_preds, zero_division=0),
+        "y_prob": all_probs.tolist(),
+        "y_true": all_labels.tolist(),
     }
 
     # AUC requires both classes present
@@ -226,6 +228,7 @@ def train_fold(
 def run_cross_validation(
     model_type: str = "mlp",
     device: torch.device = None,
+    prediction_logger=None,
 ) -> Dict[str, List[float]]:
     """Run 5-fold stratified cross-validation.
 
@@ -271,6 +274,16 @@ def run_cross_validation(
 
         # Train fold
         metrics = train_fold(train_ds, val_ds, model_type, device, fold)
+
+        if prediction_logger is not None:
+            val_pids = df["pid"].iloc[val_idx].tolist()
+            prediction_logger.log_fold(
+                fold=fold,
+                pids=val_pids,
+                y_true=metrics["y_true"],
+                y_prob=metrics["y_prob"],
+                threshold=metrics.get("optimal_threshold"),
+            )
 
         for key in fold_metrics:
             fold_metrics[key].append(metrics[key])

@@ -145,6 +145,8 @@ def evaluate(
     metrics = {
         "accuracy": accuracy_score(all_labels, all_preds),
         "f1": f1_score(all_labels, all_preds, zero_division=0),
+        "y_prob": list(all_probs),
+        "y_true": list(all_labels),
     }
 
     # Handle edge case where all predictions are same class
@@ -175,6 +177,7 @@ def run_experiment(
     smiles_model: str,
     fusion_type: str,
     verbose: bool = True,
+    prediction_logger=None,
 ) -> Dict:
     """
     Run a single experiment with 5-fold cross-validation.
@@ -202,7 +205,7 @@ def run_experiment(
     use_aux_loss = fusion_type == 'fusemoe'
 
     # Load data
-    dataset, outcomes = get_full_dataset(text_model, smiles_model)
+    dataset, outcomes, pids = get_full_dataset(text_model, smiles_model)
     smiles_dim = SMILES_DIMS[smiles_model]
 
     if verbose:
@@ -322,6 +325,15 @@ def run_experiment(
         model.to(device)
 
         final_metrics = evaluate(model, val_loader, device, use_aux_loss=use_aux_loss)
+
+        if prediction_logger is not None:
+            prediction_logger.log_fold(
+                fold=fold,
+                pids=[pids[i] for i in val_idx],
+                y_true=final_metrics['y_true'],
+                y_prob=final_metrics['y_prob'],
+                threshold=final_metrics.get('optimal_threshold'),
+            )
 
         results['fold_accuracy'].append(final_metrics['accuracy'])
         results['fold_auc'].append(final_metrics['auc'])

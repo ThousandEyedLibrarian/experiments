@@ -13,6 +13,7 @@ import torch
 
 from .config import EXPERIMENTS, RESULTS_DIR
 from .training import run_cross_validation
+from shared.prediction_logger import PredictionLogger
 
 logger = logging.getLogger("exp3")
 
@@ -20,6 +21,7 @@ logger = logging.getLogger("exp3")
 def run_single_experiment(
     exp_config: Dict,
     device: torch.device,
+    log_predictions: bool = False,
 ) -> Dict[str, List[float]]:
     """Run a single experiment configuration."""
     logger.info(f"\n{'=' * 60}")
@@ -29,12 +31,24 @@ def run_single_experiment(
     logger.info(f"  Fusion: {exp_config['fusion']}")
     logger.info(f"{'=' * 60}")
 
+    pred_logger = None
+    if log_predictions:
+        import os
+        pred_dir = os.path.join(os.path.dirname(RESULTS_DIR), "exp3_predictions")
+        pred_logger = PredictionLogger(exp_id=exp_config['name'], output_dir=pred_dir,
+                                        filename=f"predictions_oof_{exp_config['name']}.json")
+
     results = run_cross_validation(
         text_model=exp_config["text"],
         smiles_model=exp_config["smiles"],
         fusion_type=exp_config["fusion"],
         device=device,
+        prediction_logger=pred_logger,
     )
+
+    if pred_logger is not None:
+        saved = pred_logger.save()
+        logger.info(f"Per-fold predictions written to {saved}")
 
     return results
 
@@ -42,6 +56,7 @@ def run_single_experiment(
 def run_all_experiments(
     experiments: List[Dict] = None,
     device: torch.device = None,
+    log_predictions: bool = False,
 ) -> Dict[str, Dict]:
     """Run all experiments and collect results."""
     if experiments is None:
@@ -56,7 +71,7 @@ def run_all_experiments(
     for exp_config in experiments:
         name = exp_config["name"]
         try:
-            results = run_single_experiment(exp_config, device)
+            results = run_single_experiment(exp_config, device, log_predictions=log_predictions)
             all_results[name] = {
                 "config": exp_config,
                 "fold_metrics": results,
@@ -170,7 +185,21 @@ def main():
         default=None,
         help="Output JSON file path",
     )
+    parser.add_argument(
+        "--log-predictions",
+        action="store_true",
+        help="Dump per-fold OOF predictions to outputs/exp3_predictions/",
+    )
+    parser.add_argument(
+        "--deterministic",
+        action="store_true",
+        help="Enable deterministic training (seeds, cuDNN deterministic)",
+    )
     args = parser.parse_args()
+
+    if args.deterministic:
+        from shared.determinism import enable_determinism
+        enable_determinism()
 
     # Setup logging
     logging.basicConfig(
@@ -203,7 +232,7 @@ def main():
         logger.info(f"  - {exp['name']}")
 
     # Run experiments
-    all_results = run_all_experiments(experiments, device)
+    all_results = run_all_experiments(experiments, device, log_predictions=args.log_predictions)
 
     # Print results
     print_results_table(all_results)

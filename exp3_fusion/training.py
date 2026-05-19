@@ -122,6 +122,8 @@ def evaluate(
     metrics = {
         "accuracy": accuracy_score(all_labels, all_preds),
         "f1": f1_score(all_labels, all_preds, zero_division=0),
+        "y_prob": all_probs.tolist(),
+        "y_true": all_labels.tolist(),
     }
 
     # AUC requires both classes present
@@ -281,6 +283,7 @@ def run_cross_validation(
     smiles_model: str,
     fusion_type: str,
     device: torch.device = None,
+    prediction_logger=None,
 ) -> Dict[str, List[float]]:
     """Run 5-fold cross-validation for a specific configuration."""
     if device is None:
@@ -323,6 +326,16 @@ def run_cross_validation(
 
         # Train fold
         metrics = train_fold(train_ds, val_ds, fusion_type, text_dim, smiles_dim, device, fold)
+
+        if prediction_logger is not None and "y_prob" in metrics:
+            pid_series = df["pid"].astype(str).values
+            prediction_logger.log_fold(
+                fold=fold,
+                pids=[pid_series[i] for i in val_idx],
+                y_true=metrics["y_true"],
+                y_prob=metrics["y_prob"],
+                threshold=metrics.get("optimal_threshold"),
+            )
 
         for key in fold_metrics:
             fold_metrics[key].append(metrics[key])

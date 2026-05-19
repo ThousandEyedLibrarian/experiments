@@ -492,7 +492,16 @@ def main():
         default=None,
         help="Device to use (default: auto-detect)",
     )
+    parser.add_argument(
+        "--deterministic",
+        action="store_true",
+        help="Enable deterministic training (seeds, cuDNN deterministic)",
+    )
     args = parser.parse_args()
+
+    if args.deterministic:
+        from shared.determinism import enable_determinism
+        enable_determinism()
 
     # Setup logging
     logging.basicConfig(

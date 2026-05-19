@@ -258,6 +258,8 @@ def compute_metrics(
     metrics = {
         "accuracy": accuracy_score(labels, preds),
         "f1": f1_score(labels, preds, zero_division=0),
+        "y_prob": probs.tolist(),
+        "y_true": labels.tolist(),
     }
 
     # AUC requires both classes present
@@ -388,6 +390,7 @@ def run_cross_validation_smiles(
     smiles_model: str = "chemberta",
     device: torch.device = None,
     use_multilabel_stratification: bool = True,
+    prediction_logger=None,
 ) -> Dict[str, List[float]]:
     """Run 5-fold CV for Clinical + SMILES.
 
@@ -447,6 +450,16 @@ def run_cross_validation_smiles(
             fold=fold,
         )
 
+        if prediction_logger is not None and "y_prob" in metrics:
+            pid_series = df["pid"].astype(str).values
+            prediction_logger.log_fold(
+                fold=fold,
+                pids=[pid_series[i] for i in val_idx],
+                y_true=metrics["y_true"],
+                y_prob=metrics["y_prob"],
+                threshold=metrics.get("optimal_threshold"),
+            )
+
         for key in fold_metrics:
             fold_metrics[key].append(metrics[key])
 
@@ -463,6 +476,7 @@ def run_cross_validation_text(
     text_model: str = "clinicalbert",
     device: torch.device = None,
     use_multilabel_stratification: bool = True,
+    prediction_logger=None,
 ) -> Dict[str, List[float]]:
     """Run 5-fold CV for Clinical + Text.
 
@@ -522,6 +536,16 @@ def run_cross_validation_text(
             fold=fold,
         )
 
+        if prediction_logger is not None and "y_prob" in metrics:
+            pid_series = df["pid"].astype(str).values
+            prediction_logger.log_fold(
+                fold=fold,
+                pids=[pid_series[i] for i in val_idx],
+                y_true=metrics["y_true"],
+                y_prob=metrics["y_prob"],
+                threshold=metrics.get("optimal_threshold"),
+            )
+
         for key in fold_metrics:
             fold_metrics[key].append(metrics[key])
 
@@ -538,6 +562,7 @@ def run_cross_validation_eeg(
     eeg_model: str = "simplecnn",
     device: torch.device = None,
     use_multilabel_stratification: bool = True,
+    prediction_logger=None,
 ) -> Dict[str, List[float]]:
     """Run 5-fold CV for Clinical + EEG.
 
@@ -598,6 +623,16 @@ def run_cross_validation_eeg(
             device=device,
             fold=fold,
         )
+
+        if prediction_logger is not None and "y_prob" in metrics:
+            pid_series = df["pid"].astype(str).values
+            prediction_logger.log_fold(
+                fold=fold,
+                pids=[pid_series[i] for i in val_idx],
+                y_true=metrics["y_true"],
+                y_prob=metrics["y_prob"],
+                threshold=metrics.get("optimal_threshold"),
+            )
 
         for key in fold_metrics:
             fold_metrics[key].append(metrics[key])

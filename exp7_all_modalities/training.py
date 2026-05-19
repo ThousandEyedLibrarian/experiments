@@ -196,6 +196,8 @@ def compute_metrics(
     metrics = {
         "accuracy": accuracy_score(labels, preds),
         "f1": f1_score(labels, preds, zero_division=0),
+        "y_prob": probs.tolist(),
+        "y_true": labels.tolist(),
     }
 
     # AUC requires both classes present

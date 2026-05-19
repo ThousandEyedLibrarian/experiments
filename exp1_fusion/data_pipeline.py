@@ -226,13 +226,15 @@ def create_dataloaders(
 def get_full_dataset(
     text_model: str,
     smiles_model: str,
-) -> Tuple[ASMFusionDataset, np.ndarray]:
+) -> Tuple[ASMFusionDataset, np.ndarray, np.ndarray]:
     """
     Get the full dataset and outcomes for cross-validation splitting.
 
     Returns:
         dataset: Full ASMFusionDataset
         outcomes: Array of outcome labels for stratified splitting
+        pids:    Array of patient IDs aligned to dataset indices, used by
+                 the prediction logger to identify held-out OOF samples.
     """
     # Load data WITHOUT outcome filtering first (to match embedding count)
     df_all = load_csv_data(filter_outcome=False)
@@ -264,6 +266,9 @@ def get_full_dataset(
     # Map outcomes: 1->0 (failure), 2->1 (success)
     outcomes = np.array([OUTCOME_MAPPING.get(o, o) for o in outcomes])
 
+    # Aligned patient IDs for OOF prediction logging.
+    pids = df['pid'].astype(str).values
+
     # Create full dataset
     dataset = ASMFusionDataset(
         text_embeddings=text_emb,
@@ -273,7 +278,7 @@ def get_full_dataset(
         drug_names=drug_names,
     )
 
-    return dataset, outcomes
+    return dataset, outcomes, pids
 
 
 if __name__ == '__main__':

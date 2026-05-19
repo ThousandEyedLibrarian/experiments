@@ -175,6 +175,7 @@ def run_ablation_experiment(
     df,
     device: torch.device,
     use_multilabel_stratification: bool = True,
+    prediction_logger=None,
 ) -> Dict:
     """Run a single ablation experiment.
 
@@ -281,6 +282,16 @@ def run_ablation_experiment(
         for key in fold_metrics:
             if key in best_metrics:
                 fold_metrics[key].append(best_metrics[key])
+
+        if prediction_logger is not None and "y_prob" in best_metrics:
+            pid_series = df["pid"].astype(str).values
+            prediction_logger.log_fold(
+                fold=fold,
+                pids=[pid_series[i] for i in val_idx],
+                y_true=best_metrics["y_true"],
+                y_prob=best_metrics["y_prob"],
+                threshold=best_metrics.get("optimal_threshold"),
+            )
 
         logger.info(f"    Fold {fold + 1}: AUC={best_metrics.get('auc', 0):.4f}")
 
@@ -403,6 +414,7 @@ def run_all_ablations(
     smiles_model: str = "chemberta",
     use_multilabel: bool = True,
     experiments: List[Dict] = None,
+    log_predictions: bool = False,
 ) -> List[Dict]:
     """Run all ablation experiments.
 
@@ -433,14 +445,29 @@ def run_all_ablations(
 
     # Run experiments
     all_results = []
+    pred_dir = None
+    if log_predictions:
+        from shared.prediction_logger import PredictionLogger
+        pred_dir = RESULTS_DIR.parent / "exp9_predictions"
+
     for exp_config in experiments:
         try:
+            pred_logger = None
+            if log_predictions:
+                pred_logger = PredictionLogger(
+                    exp_id=f"exp9_{exp_config['name']}",
+                    output_dir=pred_dir,
+                    filename=f"predictions_oof_exp9_{exp_config['name']}.json",
+                )
             results = run_ablation_experiment(
                 exp_config,
                 eeg_data, smiles_embeddings, smiles_indices, df,
                 device,
                 use_multilabel_stratification=use_multilabel,
+                prediction_logger=pred_logger,
             )
+            if pred_logger is not None:
+                pred_logger.save()
             all_results.append(results)
         except Exception as e:
             logger.error(f"Experiment {exp_config['name']} failed: {e}")
@@ -495,7 +522,15 @@ if __name__ == "__main__":
     parser.add_argument("--quick", action="store_true", help="Run only baseline experiment")
     parser.add_argument("--experiment", type=str, default=None,
                         help="Run only the named experiment (e.g. encoder_labram)")
+    parser.add_argument("--log-predictions", action="store_true",
+                        help="Dump per-fold OOF predictions to outputs/exp9_predictions/")
+    parser.add_argument("--deterministic", action="store_true",
+                        help="Enable deterministic training (seeds, cuDNN deterministic)")
     args = parser.parse_args()
+
+    if args.deterministic:
+        from shared.determinism import enable_determinism
+        enable_determinism()
 
     if args.quick:
         experiments = [define_ablation_experiments()[0]]  # Just baseline
@@ -511,6 +546,7 @@ if __name__ == "__main__":
         smiles_model=args.smiles_model,
         use_multilabel=not args.no_multilabel,
         experiments=experiments,
+        log_predictions=args.log_predictions,
     )
 
     print_ablation_summary(results)

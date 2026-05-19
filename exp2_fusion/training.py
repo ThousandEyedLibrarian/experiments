@@ -140,6 +140,8 @@ def evaluate(
     metrics = {
         "accuracy": accuracy_score(all_labels, all_preds),
         "f1": f1_score(all_labels, all_preds, zero_division=0),
+        "y_prob": all_probs.tolist(),
+        "y_true": all_labels.tolist(),
     }
 
     # Compute AUC and threshold-tuned metrics if we have both classes
@@ -296,6 +298,7 @@ def run_cross_validation(
     config: Dict = TRAIN_CONFIG,
     verbose: bool = True,
     use_multilabel_stratification: bool = True,
+    prediction_logger=None,
 ) -> Dict:
     """Run k-fold cross validation.
 
@@ -378,6 +381,16 @@ def run_cross_validation(
 
             for key in fold_metrics:
                 fold_metrics[key].append(metrics[key])
+
+            if prediction_logger is not None and "y_prob" in metrics:
+                pid_series = df["pid"].astype(str).values
+                prediction_logger.log_fold(
+                    fold=fold,
+                    pids=[pid_series[i] for i in val_idx],
+                    y_true=metrics["y_true"],
+                    y_prob=metrics["y_prob"],
+                    threshold=metrics.get("optimal_threshold"),
+                )
 
             if verbose:
                 logger.info(
