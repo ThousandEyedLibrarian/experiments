@@ -22,6 +22,7 @@ def run_single_experiment(
     exp_config: Dict,
     device: torch.device,
     log_predictions: bool = False,
+    asm_balance_mode: str = "none",
 ) -> Dict[str, List[float]]:
     """Run a single experiment configuration."""
     logger.info(f"\n{'=' * 60}")
@@ -35,8 +36,13 @@ def run_single_experiment(
     if log_predictions:
         import os
         pred_dir = os.path.join(os.path.dirname(RESULTS_DIR), "exp3_predictions")
+        suffix = ""
+        if asm_balance_mode == "weighted":
+            suffix = "_asmweighted"
+        elif asm_balance_mode == "stratified_batch":
+            suffix = "_asmstratbatch"
         pred_logger = PredictionLogger(exp_id=exp_config['name'], output_dir=pred_dir,
-                                        filename=f"predictions_oof_{exp_config['name']}.json")
+                                        filename=f"predictions_oof_{exp_config['name']}{suffix}.json")
 
     results = run_cross_validation(
         text_model=exp_config["text"],
@@ -44,6 +50,7 @@ def run_single_experiment(
         fusion_type=exp_config["fusion"],
         device=device,
         prediction_logger=pred_logger,
+        asm_balance_mode=asm_balance_mode,
     )
 
     if pred_logger is not None:
@@ -57,6 +64,7 @@ def run_all_experiments(
     experiments: List[Dict] = None,
     device: torch.device = None,
     log_predictions: bool = False,
+    asm_balance_mode: str = "none",
 ) -> Dict[str, Dict]:
     """Run all experiments and collect results."""
     if experiments is None:
@@ -71,7 +79,11 @@ def run_all_experiments(
     for exp_config in experiments:
         name = exp_config["name"]
         try:
-            results = run_single_experiment(exp_config, device, log_predictions=log_predictions)
+            results = run_single_experiment(
+                exp_config, device,
+                log_predictions=log_predictions,
+                asm_balance_mode=asm_balance_mode,
+            )
             all_results[name] = {
                 "config": exp_config,
                 "fold_metrics": results,
@@ -195,6 +207,13 @@ def main():
         action="store_true",
         help="Enable deterministic training (seeds, cuDNN deterministic)",
     )
+    parser.add_argument(
+        "--asm-balance",
+        type=str,
+        choices=["none", "weighted", "stratified_batch"],
+        default="none",
+        help="Stage B ASM-balancing mode",
+    )
     args = parser.parse_args()
 
     if args.deterministic:
@@ -232,7 +251,11 @@ def main():
         logger.info(f"  - {exp['name']}")
 
     # Run experiments
-    all_results = run_all_experiments(experiments, device, log_predictions=args.log_predictions)
+    all_results = run_all_experiments(
+        experiments, device,
+        log_predictions=args.log_predictions,
+        asm_balance_mode=args.asm_balance,
+    )
 
     # Print results
     print_results_table(all_results)

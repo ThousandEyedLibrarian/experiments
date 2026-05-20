@@ -35,9 +35,18 @@ while [[ $# -gt 0 ]]; do
 done
 
 # Each row: <job_name>|<entry args>|<wall_time>
+# Stage B: 4 headline configs (Exp3a, Exp5a, Exp6a, Exp7a) x 2 methods
+# (weighted, stratified_batch) = 8 jobs total.
+# Output predictions land in outputs/exp{N}_predictions/predictions_oof_*_asm{method}.json.
 EXPERIMENTS=(
-    "stageB_exp7_weighted|-e exp7 -m run_experiments -a \"--mode predictions --asm-balance weighted --deterministic\"|3:00:00"
-    "stageB_exp7_stratbatch|-e exp7 -m run_experiments -a \"--mode predictions --asm-balance stratified_batch --deterministic\"|3:00:00"
+    "stageB_exp3a_weighted|-e exp3 -m run_experiments -a \"--fusion mlp --log-predictions --deterministic --asm-balance weighted\"|3:00:00"
+    "stageB_exp3a_stratbatch|-e exp3 -m run_experiments -a \"--fusion mlp --log-predictions --deterministic --asm-balance stratified_batch\"|3:00:00"
+    "stageB_exp5a_weighted|-e exp5 -m run_experiments -a \"--exp 5a --log-predictions --deterministic --asm-balance weighted\"|2:00:00"
+    "stageB_exp5a_stratbatch|-e exp5 -m run_experiments -a \"--exp 5a --log-predictions --deterministic --asm-balance stratified_batch\"|2:00:00"
+    "stageB_exp6a_weighted|-e exp6 -m run_experiments -a \"--exp 6a --log-predictions --deterministic --asm-balance weighted\"|3:00:00"
+    "stageB_exp6a_stratbatch|-e exp6 -m run_experiments -a \"--exp 6a --log-predictions --deterministic --asm-balance stratified_batch\"|3:00:00"
+    "stageB_exp7a_weighted|-e exp7 -m run_experiments -a \"--mode predictions --asm-balance weighted --deterministic\"|3:00:00"
+    "stageB_exp7a_stratbatch|-e exp7 -m run_experiments -a \"--mode predictions --asm-balance stratified_batch --deterministic\"|3:00:00"
 )
 
 echo "============================================================"

@@ -39,21 +39,30 @@ def train_epoch_smiles(
     optimizer: torch.optim.Optimizer,
     criterion: nn.Module,
     device: torch.device,
+    asm_weighted: bool = False,
+    class_weights: torch.Tensor = None,
 ) -> float:
     """Train for one epoch (Clinical + SMILES)."""
+    from shared.asm_balancing import weighted_cross_entropy
     model.train()
     total_loss = 0.0
     n_batches = 0
 
     for batch in dataloader:
-        clinical, smiles, labels = batch
+        if asm_weighted:
+            clinical, smiles, labels, sample_weights = batch
+            sample_weights = sample_weights.to(device)
+        else:
+            clinical, smiles, labels = batch
+            sample_weights = None
         clinical = clinical.to(device)
         smiles = smiles.to(device)
         labels = labels.to(device)
 
         optimizer.zero_grad()
         logits = model(clinical, smiles)
-        loss = criterion(logits, labels)
+        loss = weighted_cross_entropy(logits, labels, sample_weights, class_weight=class_weights) if asm_weighted \
+            else criterion(logits, labels)
         loss.backward()
         torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
         optimizer.step()
@@ -70,21 +79,30 @@ def train_epoch_text(
     optimizer: torch.optim.Optimizer,
     criterion: nn.Module,
     device: torch.device,
+    asm_weighted: bool = False,
+    class_weights: torch.Tensor = None,
 ) -> float:
     """Train for one epoch (Clinical + Text)."""
+    from shared.asm_balancing import weighted_cross_entropy
     model.train()
     total_loss = 0.0
     n_batches = 0
 
     for batch in dataloader:
-        clinical, text, labels = batch
+        if asm_weighted:
+            clinical, text, labels, sample_weights = batch
+            sample_weights = sample_weights.to(device)
+        else:
+            clinical, text, labels = batch
+            sample_weights = None
         clinical = clinical.to(device)
         text = text.to(device)
         labels = labels.to(device)
 
         optimizer.zero_grad()
         logits = model(clinical, text)
-        loss = criterion(logits, labels)
+        loss = weighted_cross_entropy(logits, labels, sample_weights, class_weight=class_weights) if asm_weighted \
+            else criterion(logits, labels)
         loss.backward()
         torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
         optimizer.step()
@@ -101,14 +119,22 @@ def train_epoch_eeg(
     optimizer: torch.optim.Optimizer,
     criterion: nn.Module,
     device: torch.device,
+    asm_weighted: bool = False,
+    class_weights: torch.Tensor = None,
 ) -> float:
     """Train for one epoch (Clinical + EEG)."""
+    from shared.asm_balancing import weighted_cross_entropy
     model.train()
     total_loss = 0.0
     n_batches = 0
 
     for batch in dataloader:
-        clinical, eeg_windows, padding_mask, labels = batch
+        if asm_weighted:
+            clinical, eeg_windows, padding_mask, labels, sample_weights = batch
+            sample_weights = sample_weights.to(device)
+        else:
+            clinical, eeg_windows, padding_mask, labels = batch
+            sample_weights = None
         clinical = clinical.to(device)
         eeg_windows = eeg_windows.to(device)
         padding_mask = padding_mask.to(device)
@@ -116,7 +142,8 @@ def train_epoch_eeg(
 
         optimizer.zero_grad()
         logits = model(clinical, eeg_windows, padding_mask)
-        loss = criterion(logits, labels)
+        loss = weighted_cross_entropy(logits, labels, sample_weights, class_weight=class_weights) if asm_weighted \
+            else criterion(logits, labels)
         loss.backward()
         torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
         optimizer.step()
@@ -293,18 +320,46 @@ def train_fold(
     eeg_model: str = None,
     device: torch.device = None,
     fold: int = 0,
+    asm_balance_mode: str = "none",
 ) -> Dict[str, float]:
     """Train and evaluate a single fold."""
+    from shared.asm_balancing import (
+        WeightedASMDataset,
+        StratifiedASMBatchSampler,
+        compute_asm_sample_weights,
+    )
     config = TRAINING_CONFIG
 
+    asm_weighted = (asm_balance_mode == "weighted")
+    asm_stratified = (asm_balance_mode == "stratified_batch")
+    train_asm_labels = list(train_dataset.asm_drugs)
+
+    if asm_weighted:
+        weights = compute_asm_sample_weights(train_asm_labels)
+        logger.info(f"  ASM-weighted training: mean={weights.mean():.3f}, min={weights.min():.3f}, max={weights.max():.3f}")
+        train_dataset = WeightedASMDataset(train_dataset, weights)
+
     # Create dataloaders
-    train_loader = DataLoader(
-        train_dataset,
-        batch_size=config["batch_size"],
-        shuffle=True,
-        drop_last=False,
-        num_workers=0,
-    )
+    if asm_stratified:
+        batch_sampler = StratifiedASMBatchSampler(
+            train_asm_labels,
+            batch_size=config["batch_size"],
+            seed=fold,
+        )
+        logger.info(f"  Stratified ASM batch sampler: {len(batch_sampler)} batches, ASMs={len(batch_sampler.unique_asms)}")
+        train_loader = DataLoader(
+            train_dataset,
+            batch_sampler=batch_sampler,
+            num_workers=0,
+        )
+    else:
+        train_loader = DataLoader(
+            train_dataset,
+            batch_size=config["batch_size"],
+            shuffle=True,
+            drop_last=False,
+            num_workers=0,
+        )
     val_loader = DataLoader(
         val_dataset,
         batch_size=config["batch_size"],
@@ -363,7 +418,10 @@ def train_fold(
     patience_counter = 0
 
     for epoch in range(config["epochs"]):
-        train_loss = train_fn(model, train_loader, optimizer, criterion, device)
+        train_loss = train_fn(
+            model, train_loader, optimizer, criterion, device,
+            asm_weighted=asm_weighted, class_weights=class_weights,
+        )
         val_loss, val_metrics = eval_fn(model, val_loader, criterion, device)
 
         if val_metrics["auc"] > best_val_auc:
@@ -391,6 +449,7 @@ def run_cross_validation_smiles(
     device: torch.device = None,
     use_multilabel_stratification: bool = True,
     prediction_logger=None,
+    asm_balance_mode: str = "none",
 ) -> Dict[str, List[float]]:
     """Run 5-fold CV for Clinical + SMILES.
 
@@ -448,6 +507,7 @@ def run_cross_validation_smiles(
             smiles_model=smiles_model,
             device=device,
             fold=fold,
+            asm_balance_mode=asm_balance_mode,
         )
 
         if prediction_logger is not None and "y_prob" in metrics:
@@ -477,6 +537,7 @@ def run_cross_validation_text(
     device: torch.device = None,
     use_multilabel_stratification: bool = True,
     prediction_logger=None,
+    asm_balance_mode: str = "none",
 ) -> Dict[str, List[float]]:
     """Run 5-fold CV for Clinical + Text.
 
@@ -534,6 +595,7 @@ def run_cross_validation_text(
             text_model=text_model,
             device=device,
             fold=fold,
+            asm_balance_mode=asm_balance_mode,
         )
 
         if prediction_logger is not None and "y_prob" in metrics:
@@ -563,6 +625,7 @@ def run_cross_validation_eeg(
     device: torch.device = None,
     use_multilabel_stratification: bool = True,
     prediction_logger=None,
+    asm_balance_mode: str = "none",
 ) -> Dict[str, List[float]]:
     """Run 5-fold CV for Clinical + EEG.
 
@@ -622,6 +685,7 @@ def run_cross_validation_eeg(
             eeg_model=eeg_model,
             device=device,
             fold=fold,
+            asm_balance_mode=asm_balance_mode,
         )
 
         if prediction_logger is not None and "y_prob" in metrics:

@@ -30,18 +30,26 @@ def train_epoch(
     device: torch.device,
     is_moe: bool = False,
     global_step: int = 0,
+    asm_weighted: bool = False,
+    class_weights: torch.Tensor = None,
 ) -> Tuple[float, int]:
     """Train for one epoch.
 
     Returns:
         Tuple of (avg_loss, updated_global_step).
     """
+    from shared.asm_balancing import weighted_cross_entropy
     model.train()
     total_loss = 0.0
     n_batches = 0
 
     for batch in dataloader:
-        text_emb, eeg_windows, padding_mask, smiles_emb, labels = batch
+        if asm_weighted:
+            text_emb, eeg_windows, padding_mask, smiles_emb, labels, sample_weights = batch
+            sample_weights = sample_weights.to(device)
+        else:
+            text_emb, eeg_windows, padding_mask, smiles_emb, labels = batch
+            sample_weights = None
         text_emb = text_emb.to(device)
         eeg_windows = eeg_windows.to(device)
         padding_mask = padding_mask.to(device)
@@ -52,10 +60,16 @@ def train_epoch(
 
         if is_moe:
             logits, aux_loss = model(text_emb, eeg_windows, padding_mask, smiles_emb)
-            loss = criterion(logits, labels) + aux_loss
+            if asm_weighted:
+                loss = weighted_cross_entropy(logits, labels, sample_weights, class_weight=class_weights) + aux_loss
+            else:
+                loss = criterion(logits, labels) + aux_loss
         else:
             logits = model(text_emb, eeg_windows, padding_mask, smiles_emb)
-            loss = criterion(logits, labels)
+            if asm_weighted:
+                loss = weighted_cross_entropy(logits, labels, sample_weights, class_weight=class_weights)
+            else:
+                loss = criterion(logits, labels)
 
         loss.backward()
         torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
@@ -206,19 +220,49 @@ def train_fold(
     smiles_dim: int,
     device: torch.device,
     fold: int,
+    asm_balance_mode: str = "none",
 ) -> Dict[str, float]:
     """Train and evaluate a single fold."""
+    from shared.asm_balancing import (
+        WeightedASMDataset,
+        StratifiedASMBatchSampler,
+        compute_asm_sample_weights,
+    )
     config = CONFIG_3A if fusion_type == "mlp" else CONFIG_3B
     is_moe = fusion_type == "fusemoe"
 
+    asm_weighted = (asm_balance_mode == "weighted")
+    asm_stratified = (asm_balance_mode == "stratified_batch")
+    train_asm_labels = [train_dataset.asm_drugs[pid] for pid in train_dataset.patient_ids] \
+        if hasattr(train_dataset, "patient_ids") and isinstance(train_dataset.asm_drugs, dict) \
+        else list(train_dataset.asm_drugs)
+
+    if asm_weighted:
+        weights = compute_asm_sample_weights(train_asm_labels)
+        logger.info(f"  ASM-weighted training: mean={weights.mean():.3f}, min={weights.min():.3f}, max={weights.max():.3f}")
+        train_dataset = WeightedASMDataset(train_dataset, weights)
+
     # Create dataloaders
-    train_loader = DataLoader(
-        train_dataset,
-        batch_size=config["batch_size"],
-        shuffle=True,
-        drop_last=False,
-        num_workers=0,
-    )
+    if asm_stratified:
+        batch_sampler = StratifiedASMBatchSampler(
+            train_asm_labels,
+            batch_size=config["batch_size"],
+            seed=fold,
+        )
+        logger.info(f"  Stratified ASM batch sampler: {len(batch_sampler)} batches, ASMs={len(batch_sampler.unique_asms)}")
+        train_loader = DataLoader(
+            train_dataset,
+            batch_sampler=batch_sampler,
+            num_workers=0,
+        )
+    else:
+        train_loader = DataLoader(
+            train_dataset,
+            batch_size=config["batch_size"],
+            shuffle=True,
+            drop_last=False,
+            num_workers=0,
+        )
     val_loader = DataLoader(
         val_dataset,
         batch_size=config["batch_size"],
@@ -229,6 +273,10 @@ def train_fold(
 
     # Create model
     model = get_model(fusion_type, text_dim, smiles_dim, device)
+    # If we don't have asm_weighted/stratified, the train fold's label
+    # extraction below uses train_dataset[i][4]; the WeightedASMDataset
+    # wrapper preserves index 4 (label) while appending the weight at
+    # index 5, so the existing class_weights computation still works.
     n_params = sum(p.numel() for p in model.parameters())
     logger.info(f"  Model parameters: {n_params:,}")
 
@@ -255,7 +303,10 @@ def train_fold(
     global_step = 0
 
     for epoch in range(config["epochs"]):
-        train_loss, global_step = train_epoch(model, train_loader, optimizer, criterion, device, is_moe, global_step)
+        train_loss, global_step = train_epoch(
+            model, train_loader, optimizer, criterion, device, is_moe, global_step,
+            asm_weighted=asm_weighted, class_weights=class_weights,
+        )
         val_loss, val_metrics = evaluate(model, val_loader, criterion, device, is_moe)
 
         if val_metrics["auc"] > best_val_auc:
@@ -284,6 +335,7 @@ def run_cross_validation(
     fusion_type: str,
     device: torch.device = None,
     prediction_logger=None,
+    asm_balance_mode: str = "none",
 ) -> Dict[str, List[float]]:
     """Run 5-fold cross-validation for a specific configuration."""
     if device is None:
@@ -325,7 +377,10 @@ def run_cross_validation(
         logger.info(f"  Train: {len(train_ds)}, Val: {len(val_ds)}")
 
         # Train fold
-        metrics = train_fold(train_ds, val_ds, fusion_type, text_dim, smiles_dim, device, fold)
+        metrics = train_fold(
+            train_ds, val_ds, fusion_type, text_dim, smiles_dim, device, fold,
+            asm_balance_mode=asm_balance_mode,
+        )
 
         if prediction_logger is not None and "y_prob" in metrics:
             pid_series = df["pid"].astype(str).values

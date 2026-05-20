@@ -30,14 +30,22 @@ def train_epoch_text(
     optimizer: torch.optim.Optimizer,
     criterion: nn.Module,
     device: torch.device,
+    asm_weighted: bool = False,
+    class_weights: torch.Tensor = None,
 ) -> float:
     """Train for one epoch (Clinical + SMILES + Text)."""
+    from shared.asm_balancing import weighted_cross_entropy
     model.train()
     total_loss = 0.0
     n_batches = 0
 
     for batch in dataloader:
-        clinical, smiles, text, labels = batch
+        if asm_weighted:
+            clinical, smiles, text, labels, sample_weights = batch
+            sample_weights = sample_weights.to(device)
+        else:
+            clinical, smiles, text, labels = batch
+            sample_weights = None
         clinical = clinical.to(device)
         smiles = smiles.to(device)
         text = text.to(device)
@@ -45,7 +53,8 @@ def train_epoch_text(
 
         optimizer.zero_grad()
         logits = model(clinical, smiles, text)
-        loss = criterion(logits, labels)
+        loss = weighted_cross_entropy(logits, labels, sample_weights, class_weight=class_weights) if asm_weighted \
+            else criterion(logits, labels)
         loss.backward()
         torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
         optimizer.step()
@@ -62,14 +71,22 @@ def train_epoch_eeg(
     optimizer: torch.optim.Optimizer,
     criterion: nn.Module,
     device: torch.device,
+    asm_weighted: bool = False,
+    class_weights: torch.Tensor = None,
 ) -> float:
     """Train for one epoch (Clinical + SMILES + EEG)."""
+    from shared.asm_balancing import weighted_cross_entropy
     model.train()
     total_loss = 0.0
     n_batches = 0
 
     for batch in dataloader:
-        clinical, smiles, eeg_windows, padding_mask, labels = batch
+        if asm_weighted:
+            clinical, smiles, eeg_windows, padding_mask, labels, sample_weights = batch
+            sample_weights = sample_weights.to(device)
+        else:
+            clinical, smiles, eeg_windows, padding_mask, labels = batch
+            sample_weights = None
         clinical = clinical.to(device)
         smiles = smiles.to(device)
         eeg_windows = eeg_windows.to(device)
@@ -78,7 +95,8 @@ def train_epoch_eeg(
 
         optimizer.zero_grad()
         logits = model(clinical, smiles, eeg_windows, padding_mask)
-        loss = criterion(logits, labels)
+        loss = weighted_cross_entropy(logits, labels, sample_weights, class_weight=class_weights) if asm_weighted \
+            else criterion(logits, labels)
         loss.backward()
         torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
         optimizer.step()
@@ -218,21 +236,49 @@ def train_fold(
     eeg_model: str = None,
     device: torch.device = None,
     fold: int = 0,
+    asm_balance_mode: str = "none",
 ) -> Dict[str, float]:
     """Train and evaluate a single fold."""
+    from shared.asm_balancing import (
+        WeightedASMDataset,
+        StratifiedASMBatchSampler,
+        compute_asm_sample_weights,
+    )
     config = TRAINING_CONFIG
 
     # Get batch size based on modality
     batch_size = config["batch_size_text"] if modality == "text" else config["batch_size_eeg"]
 
+    asm_weighted = (asm_balance_mode == "weighted")
+    asm_stratified = (asm_balance_mode == "stratified_batch")
+    train_asm_labels = list(train_dataset.asm_drugs)
+
+    if asm_weighted:
+        weights = compute_asm_sample_weights(train_asm_labels)
+        logger.info(f"  ASM-weighted training: mean={weights.mean():.3f}, min={weights.min():.3f}, max={weights.max():.3f}")
+        train_dataset = WeightedASMDataset(train_dataset, weights)
+
     # Create dataloaders
-    train_loader = DataLoader(
-        train_dataset,
-        batch_size=batch_size,
-        shuffle=True,
-        drop_last=False,
-        num_workers=0,
-    )
+    if asm_stratified:
+        batch_sampler = StratifiedASMBatchSampler(
+            train_asm_labels,
+            batch_size=batch_size,
+            seed=fold,
+        )
+        logger.info(f"  Stratified ASM batch sampler: {len(batch_sampler)} batches, ASMs={len(batch_sampler.unique_asms)}")
+        train_loader = DataLoader(
+            train_dataset,
+            batch_sampler=batch_sampler,
+            num_workers=0,
+        )
+    else:
+        train_loader = DataLoader(
+            train_dataset,
+            batch_size=batch_size,
+            shuffle=True,
+            drop_last=False,
+            num_workers=0,
+        )
     val_loader = DataLoader(
         val_dataset,
         batch_size=batch_size,
@@ -280,13 +326,19 @@ def train_fold(
         train_fn = train_epoch_eeg
         eval_fn = evaluate_eeg
 
-    # Training loop with early stopping
+    # Training loop with early stopping. When asm_weighted is active,
+    # the train_loader yields a 5-tuple (or 6-tuple for eeg) ending in
+    # the sample-weight tensor; the per-modality train_epoch functions
+    # detect this via the asm_weighted flag.
     best_val_auc = 0.0
     best_metrics = {}
     patience_counter = 0
 
     for epoch in range(config["epochs"]):
-        train_loss = train_fn(model, train_loader, optimizer, criterion, device)
+        train_loss = train_fn(
+            model, train_loader, optimizer, criterion, device,
+            asm_weighted=asm_weighted, class_weights=class_weights,
+        )
         val_loss, val_metrics = eval_fn(model, val_loader, criterion, device)
 
         if val_metrics["auc"] > best_val_auc:
@@ -314,6 +366,7 @@ def run_cross_validation_text(
     text_model: str = "clinicalbert",
     device: torch.device = None,
     prediction_logger=None,
+    asm_balance_mode: str = "none",
 ) -> Dict[str, List[float]]:
     """Run 5-fold CV for Clinical + SMILES + Text."""
     if device is None:
@@ -357,6 +410,7 @@ def run_cross_validation_text(
             text_model=text_model,
             device=device,
             fold=fold,
+            asm_balance_mode=asm_balance_mode,
         )
 
         if prediction_logger is not None and "y_prob" in metrics:
@@ -386,6 +440,7 @@ def run_cross_validation_eeg(
     eeg_model: str = "simplecnn",
     device: torch.device = None,
     prediction_logger=None,
+    asm_balance_mode: str = "none",
 ) -> Dict[str, List[float]]:
     """Run 5-fold CV for Clinical + SMILES + EEG."""
     if device is None:
@@ -427,6 +482,7 @@ def run_cross_validation_eeg(
             eeg_model=eeg_model,
             device=device,
             fold=fold,
+            asm_balance_mode=asm_balance_mode,
         )
 
         if prediction_logger is not None and "y_prob" in metrics:
