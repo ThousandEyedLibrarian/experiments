@@ -27,14 +27,29 @@ def train_epoch_mlp(
     optimizer: torch.optim.Optimizer,
     criterion: nn.Module,
     device: torch.device,
+    asm_weighted: bool = False,
+    class_weights: torch.Tensor = None,
 ) -> float:
-    """Train for one epoch (MLP model)."""
+    """Train for one epoch (MLP model).
+
+    When ``asm_weighted`` is True the dataloader yields an extra
+    per-sample weight tensor as the last element of each batch; the
+    loss is computed via per-sample weighted cross-entropy
+    (``shared.asm_balancing.weighted_cross_entropy``) using
+    ``class_weights`` to preserve outcome-class balancing.
+    """
+    from shared.asm_balancing import weighted_cross_entropy
     model.train()
     total_loss = 0.0
     n_batches = 0
 
     for batch in dataloader:
-        clinical, text, eeg, mask, smiles, labels = batch
+        if asm_weighted:
+            clinical, text, eeg, mask, smiles, labels, sample_weights = batch
+            sample_weights = sample_weights.to(device)
+        else:
+            clinical, text, eeg, mask, smiles, labels = batch
+            sample_weights = None
         clinical = clinical.to(device)
         text = text.to(device)
         eeg = eeg.to(device)
@@ -44,7 +59,10 @@ def train_epoch_mlp(
 
         optimizer.zero_grad()
         logits = model(clinical, text, eeg, mask, smiles)
-        loss = criterion(logits, labels)
+        if asm_weighted:
+            loss = weighted_cross_entropy(logits, labels, sample_weights, class_weight=class_weights)
+        else:
+            loss = criterion(logits, labels)
         loss.backward()
         torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
         optimizer.step()
@@ -62,18 +80,26 @@ def train_epoch_moe(
     criterion: nn.Module,
     device: torch.device,
     global_step: int = 0,
+    asm_weighted: bool = False,
+    class_weights: torch.Tensor = None,
 ) -> Tuple[float, int]:
     """Train for one epoch (MoE model with aux loss).
 
     Returns:
         Tuple of (avg_loss, updated_global_step).
     """
+    from shared.asm_balancing import weighted_cross_entropy
     model.train()
     total_loss = 0.0
     n_batches = 0
 
     for batch in dataloader:
-        clinical, text, eeg, mask, smiles, labels = batch
+        if asm_weighted:
+            clinical, text, eeg, mask, smiles, labels, sample_weights = batch
+            sample_weights = sample_weights.to(device)
+        else:
+            clinical, text, eeg, mask, smiles, labels = batch
+            sample_weights = None
         clinical = clinical.to(device)
         text = text.to(device)
         eeg = eeg.to(device)
@@ -83,7 +109,10 @@ def train_epoch_moe(
 
         optimizer.zero_grad()
         logits, aux_loss = model(clinical, text, eeg, mask, smiles)
-        loss = criterion(logits, labels) + aux_loss
+        if asm_weighted:
+            loss = weighted_cross_entropy(logits, labels, sample_weights, class_weight=class_weights) + aux_loss
+        else:
+            loss = criterion(logits, labels) + aux_loss
         loss.backward()
         torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
         optimizer.step()
@@ -230,19 +259,55 @@ def train_fold(
     smiles_model: str,
     device: torch.device,
     fold: int = 0,
+    asm_balance_mode: str = "none",
 ) -> Dict[str, float]:
-    """Train and evaluate a single fold."""
+    """Train and evaluate a single fold.
+
+    ``asm_balance_mode``:
+        - "none" (default): standard training.
+        - "weighted": inverse-sqrt sample weights via WeightedASMDataset.
+        - "stratified_batch": StratifiedASMBatchSampler ensuring every
+           mini-batch contains all ASMs.
+    """
+    from shared.asm_balancing import (
+        WeightedASMDataset,
+        StratifiedASMBatchSampler,
+        compute_asm_sample_weights,
+    )
     # Get config based on fusion type
     config = MLP_CONFIG if fusion == "mlp" else MOE_CONFIG
 
+    # Optional ASM-balancing surgery on the training loader.
+    asm_weighted = (asm_balance_mode == "weighted")
+    asm_stratified = (asm_balance_mode == "stratified_batch")
+    train_asm_labels = list(train_dataset.asm_drugs)
+
+    if asm_weighted:
+        weights = compute_asm_sample_weights(train_asm_labels)
+        logger.info(f"  ASM-weighted training: mean={weights.mean():.3f}, min={weights.min():.3f}, max={weights.max():.3f}")
+        train_dataset = WeightedASMDataset(train_dataset, weights)
+
     # Create dataloaders
-    train_loader = DataLoader(
-        train_dataset,
-        batch_size=config["batch_size"],
-        shuffle=True,
-        drop_last=False,
-        num_workers=0,
-    )
+    if asm_stratified:
+        batch_sampler = StratifiedASMBatchSampler(
+            train_asm_labels,
+            batch_size=config["batch_size"],
+            seed=fold,
+        )
+        logger.info(f"  Stratified ASM batch sampler: {len(batch_sampler)} batches, batch_size={config['batch_size']}, ASMs={len(batch_sampler.unique_asms)}")
+        train_loader = DataLoader(
+            train_dataset,
+            batch_sampler=batch_sampler,
+            num_workers=0,
+        )
+    else:
+        train_loader = DataLoader(
+            train_dataset,
+            batch_size=config["batch_size"],
+            shuffle=True,
+            drop_last=False,
+            num_workers=0,
+        )
     val_loader = DataLoader(
         val_dataset,
         batch_size=config["batch_size"],
@@ -298,9 +363,15 @@ def train_fold(
 
     for epoch in range(config["epochs"]):
         if fusion == "moe":
-            train_loss, global_step = train_fn(model, train_loader, optimizer, criterion, device, global_step)
+            train_loss, global_step = train_fn(
+                model, train_loader, optimizer, criterion, device, global_step,
+                asm_weighted=asm_weighted, class_weights=class_weights,
+            )
         else:
-            train_loss = train_fn(model, train_loader, optimizer, criterion, device)
+            train_loss = train_fn(
+                model, train_loader, optimizer, criterion, device,
+                asm_weighted=asm_weighted, class_weights=class_weights,
+            )
         val_loss, val_metrics = eval_fn(model, val_loader, criterion, device)
 
         if val_metrics["auc"] > best_val_auc:
@@ -328,6 +399,7 @@ def run_cross_validation(
     text_model: str = "clinicalbert",
     smiles_model: str = "chemberta",
     device: torch.device = None,
+    asm_balance_mode: str = "none",
 ) -> Dict[str, List[float]]:
     """Run 5-fold CV for quad modality fusion."""
     if device is None:
@@ -371,6 +443,7 @@ def run_cross_validation(
             smiles_model=smiles_model,
             device=device,
             fold=fold,
+            asm_balance_mode=asm_balance_mode,
         )
 
         for key in fold_metrics:
@@ -460,6 +533,7 @@ def train_fold_with_predictions(
     device: torch.device,
     fold: int = 0,
     candidate_smiles: Dict[str, np.ndarray] = None,
+    asm_balance_mode: str = "none",
 ) -> Dict[str, Any]:
     """Train one fold and return per-patient predictions plus ASM-swap predictions.
 
@@ -540,13 +614,41 @@ def train_fold_with_predictions(
     # when return_pid=True; train/eval loops here unpack only the first six,
     # so we wrap the loader with a custom collate that drops the pid for
     # the non-prediction passes.
-    train_loader_for_loss = DataLoader(
-        _DropPidWrapper(train_dataset),
-        batch_size=config["batch_size"],
-        shuffle=True,
-        drop_last=False,
-        num_workers=0,
+    from shared.asm_balancing import (
+        WeightedASMDataset,
+        StratifiedASMBatchSampler,
+        compute_asm_sample_weights,
     )
+    asm_weighted = (asm_balance_mode == "weighted")
+    asm_stratified = (asm_balance_mode == "stratified_batch")
+    train_asm_labels = list(train_dataset.asm_drugs)
+
+    train_no_pid = _DropPidWrapper(train_dataset)
+    if asm_weighted:
+        weights = compute_asm_sample_weights(train_asm_labels)
+        logger.info(f"  ASM-weighted training: mean={weights.mean():.3f}, min={weights.min():.3f}, max={weights.max():.3f}")
+        train_no_pid = WeightedASMDataset(train_no_pid, weights)
+
+    if asm_stratified:
+        batch_sampler = StratifiedASMBatchSampler(
+            train_asm_labels,
+            batch_size=config["batch_size"],
+            seed=fold,
+        )
+        logger.info(f"  Stratified ASM batch sampler: {len(batch_sampler)} batches, ASMs={len(batch_sampler.unique_asms)}")
+        train_loader_for_loss = DataLoader(
+            train_no_pid,
+            batch_sampler=batch_sampler,
+            num_workers=0,
+        )
+    else:
+        train_loader_for_loss = DataLoader(
+            train_no_pid,
+            batch_size=config["batch_size"],
+            shuffle=True,
+            drop_last=False,
+            num_workers=0,
+        )
     val_loader_for_loss = DataLoader(
         _DropPidWrapper(val_dataset),
         batch_size=config["batch_size"],
@@ -557,9 +659,15 @@ def train_fold_with_predictions(
 
     for epoch in range(config["epochs"]):
         if fusion == "moe":
-            train_loss, global_step = train_fn(model, train_loader_for_loss, optimizer, criterion, device, global_step)
+            train_loss, global_step = train_fn(
+                model, train_loader_for_loss, optimizer, criterion, device, global_step,
+                asm_weighted=asm_weighted, class_weights=class_weights,
+            )
         else:
-            train_loss = train_fn(model, train_loader_for_loss, optimizer, criterion, device)
+            train_loss = train_fn(
+                model, train_loader_for_loss, optimizer, criterion, device,
+                asm_weighted=asm_weighted, class_weights=class_weights,
+            )
         val_loss, val_metrics = eval_fn(model, val_loader_for_loss, criterion, device)
 
         if val_metrics["auc"] > best_val_auc:

@@ -38,23 +38,16 @@ def compute_summary(values: List[float]) -> Dict[str, float]:
 def run_experiment(
     exp_config: Dict,
     device: torch.device,
+    asm_balance_mode: str = "none",
 ) -> Dict:
-    """Run a single experiment configuration.
-
-    Args:
-        exp_config: Experiment configuration dict.
-        device: Device to use.
-
-    Returns:
-        Results dict with fold_metrics and summary.
-    """
+    """Run a single experiment configuration."""
     exp_name = exp_config["name"]
     fusion = exp_config["fusion"]
     text_model = exp_config["text_model"]
     smiles_model = exp_config["smiles_model"]
 
     logger.info(f"\n{'='*60}")
-    logger.info(f"Running experiment: {exp_name}")
+    logger.info(f"Running experiment: {exp_name} (ASM balance: {asm_balance_mode})")
     logger.info(f"{'='*60}")
 
     fold_metrics = run_cross_validation(
@@ -62,6 +55,7 @@ def run_experiment(
         text_model=text_model,
         smiles_model=smiles_model,
         device=device,
+        asm_balance_mode=asm_balance_mode,
     )
 
     # Compute summary statistics
@@ -79,16 +73,9 @@ def run_experiment(
 def run_all_experiments(
     experiments: Optional[List[Dict]] = None,
     device: torch.device = None,
+    asm_balance_mode: str = "none",
 ) -> Dict[str, Dict]:
-    """Run all experiments and collect results.
-
-    Args:
-        experiments: List of experiment configs. Defaults to EXPERIMENTS.
-        device: Device to use.
-
-    Returns:
-        Dictionary mapping experiment names to results.
-    """
+    """Run all experiments and collect results."""
     if experiments is None:
         experiments = EXPERIMENTS
 
@@ -99,7 +86,7 @@ def run_all_experiments(
 
     for exp_config in experiments:
         exp_name = exp_config["name"]
-        results = run_experiment(exp_config, device)
+        results = run_experiment(exp_config, device, asm_balance_mode=asm_balance_mode)
         all_results[exp_name] = results
 
     return all_results
@@ -249,6 +236,8 @@ def run_exp7a_with_predictions(
     text_model: str = "clinicalbert",
     smiles_model: str = "chemberta",
     device: torch.device = None,
+    asm_balance_mode: str = "none",
+    output_suffix: str = "",
 ) -> Dict[str, Path]:
     """Run Exp7a with per-patient and ASM-swap prediction logging.
 
@@ -314,11 +303,17 @@ def run_exp7a_with_predictions(
             device=device,
             fold=fold,
             candidate_smiles=candidate_smiles,
+            asm_balance_mode=asm_balance_mode,
         )
 
+        # Skip non-scalar metric entries (y_prob, y_true added in Stage A).
+        scalar_metrics = {
+            k: float(v) for k, v in result["metrics"].items()
+            if isinstance(v, (int, float)) and not isinstance(v, bool)
+        }
         folds_payload.append({
             "fold": fold,
-            "metrics": {k: float(v) for k, v in result["metrics"].items()},
+            "metrics": scalar_metrics,
             "pids": result["val_pids"],
             "y_true": result["val_y_true"],
             "y_prob": result["val_y_prob"],
@@ -330,7 +325,8 @@ def run_exp7a_with_predictions(
         )
 
     oof_payload = {
-        "experiment": "exp7a",
+        "experiment": "exp7a" + (f"_{output_suffix}" if output_suffix else ""),
+        "asm_balance_mode": asm_balance_mode,
         "text_model": text_model,
         "smiles_model": smiles_model,
         "asms": asms_used,
@@ -338,7 +334,8 @@ def run_exp7a_with_predictions(
         "n_splits": CV_CONFIG["n_splits"],
         "folds": folds_payload,
     }
-    oof_path = output_dir / "predictions_oof.json"
+    suffix_part = f"_{output_suffix}" if output_suffix else ""
+    oof_path = output_dir / f"predictions_oof{suffix_part}.json"
     _save_predictions_json(oof_payload, oof_path)
 
     # ------------------------------------------------------------------
@@ -373,6 +370,7 @@ def run_exp7a_with_predictions(
         device=device,
         fold=-1,
         candidate_smiles=candidate_smiles,
+        asm_balance_mode=asm_balance_mode,
     )
 
     # Predict on the FULL cohort using the refit model. Build a "val
@@ -428,19 +426,20 @@ def run_exp7a_with_predictions(
         y_prob_per_asm_full[asm_name] = probs
 
     in_sample_payload = {
-        "experiment": "exp7a",
+        "experiment": "exp7a" + (f"_{output_suffix}" if output_suffix else ""),
+        "asm_balance_mode": asm_balance_mode,
         "text_model": text_model,
         "smiles_model": smiles_model,
         "asms": asms_used,
         "refit_random_state": CV_CONFIG["random_state"],
         "early_stop_frac": 0.1,
-        "metrics": {k: float(v) for k, v in refit_result["metrics"].items()},
+        "metrics": {k: float(v) for k, v in refit_result["metrics"].items() if isinstance(v, (int, float)) and not isinstance(v, bool)},
         "pids": pids_full,
         "y_true": y_true_full,
         "y_prob": y_prob_full,
         "y_prob_per_asm": y_prob_per_asm_full,
     }
-    in_sample_path = output_dir / "predictions_in_sample.json"
+    in_sample_path = output_dir / f"predictions_in_sample{suffix_part}.json"
     _save_predictions_json(in_sample_payload, in_sample_path)
 
     return {"oof": oof_path, "in_sample": in_sample_path}
@@ -497,6 +496,13 @@ def main():
         action="store_true",
         help="Enable deterministic training (seeds, cuDNN deterministic)",
     )
+    parser.add_argument(
+        "--asm-balance",
+        type=str,
+        choices=["none", "weighted", "stratified_batch"],
+        default="none",
+        help="ASM-balancing mode (Stage B): 'weighted' applies inverse-sqrt sample weights, 'stratified_batch' uses a per-batch sampler that includes every ASM.",
+    )
     args = parser.parse_args()
 
     if args.deterministic:
@@ -518,10 +524,17 @@ def main():
 
     if args.mode == "predictions":
         out_dir = Path(args.output_dir) if args.output_dir else (RESULTS_DIR.parent / "exp7_predictions")
+        suffix = ""
+        if args.asm_balance == "weighted":
+            suffix = "asmweighted"
+        elif args.asm_balance == "stratified_batch":
+            suffix = "asmstratbatch"
         run_exp7a_with_predictions(
             output_dir=out_dir,
             top_n_asms=args.top_n_asms,
             device=device,
+            asm_balance_mode=args.asm_balance,
+            output_suffix=suffix,
         )
         return
 
@@ -538,7 +551,11 @@ def main():
     logger.info(f"Running {len(experiments)} experiment(s)")
 
     # Run experiments
-    all_results = run_all_experiments(experiments=experiments, device=device)
+    all_results = run_all_experiments(
+        experiments=experiments,
+        device=device,
+        asm_balance_mode=args.asm_balance,
+    )
 
     # Print results
     print_results_table(all_results)
