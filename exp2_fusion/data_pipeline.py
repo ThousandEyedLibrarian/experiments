@@ -131,6 +131,8 @@ def preprocess_all_eeg(
     df: pd.DataFrame,
     cache_path: Optional[Path] = None,
     force_reprocess: bool = False,
+    use_standard_19: bool = False,
+    notch_freq: float = 50.0,
 ) -> Dict[str, Tuple[np.ndarray, np.ndarray]]:
     """Preprocess all EEG files and optionally cache results.
 
@@ -138,6 +140,10 @@ def preprocess_all_eeg(
         df: DataFrame with patient info (must have 'pid' and 'eeg_path' columns).
         cache_path: Path to cache processed data (pickle file).
         force_reprocess: If True, ignore cache and reprocess all.
+        use_standard_19: Stage C cohort-portable mode. If True, restrict
+            each recording to the 19 standard 10-20 EEG channels.
+        notch_freq: Powerline notch frequency (50 for Alfred/AU, 60 for
+            HEP/US).
 
     Returns:
         Dict mapping patient ID to (windows, padding_mask).
@@ -150,8 +156,11 @@ def preprocess_all_eeg(
         logger.info(f"Loaded {len(cached_data)} patients from cache")
         return cached_data
 
-    logger.info(f"Preprocessing EEG data for {len(df)} patients...")
-    preprocessor = EEGPreprocessor()
+    logger.info(f"Preprocessing EEG data for {len(df)} patients (use_standard_19={use_standard_19}, notch={notch_freq}Hz)...")
+    preprocessor = EEGPreprocessor(
+        use_standard_19=use_standard_19,
+        notch_freq=notch_freq,
+    )
     eeg_data = {}
     skipped = 0
     skipped_reasons = {"too_short": 0, "error": 0}

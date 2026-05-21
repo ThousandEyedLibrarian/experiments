@@ -505,12 +505,83 @@ def build_patient_eeg_map(eeg_dir: Path = EEG_DIR) -> Dict[str, Path]:
     return patient_map
 
 
-def load_edf(filepath: Path, target_sr: int = 200) -> Tuple[np.ndarray, float, List[str]]:
+# Standard 10-20 modern-naming canonical 19 scalp EEG channels.
+# Both Alfred and HEP recordings include these (Alfred natively, HEP under
+# the old MCN names T3/T4/T5/T6). The non-EEG channels present in the
+# EDFs but mistyped as 'eeg' (EMG+/-, PG1/2, A1/A2, ECG+/-, ekg, sop)
+# are dropped by the name filter, per Duong's instruction (2026-05-21):
+# "You should only use EEG channels. Other channels like ecg, ekg, sop,
+# etc. should be ignored."
+STD_19_TEN_TWENTY = (
+    "FP1", "FP2", "F7", "F3", "FZ", "F4", "F8",
+    "T7", "C3", "CZ", "C4", "T8",
+    "P7", "P3", "PZ", "P4", "P8",
+    "O1", "O2",
+)
+# Old MCN names -> modern. Applied case-insensitively to all incoming
+# channel names before the 19-channel intersection check.
+OLD_TO_MODERN_NAME = {"T3": "T7", "T4": "T8", "T5": "P7", "T6": "P8"}
+
+
+def normalise_channel_name(name: str) -> str:
+    """Return the canonical modern uppercase form of an EEG channel name."""
+    n = name.strip().upper()
+    return OLD_TO_MODERN_NAME.get(n, n)
+
+
+def filter_to_standard_19(raw) -> "mne.io.BaseRaw":
+    """Keep only the 19 standard 10-20 EEG channels, in canonical order.
+
+    Step 1: rename every channel to its canonical uppercase modern name
+    (applies OLD->MODERN MCN renaming: T3->T7, T4->T8, T5->P7, T6->P8).
+    Step 2: pick the 19 standard channels in canonical order, dropping
+    A1/A2/ECG/EMG/PG/sop and any other non-standard channel.
+
+    Raises a ValueError if fewer than 19 of the standard channels are
+    present after renaming (the recording is unusable for the
+    19-channel encoder).
+    """
+    name_map: Dict[str, str] = {}
+    seen_targets: set = set()
+    for ch in raw.ch_names:
+        canonical = normalise_channel_name(ch)
+        if canonical in seen_targets:
+            # Defensive: if a duplicate target name appears (e.g. both
+            # 't3' and 'T7' present), keep the first and leave this
+            # channel unrenamed (it will be dropped at pick time).
+            name_map[ch] = ch
+        else:
+            name_map[ch] = canonical
+            seen_targets.add(canonical)
+    raw.rename_channels(name_map)
+    present_canonical = set(raw.ch_names)
+    missing = [std for std in STD_19_TEN_TWENTY if std not in present_canonical]
+    if missing:
+        raise ValueError(
+            f"Recording is missing {len(missing)} of the 19 standard 10-20 channels: "
+            f"{missing}. Present after renaming: {sorted(present_canonical)}"
+        )
+    # pick + reorder in one call: passing an ordered list to .pick()
+    # both restricts and reorders.
+    raw.pick(list(STD_19_TEN_TWENTY))
+    return raw
+
+
+def load_edf(
+    filepath: Path,
+    target_sr: int = 200,
+    use_standard_19: bool = False,
+) -> Tuple[np.ndarray, float, List[str]]:
     """Load EDF file and return raw data.
 
     Args:
         filepath: Path to .edf file.
         target_sr: Target sample rate for resampling.
+        use_standard_19: If True, restrict to the 19 standard 10-20 EEG
+            channels (with old-MCN name renaming applied), per Stage C
+            cohort-portable preprocessing. If False, retain the legacy
+            behaviour of keeping every channel typed as ``eeg`` by the
+            EDF header (preserves Stage A reproducibility).
 
     Returns:
         Tuple of (data array [channels x samples], sample rate, channel names).
@@ -541,11 +612,18 @@ def load_edf(filepath: Path, target_sr: int = 200) -> Tuple[np.ndarray, float, L
     if successful_encoding != "utf-8":
         logger.debug(f"Loaded {filepath.name} with fallback encoding: {successful_encoding}")
 
-    # Pick only EEG channels (exclude ECG, EOG, EMG, etc.)
-    try:
-        raw.pick_types(eeg=True, exclude=[])
-    except Exception as e:
-        logger.debug(f"Could not filter EEG channels for {filepath.name}: {e}, keeping all channels")
+    if use_standard_19:
+        # Stage C / cohort-portable path: name-filter to the 19 standard
+        # 10-20 EEG channels. Drops EMG/PG/A/ECG/sop and any other
+        # non-EEG channels regardless of how the EDF types them.
+        raw = filter_to_standard_19(raw)
+    else:
+        # Legacy path: keep everything the EDF tags as eeg (matches
+        # Stage A reproducibility for the 27-channel Alfred-only runs).
+        try:
+            raw.pick_types(eeg=True, exclude=[])
+        except Exception as e:
+            logger.debug(f"Could not filter EEG channels for {filepath.name}: {e}, keeping all channels")
 
     original_sr = raw.info["sfreq"]
 
@@ -700,6 +778,7 @@ class EEGPreprocessor:
         compute_quality: bool = False,
         normalisation: str = "none",
         clip_std: float = None,
+        use_standard_19: bool = False,
     ):
         """Initialise EEG preprocessor.
 
@@ -715,6 +794,9 @@ class EEGPreprocessor:
             compute_quality: Whether to compute quality metrics.
             normalisation: Normalisation method ('none', 'zscore', 'window_zscore', 'robust').
             clip_std: If set, clip values beyond n standard deviations.
+            use_standard_19: If True, restrict to the 19 standard 10-20
+                EEG channels (Stage C cohort-portable mode; required for
+                HEP1 external validation).
         """
         self.target_sr = target_sr
         self.min_duration_sec = min_duration_sec
@@ -727,6 +809,7 @@ class EEGPreprocessor:
         self.compute_quality = compute_quality
         self.normalisation = normalisation
         self.clip_std = clip_std
+        self.use_standard_19 = use_standard_19
 
         self.samples_per_window = int(window_sec * target_sr)
         self.max_windows = int(use_duration_sec / window_sec)
@@ -760,7 +843,7 @@ class EEGPreprocessor:
         logger.debug(f"Processing EDF: {edf_path.name}")
 
         # Load EDF
-        data, sr, ch_names = load_edf(edf_path, self.target_sr)
+        data, sr, ch_names = load_edf(edf_path, self.target_sr, use_standard_19=self.use_standard_19)
         n_channels = data.shape[0]
         total_duration_sec = data.shape[1] / sr
         logger.debug(f"  Loaded: {n_channels} channels, {total_duration_sec:.1f}s duration")
