@@ -1,0 +1,735 @@
+== GPU ==
+name, memory.total [MiB], memory.free [MiB]
+NVIDIA L40S, 46068 MiB, 45458 MiB
+
+== Exp7a predictions  --asm-balance none ==
+
+== Exp7a predictions  --asm-balance weighted ==
+
+== exp1_fusion   --log-predictions --deterministic ==
+============================================================
+Running 8 experiments
+============================================================
+
+[1/8] exp1a_clinicalbert_chemberta
+
+============================================================
+Experiment: exp1a_clinicalbert_chemberta
+Text: clinicalbert, SMILES: chemberta, Fusion: mlp
+Device: cuda
+============================================================
+Dataset size: 121
+Class distribution: [57 64]
+
+--- Fold 1/5 ---
+  Epoch 20: Loss=0.8319, Val AUC=0.6795, Val F1=0.7027
+  Early stopping at epoch 21
+  Fold 1 Results: AUC=0.7885, BalAcc_tuned=0.7660, F1_tuned=0.7273 (thresh=0.623)
+
+--- Fold 2/5 ---
+  Epoch 20: Loss=0.6437, Val AUC=0.7361, Val F1=0.7200
+  Early stopping at epoch 28
+  Fold 2 Results: AUC=0.7708, BalAcc_tuned=0.7500, F1_tuned=0.7000 (thresh=0.633)
+
+--- Fold 3/5 ---
+  Epoch 20: Loss=0.8989, Val AUC=0.4196, Val F1=0.5385
+  Early stopping at epoch 21
+  Fold 3 Results: AUC=0.4755, BalAcc_tuned=0.6154, F1_tuned=0.3750 (thresh=0.695)
+
+--- Fold 4/5 ---
+  Epoch 20: Loss=0.8080, Val AUC=0.4965, Val F1=0.5714
+  Early stopping at epoch 28
+  Fold 4 Results: AUC=0.5175, BalAcc_tuned=0.5979, F1_tuned=0.7273 (thresh=0.259)
+
+--- Fold 5/5 ---
+  Epoch 20: Loss=0.9990, Val AUC=0.3846, Val F1=0.5625
+  Early stopping at epoch 22
+  Fold 5 Results: AUC=0.5035, BalAcc_tuned=0.5769, F1_tuned=0.2667 (thresh=0.735)
+
+============================================================
+FINAL RESULTS: exp1a_clinicalbert_chemberta
+============================================================
+AUC:              0.6112 +/- 0.1383 (min=0.4755, max=0.7885)
+Balanced Acc:     0.6612 +/- 0.0801 (min=0.5769, max=0.7660)
+F1 Tuned:         0.5592 +/- 0.1979 (min=0.2667, max=0.7273)
+  Per-fold predictions written to /fs04/scratch2/he12/carter/experiments/outputs/exp1_predictions/predictions_oof_exp1a_clinicalbert_chemberta.json
+Results saved to: /fs04/scratch2/he12/carter/experiments/outputs/exp1_results/exp1a_clinicalbert_chemberta.json
+
+[2/8] exp1a_clinicalbert_smilestrf
+
+============================================================
+Experiment: exp1a_clinicalbert_smilestrf
+Text: clinicalbert, SMILES: smilestrf, Fusion: mlp
+Device: cuda
+============================================================
+Dataset size: 121
+Class distribution: [57 64]
+
+--- Fold 1/5 ---
+  Epoch 20: Loss=0.7961, Val AUC=0.7821, Val F1=0.6923
+  Early stopping at epoch 22
+  Fold 1 Results: AUC=0.7885, BalAcc_tuned=0.7981, F1_tuned=0.8148 (thresh=0.403)
+
+--- Fold 2/5 ---
+  Early stopping at epoch 17
+  Fold 2 Results: AUC=0.7292, BalAcc_tuned=0.7500, F1_tuned=0.7692 (thresh=0.770)
+
+--- Fold 3/5 ---
+  Epoch 20: Loss=0.9136, Val AUC=0.5245, Val F1=0.5714
+  Early stopping at epoch 22
+  Fold 3 Results: AUC=0.5734, BalAcc_tuned=0.6259, F1_tuned=0.6400 (thresh=0.774)
+
+--- Fold 4/5 ---
+  Early stopping at epoch 18
+  Fold 4 Results: AUC=0.5245, BalAcc_tuned=0.6503, F1_tuned=0.7333 (thresh=0.645)
+
+--- Fold 5/5 ---
+  Epoch 20: Loss=0.7085, Val AUC=0.5035, Val F1=0.5625
+  Early stopping at epoch 25
+  Fold 5 Results: AUC=0.5315, BalAcc_tuned=0.7308, F1_tuned=0.6316 (thresh=0.571)
+
+============================================================
+FINAL RESULTS: exp1a_clinicalbert_smilestrf
+============================================================
+AUC:              0.6294 +/- 0.1086 (min=0.5245, max=0.7885)
+Balanced Acc:     0.7110 +/- 0.0639 (min=0.6259, max=0.7981)
+F1 Tuned:         0.7178 +/- 0.0718 (min=0.6316, max=0.8148)
+  Per-fold predictions written to /fs04/scratch2/he12/carter/experiments/outputs/exp1_predictions/predictions_oof_exp1a_clinicalbert_smilestrf.json
+Results saved to: /fs04/scratch2/he12/carter/experiments/outputs/exp1_results/exp1a_clinicalbert_smilestrf.json
+
+[3/8] exp1a_pubmedbert_chemberta
+
+============================================================
+Experiment: exp1a_pubmedbert_chemberta
+Text: pubmedbert, SMILES: chemberta, Fusion: mlp
+Device: cuda
+============================================================
+Dataset size: 121
+Class distribution: [57 64]
+
+--- Fold 1/5 ---
+  Early stopping at epoch 16
+  Fold 1 Results: AUC=0.7372, BalAcc_tuned=0.7308, F1_tuned=0.6316 (thresh=0.806)
+
+--- Fold 2/5 ---
+  Epoch 20: Loss=0.6329, Val AUC=0.6528, Val F1=0.6667
+  Early stopping at epoch 23
+  Fold 2 Results: AUC=0.7222, BalAcc_tuned=0.6667, F1_tuned=0.6000 (thresh=0.601)
+
+--- Fold 3/5 ---
+  Epoch 20: Loss=0.6669, Val AUC=0.4126, Val F1=0.5714
+  Early stopping at epoch 23
+  Fold 3 Results: AUC=0.5734, BalAcc_tuned=0.6154, F1_tuned=0.3750 (thresh=0.621)
+
+--- Fold 4/5 ---
+  Epoch 20: Loss=0.6537, Val AUC=0.5315, Val F1=0.4615
+  Early stopping at epoch 36
+  Fold 4 Results: AUC=0.5524, BalAcc_tuned=0.6364, F1_tuned=0.7647 (thresh=0.286)
+
+--- Fold 5/5 ---
+  Early stopping at epoch 16
+  Fold 5 Results: AUC=0.5664, BalAcc_tuned=0.6154, F1_tuned=0.3750 (thresh=0.831)
+
+============================================================
+FINAL RESULTS: exp1a_pubmedbert_chemberta
+============================================================
+AUC:              0.6303 +/- 0.0815 (min=0.5524, max=0.7372)
+Balanced Acc:     0.6529 +/- 0.0432 (min=0.6154, max=0.7308)
+F1 Tuned:         0.5493 +/- 0.1526 (min=0.3750, max=0.7647)
+  Per-fold predictions written to /fs04/scratch2/he12/carter/experiments/outputs/exp1_predictions/predictions_oof_exp1a_pubmedbert_chemberta.json
+Results saved to: /fs04/scratch2/he12/carter/experiments/outputs/exp1_results/exp1a_pubmedbert_chemberta.json
+
+[4/8] exp1a_pubmedbert_smilestrf
+
+============================================================
+Experiment: exp1a_pubmedbert_smilestrf
+Text: pubmedbert, SMILES: smilestrf, Fusion: mlp
+Device: cuda
+============================================================
+Dataset size: 121
+Class distribution: [57 64]
+
+--- Fold 1/5 ---
+  Early stopping at epoch 16
+  Fold 1 Results: AUC=0.6474, BalAcc_tuned=0.6538, F1_tuned=0.4706 (thresh=0.491)
+
+--- Fold 2/5 ---
+  Early stopping at epoch 17
+  Fold 2 Results: AUC=0.7222, BalAcc_tuned=0.7083, F1_tuned=0.6667 (thresh=0.298)
+
+--- Fold 3/5 ---
+  Early stopping at epoch 20
+  Fold 3 Results: AUC=0.5175, BalAcc_tuned=0.6014, F1_tuned=0.5000 (thresh=0.796)
+
+--- Fold 4/5 ---
+  Early stopping at epoch 17
+  Fold 4 Results: AUC=0.6224, BalAcc_tuned=0.6713, F1_tuned=0.6667 (thresh=0.698)
+
+--- Fold 5/5 ---
+  Epoch 20: Loss=0.5817, Val AUC=0.4266, Val F1=0.5625
+  Early stopping at epoch 23
+  Fold 5 Results: AUC=0.5524, BalAcc_tuned=0.6329, F1_tuned=0.6087 (thresh=0.566)
+
+============================================================
+FINAL RESULTS: exp1a_pubmedbert_smilestrf
+============================================================
+AUC:              0.6124 +/- 0.0721 (min=0.5175, max=0.7222)
+Balanced Acc:     0.6536 +/- 0.0360 (min=0.6014, max=0.7083)
+F1 Tuned:         0.5825 +/- 0.0827 (min=0.4706, max=0.6667)
+  Per-fold predictions written to /fs04/scratch2/he12/carter/experiments/outputs/exp1_predictions/predictions_oof_exp1a_pubmedbert_smilestrf.json
+Results saved to: /fs04/scratch2/he12/carter/experiments/outputs/exp1_results/exp1a_pubmedbert_smilestrf.json
+
+[5/8] exp1b_clinicalbert_chemberta
+
+============================================================
+Experiment: exp1b_clinicalbert_chemberta
+Text: clinicalbert, SMILES: chemberta, Fusion: fusemoe
+Device: cuda
+============================================================
+Dataset size: 121
+Class distribution: [57 64]
+
+--- Fold 1/5 ---
+  Epoch 20: Loss=0.4688, Val AUC=0.5897, Val F1=0.3529
+  Early stopping at epoch 36
+  Fold 1 Results: AUC=0.7756, BalAcc_tuned=0.7981, F1_tuned=0.8148 (thresh=0.497)
+
+--- Fold 2/5 ---
+  Epoch 20: Loss=0.4468, Val AUC=0.5764, Val F1=0.5600
+  Early stopping at epoch 21
+  Fold 2 Results: AUC=0.6875, BalAcc_tuned=0.7083, F1_tuned=0.7200 (thresh=0.851)
+
+--- Fold 3/5 ---
+  Epoch 20: Loss=0.5677, Val AUC=0.4266, Val F1=0.5385
+  Early stopping at epoch 22
+  Fold 3 Results: AUC=0.7762, BalAcc_tuned=0.7308, F1_tuned=0.6316 (thresh=0.600)
+
+--- Fold 4/5 ---
+  Epoch 20: Loss=0.4848, Val AUC=0.4755, Val F1=0.6207
+  Early stopping at epoch 35
+  Fold 4 Results: AUC=0.5035, BalAcc_tuned=0.5979, F1_tuned=0.7273 (thresh=0.377)
+
+--- Fold 5/5 ---
+  Epoch 20: Loss=0.4514, Val AUC=0.4755, Val F1=0.6061
+  Early stopping at epoch 27
+  Fold 5 Results: AUC=0.5944, BalAcc_tuned=0.6783, F1_tuned=0.6364 (thresh=0.698)
+
+============================================================
+FINAL RESULTS: exp1b_clinicalbert_chemberta
+============================================================
+AUC:              0.6675 +/- 0.1060 (min=0.5035, max=0.7762)
+Balanced Acc:     0.7027 +/- 0.0656 (min=0.5979, max=0.7981)
+F1 Tuned:         0.7060 +/- 0.0676 (min=0.6316, max=0.8148)
+  Per-fold predictions written to /fs04/scratch2/he12/carter/experiments/outputs/exp1_predictions/predictions_oof_exp1b_clinicalbert_chemberta.json
+Results saved to: /fs04/scratch2/he12/carter/experiments/outputs/exp1_results/exp1b_clinicalbert_chemberta.json
+
+[6/8] exp1b_clinicalbert_smilestrf
+
+============================================================
+Experiment: exp1b_clinicalbert_smilestrf
+Text: clinicalbert, SMILES: smilestrf, Fusion: fusemoe
+Device: cuda
+============================================================
+Dataset size: 121
+Class distribution: [57 64]
+
+--- Fold 1/5 ---
+  Epoch 20: Loss=0.4439, Val AUC=0.5641, Val F1=0.6471
+  Early stopping at epoch 25
+  Fold 1 Results: AUC=0.7949, BalAcc_tuned=0.8045, F1_tuned=0.7826 (thresh=0.643)
+
+--- Fold 2/5 ---
+  Epoch 20: Loss=0.5797, Val AUC=0.7431, Val F1=0.6923
+  Early stopping at epoch 36
+  Fold 2 Results: AUC=0.7708, BalAcc_tuned=0.7500, F1_tuned=0.6667 (thresh=0.689)
+
+--- Fold 3/5 ---
+  Epoch 20: Loss=0.4538, Val AUC=0.4755, Val F1=0.5714
+  Early stopping at epoch 25
+  Fold 3 Results: AUC=0.6434, BalAcc_tuned=0.6643, F1_tuned=0.6923 (thresh=0.427)
+
+--- Fold 4/5 ---
+  Epoch 20: Loss=0.3524, Val AUC=0.4895, Val F1=0.5185
+  Early stopping at epoch 27
+  Fold 4 Results: AUC=0.5734, BalAcc_tuned=0.6259, F1_tuned=0.6400 (thresh=0.467)
+
+--- Fold 5/5 ---
+  Epoch 20: Loss=0.3863, Val AUC=0.3776, Val F1=0.5625
+  Early stopping at epoch 21
+  Fold 5 Results: AUC=0.5315, BalAcc_tuned=0.5979, F1_tuned=0.7273 (thresh=0.486)
+
+============================================================
+FINAL RESULTS: exp1b_clinicalbert_smilestrf
+============================================================
+AUC:              0.6628 +/- 0.1046 (min=0.5315, max=0.7949)
+Balanced Acc:     0.6885 +/- 0.0774 (min=0.5979, max=0.8045)
+F1 Tuned:         0.7018 +/- 0.0496 (min=0.6400, max=0.7826)
+  Per-fold predictions written to /fs04/scratch2/he12/carter/experiments/outputs/exp1_predictions/predictions_oof_exp1b_clinicalbert_smilestrf.json
+Results saved to: /fs04/scratch2/he12/carter/experiments/outputs/exp1_results/exp1b_clinicalbert_smilestrf.json
+
+[7/8] exp1b_pubmedbert_chemberta
+
+============================================================
+Experiment: exp1b_pubmedbert_chemberta
+Text: pubmedbert, SMILES: chemberta, Fusion: fusemoe
+Device: cuda
+============================================================
+Dataset size: 121
+Class distribution: [57 64]
+
+--- Fold 1/5 ---
+  Epoch 20: Loss=0.4820, Val AUC=0.6859, Val F1=0.6667
+  Early stopping at epoch 25
+  Fold 1 Results: AUC=0.7372, BalAcc_tuned=0.7147, F1_tuned=0.7586 (thresh=0.503)
+
+--- Fold 2/5 ---
+  Epoch 20: Loss=0.4544, Val AUC=0.5694, Val F1=0.3000
+  Early stopping at epoch 22
+  Fold 2 Results: AUC=0.7153, BalAcc_tuned=0.7917, F1_tuned=0.7619 (thresh=0.464)
+
+--- Fold 3/5 ---
+  Epoch 20: Loss=0.3394, Val AUC=0.4965, Val F1=0.5455
+  Early stopping at epoch 27
+  Fold 3 Results: AUC=0.5944, BalAcc_tuned=0.6469, F1_tuned=0.5263 (thresh=0.639)
+
+--- Fold 4/5 ---
+  Epoch 20: Loss=0.6317, Val AUC=0.5315, Val F1=0.5714
+  Early stopping at epoch 22
+  Fold 4 Results: AUC=0.6224, BalAcc_tuned=0.6713, F1_tuned=0.6667 (thresh=0.580)
+
+--- Fold 5/5 ---
+  Epoch 20: Loss=0.5390, Val AUC=0.5035, Val F1=0.5333
+  Early stopping at epoch 23
+  Fold 5 Results: AUC=0.5315, BalAcc_tuned=0.6329, F1_tuned=0.6087 (thresh=0.606)
+
+============================================================
+FINAL RESULTS: exp1b_pubmedbert_chemberta
+============================================================
+AUC:              0.6401 +/- 0.0765 (min=0.5315, max=0.7372)
+Balanced Acc:     0.6915 +/- 0.0573 (min=0.6329, max=0.7917)
+F1 Tuned:         0.6644 +/- 0.0901 (min=0.5263, max=0.7619)
+  Per-fold predictions written to /fs04/scratch2/he12/carter/experiments/outputs/exp1_predictions/predictions_oof_exp1b_pubmedbert_chemberta.json
+Results saved to: /fs04/scratch2/he12/carter/experiments/outputs/exp1_results/exp1b_pubmedbert_chemberta.json
+
+[8/8] exp1b_pubmedbert_smilestrf
+
+============================================================
+Experiment: exp1b_pubmedbert_smilestrf
+Text: pubmedbert, SMILES: smilestrf, Fusion: fusemoe
+Device: cuda
+============================================================
+Dataset size: 121
+Class distribution: [57 64]
+
+--- Fold 1/5 ---
+  Epoch 20: Loss=0.4624, Val AUC=0.5321, Val F1=0.3810
+  Early stopping at epoch 28
+  Fold 1 Results: AUC=0.6603, BalAcc_tuned=0.7179, F1_tuned=0.7407 (thresh=0.642)
+
+--- Fold 2/5 ---
+  Epoch 20: Loss=0.4070, Val AUC=0.6597, Val F1=0.3750
+  Early stopping at epoch 21
+  Fold 2 Results: AUC=0.7986, BalAcc_tuned=0.7917, F1_tuned=0.8148 (thresh=0.259)
+
+--- Fold 3/5 ---
+  Epoch 20: Loss=0.5628, Val AUC=0.4336, Val F1=0.5926
+  Early stopping at epoch 21
+  Fold 3 Results: AUC=0.5245, BalAcc_tuned=0.5979, F1_tuned=0.7273 (thresh=0.298)
+
+--- Fold 4/5 ---
+  Epoch 20: Loss=0.3469, Val AUC=0.5175, Val F1=0.6000
+  Early stopping at epoch 28
+  Fold 4 Results: AUC=0.5944, BalAcc_tuned=0.6329, F1_tuned=0.6087 (thresh=0.574)
+
+--- Fold 5/5 ---
+  Epoch 20: Loss=0.4491, Val AUC=0.4615, Val F1=0.6667
+  Early stopping at epoch 23
+  Fold 5 Results: AUC=0.5035, BalAcc_tuned=0.6329, F1_tuned=0.6087 (thresh=0.560)
+
+============================================================
+FINAL RESULTS: exp1b_pubmedbert_smilestrf
+============================================================
+AUC:              0.6162 +/- 0.1066 (min=0.5035, max=0.7986)
+Balanced Acc:     0.6747 +/- 0.0706 (min=0.5979, max=0.7917)
+F1 Tuned:         0.7000 +/- 0.0803 (min=0.6087, max=0.8148)
+  Per-fold predictions written to /fs04/scratch2/he12/carter/experiments/outputs/exp1_predictions/predictions_oof_exp1b_pubmedbert_smilestrf.json
+Results saved to: /fs04/scratch2/he12/carter/experiments/outputs/exp1_results/exp1b_pubmedbert_smilestrf.json
+
+================================================================================
+EXPERIMENT SUMMARY
+================================================================================
+Experiment                               Accuracy        AUC             F1             
+--------------------------------------------------------------------------------
+exp1a_clinicalbert_chemberta             0.5363±0.0709   0.6112±0.1383   0.6117±0.0962  
+exp1a_clinicalbert_smilestrf             0.5040±0.0533   0.6294±0.1086   0.5476±0.1569  
+exp1a_pubmedbert_chemberta               0.5617±0.0521   0.6303±0.0815   0.6217±0.0374  
+exp1a_pubmedbert_smilestrf               0.5617±0.0741   0.6124±0.0721   0.5329±0.0860  
+exp1b_clinicalbert_chemberta             0.6187±0.1060   0.6675±0.1060   0.6836±0.0692  
+exp1b_clinicalbert_smilestrf             0.5693±0.0808   0.6628±0.1046   0.5749±0.1633  
+exp1b_pubmedbert_chemberta               0.5773±0.0847   0.6401±0.0765   0.5863±0.0955  
+exp1b_pubmedbert_smilestrf               0.5367±0.0831   0.6162±0.1066   0.5675±0.1046  
+================================================================================
+
+Best model (by AUC): exp1b_clinicalbert_chemberta
+  AUC: 0.6675 ± 0.1060
+Summary saved to: /fs04/scratch2/he12/carter/experiments/outputs/exp1_results/summary.json
+
+== exp2_fusion   --log-predictions --deterministic ==
+12:04:36 | INFO     | Logging to: /fs04/scratch2/he12/carter/experiments/logs/exp2_20260716_120436.log
+12:04:36 | INFO     | ============================================================
+12:04:36 | INFO     | ENVIRONMENT INFORMATION
+12:04:36 | INFO     | ============================================================
+12:04:36 | INFO     | Hostname: m3g117
+12:04:36 | INFO     | Platform: Linux-5.14.0-611.30.1.el9_7.x86_64-x86_64-with-glibc2.34
+12:04:36 | INFO     | Python: 3.10.19 (main, Jan 14 2026, 19:36:24) [Clang 21.1.4 ]
+12:04:36 | INFO     | SLURM Job ID: 58331726
+12:04:36 | INFO     | SLURM Job Name: dn_rerun
+12:04:36 | INFO     | SLURM Nodes: m3g117
+12:04:36 | INFO     | PyTorch: 2.11.0+cu130
+12:04:37 | INFO     | CUDA available: True
+12:04:37 | INFO     | CUDA version: 13.0
+12:04:37 | INFO     | cuDNN version: 91900
+12:04:37 | INFO     | GPU 0: NVIDIA L40S (44.4 GB)
+12:04:37 | INFO     | numpy: 2.2.6
+12:04:37 | INFO     | sklearn: 1.7.2
+12:04:39 | INFO     | mne: 1.12.1
+12:04:39 | INFO     | pandas: 2.3.3
+12:04:39 | WARNING  | braindecode: NOT AVAILABLE - No module named 'braindecode'
+12:04:39 | INFO     | ============================================================
+12:04:40 | INFO     | Using device: cuda
+12:04:40 | INFO     | Running 4 experiments
+12:04:40 | INFO     | [1/4] Starting: simplecnn + chemberta (mlp)
+12:04:40 | INFO     | Loading data for SMILES model: chemberta
+12:04:40 | INFO     | Preparing data...
+12:04:40 | INFO     | Found 151 patients with valid EEG files and outcomes
+12:04:40 | INFO     | Loading SMILES embeddings for model: chemberta
+12:04:40 | INFO     | Loaded SMILES embeddings: shape=(15, 768)
+12:04:40 | INFO     | Loading cached EEG data from /fs04/scratch2/he12/carter/experiments/outputs/eeg_cache/processed_eeg.pkl
+12:04:50 | INFO     | Loaded 147 patients from cache
+12:04:50 | INFO     | Final dataset: 151 patients
+12:04:50 | INFO     | Outcome distribution: {1: np.int64(78), 0: np.int64(73)}
+12:04:50 | INFO     | Loaded 151 patients with EEG data
+12:04:50 | INFO     | Starting cross-validation...
+12:04:50 | INFO     |   Using multilabel stratification
+12:04:50 | INFO     |   Fold 1/5 (train=121, val=30)
+12:05:54 | INFO     |     Fold 1 results: AUC=0.5714, BalAcc_tuned=0.6339, F1_tuned=0.6452 (thresh=0.588)
+12:05:54 | INFO     |   Fold 2/5 (train=121, val=30)
+12:06:28 | INFO     |     Fold 2 results: AUC=0.5511, BalAcc_tuned=0.6333, F1_tuned=0.6667 (thresh=0.506)
+12:06:28 | INFO     |   Fold 3/5 (train=121, val=30)
+12:07:37 | INFO     |     Fold 3 results: AUC=0.6384, BalAcc_tuned=0.6652, F1_tuned=0.6875 (thresh=0.240)
+12:07:37 | INFO     |   Fold 4/5 (train=121, val=30)
+12:08:37 | INFO     |     Fold 4 results: AUC=0.6044, BalAcc_tuned=0.6667, F1_tuned=0.5833 (thresh=0.921)
+12:08:37 | INFO     |   Fold 5/5 (train=120, val=31)
+12:09:09 | INFO     |     Fold 5 results: AUC=0.5542, BalAcc_tuned=0.5917, F1_tuned=0.3810 (thresh=0.721)
+12:09:09 | INFO     | Cross-validation complete:
+12:09:09 | INFO     |   AUC: 0.5839 +/- 0.0332 (min=0.5511, max=0.6384)
+12:09:09 | INFO     |   Balanced Acc: 0.6382 +/- 0.0274 (min=0.5917, max=0.6667)
+12:09:09 | INFO     |   F1 Tuned: 0.5927 +/- 0.1115 (min=0.3810, max=0.6875)
+12:09:09 | INFO     | Per-fold predictions written to /fs04/scratch2/he12/carter/experiments/outputs/exp2_predictions/predictions_oof_exp2_simplecnn_chemberta_mlp.json
+12:09:09 | INFO     | [1/4] Complete: Acc=0.529, AUC=0.584, F1=0.632
+12:09:09 | INFO     | [2/4] Starting: simplecnn + chemberta (fusemoe)
+12:09:09 | INFO     | Loading data for SMILES model: chemberta
+12:09:09 | INFO     | Preparing data...
+12:09:09 | INFO     | Found 151 patients with valid EEG files and outcomes
+12:09:09 | INFO     | Loading SMILES embeddings for model: chemberta
+12:09:09 | INFO     | Loaded SMILES embeddings: shape=(15, 768)
+12:09:09 | INFO     | Loading cached EEG data from /fs04/scratch2/he12/carter/experiments/outputs/eeg_cache/processed_eeg.pkl
+12:09:09 | INFO     | Loaded 147 patients from cache
+12:09:09 | INFO     | Final dataset: 151 patients
+12:09:09 | INFO     | Outcome distribution: {1: np.int64(78), 0: np.int64(73)}
+12:09:09 | INFO     | Loaded 151 patients with EEG data
+12:09:09 | INFO     | Starting cross-validation...
+12:09:09 | INFO     |   Using multilabel stratification
+12:09:09 | INFO     |   Fold 1/5 (train=121, val=30)
+12:10:00 | INFO     |     Fold 1 results: AUC=0.5625, BalAcc_tuned=0.5893, F1_tuned=0.6667 (thresh=0.664)
+12:10:00 | INFO     |   Fold 2/5 (train=121, val=30)
+12:10:44 | INFO     |     Fold 2 results: AUC=0.6222, BalAcc_tuned=0.6000, F1_tuned=0.6250 (thresh=0.550)
+12:10:44 | INFO     |   Fold 3/5 (train=121, val=30)
+12:11:26 | INFO     |     Fold 3 results: AUC=0.7009, BalAcc_tuned=0.7009, F1_tuned=0.7097 (thresh=0.655)
+12:11:26 | INFO     |   Fold 4/5 (train=121, val=30)
+12:12:12 | INFO     |     Fold 4 results: AUC=0.5733, BalAcc_tuned=0.6000, F1_tuned=0.3333 (thresh=0.578)
+12:12:12 | INFO     |   Fold 5/5 (train=120, val=31)
+12:12:53 | INFO     |     Fold 5 results: AUC=0.4646, BalAcc_tuned=0.5271, F1_tuned=0.2857 (thresh=0.663)
+12:12:53 | INFO     | Cross-validation complete:
+12:12:53 | INFO     |   AUC: 0.5847 +/- 0.0774 (min=0.4646, max=0.7009)
+12:12:53 | INFO     |   Balanced Acc: 0.6035 +/- 0.0558 (min=0.5271, max=0.7009)
+12:12:53 | INFO     |   F1 Tuned: 0.5241 +/- 0.1779 (min=0.2857, max=0.7097)
+12:12:53 | INFO     | Per-fold predictions written to /fs04/scratch2/he12/carter/experiments/outputs/exp2_predictions/predictions_oof_exp2_simplecnn_chemberta_fusemoe.json
+12:12:53 | INFO     | [2/4] Complete: Acc=0.564, AUC=0.585, F1=0.645
+12:12:53 | INFO     | [3/4] Starting: simplecnn + smilestrf (mlp)
+12:12:53 | INFO     | Loading data for SMILES model: smilestrf
+12:12:53 | INFO     | Preparing data...
+12:12:53 | INFO     | Found 151 patients with valid EEG files and outcomes
+12:12:53 | INFO     | Loading SMILES embeddings for model: smilestrf
+12:12:53 | INFO     | Loaded SMILES embeddings: shape=(15, 256)
+12:12:53 | INFO     | Loading cached EEG data from /fs04/scratch2/he12/carter/experiments/outputs/eeg_cache/processed_eeg.pkl
+12:12:53 | INFO     | Loaded 147 patients from cache
+12:12:53 | INFO     | Final dataset: 151 patients
+12:12:53 | INFO     | Outcome distribution: {1: np.int64(78), 0: np.int64(73)}
+12:12:53 | INFO     | Loaded 151 patients with EEG data
+12:12:53 | INFO     | Starting cross-validation...
+12:12:53 | INFO     |   Using multilabel stratification
+12:12:53 | INFO     |   Fold 1/5 (train=121, val=30)
+12:13:29 | INFO     |     Fold 1 results: AUC=0.6741, BalAcc_tuned=0.6741, F1_tuned=0.6429 (thresh=0.597)
+12:13:29 | INFO     |   Fold 2/5 (train=121, val=30)
+12:14:02 | INFO     |     Fold 2 results: AUC=0.6978, BalAcc_tuned=0.7000, F1_tuned=0.7097 (thresh=0.563)
+12:14:02 | INFO     |   Fold 3/5 (train=121, val=30)
+12:14:29 | INFO     |     Fold 3 results: AUC=0.7232, BalAcc_tuned=0.7366, F1_tuned=0.7333 (thresh=0.502)
+12:14:29 | INFO     |   Fold 4/5 (train=121, val=30)
+12:16:17 | INFO     |     Fold 4 results: AUC=0.5756, BalAcc_tuned=0.6000, F1_tuned=0.5385 (thresh=0.820)
+12:16:17 | INFO     |   Fold 5/5 (train=120, val=31)
+12:16:45 | INFO     |     Fold 5 results: AUC=0.5167, BalAcc_tuned=0.5833, F1_tuned=0.5517 (thresh=0.546)
+12:16:45 | INFO     | Cross-validation complete:
+12:16:45 | INFO     |   AUC: 0.6375 +/- 0.0784 (min=0.5167, max=0.7232)
+12:16:45 | INFO     |   Balanced Acc: 0.6588 +/- 0.0585 (min=0.5833, max=0.7366)
+12:16:45 | INFO     |   F1 Tuned: 0.6352 +/- 0.0795 (min=0.5385, max=0.7333)
+12:16:50 | INFO     | Per-fold predictions written to /fs04/scratch2/he12/carter/experiments/outputs/exp2_predictions/predictions_oof_exp2_simplecnn_smilestrf_mlp.json
+12:16:50 | INFO     | [3/4] Complete: Acc=0.583, AUC=0.637, F1=0.659
+12:16:50 | INFO     | [4/4] Starting: simplecnn + smilestrf (fusemoe)
+12:16:50 | INFO     | Loading data for SMILES model: smilestrf
+12:16:50 | INFO     | Preparing data...
+12:16:51 | INFO     | Found 151 patients with valid EEG files and outcomes
+12:16:51 | INFO     | Loading SMILES embeddings for model: smilestrf
+12:16:51 | INFO     | Loaded SMILES embeddings: shape=(15, 256)
+12:16:51 | INFO     | Loading cached EEG data from /fs04/scratch2/he12/carter/experiments/outputs/eeg_cache/processed_eeg.pkl
+12:16:57 | INFO     | Loaded 147 patients from cache
+12:16:57 | INFO     | Final dataset: 151 patients
+12:16:57 | INFO     | Outcome distribution: {1: np.int64(78), 0: np.int64(73)}
+12:16:57 | INFO     | Loaded 151 patients with EEG data
+12:16:57 | INFO     | Starting cross-validation...
+12:16:57 | INFO     |   Using multilabel stratification
+12:16:57 | INFO     |   Fold 1/5 (train=121, val=30)
+12:18:02 | INFO     |     Fold 1 results: AUC=0.5625, BalAcc_tuned=0.5893, F1_tuned=0.6667 (thresh=0.824)
+12:18:02 | INFO     |   Fold 2/5 (train=121, val=30)
+12:18:46 | INFO     |     Fold 2 results: AUC=0.5822, BalAcc_tuned=0.6000, F1_tuned=0.6250 (thresh=0.539)
+12:18:46 | INFO     |   Fold 3/5 (train=121, val=30)
+12:19:27 | INFO     |     Fold 3 results: AUC=0.7009, BalAcc_tuned=0.7009, F1_tuned=0.7097 (thresh=0.734)
+12:19:27 | INFO     |   Fold 4/5 (train=121, val=30)
+12:20:09 | INFO     |     Fold 4 results: AUC=0.4267, BalAcc_tuned=0.5333, F1_tuned=0.6818 (thresh=0.203)
+12:20:09 | INFO     |   Fold 5/5 (train=120, val=31)
+12:20:49 | INFO     |     Fold 5 results: AUC=0.5729, BalAcc_tuned=0.5854, F1_tuned=0.5185 (thresh=0.400)
+12:20:49 | INFO     | Cross-validation complete:
+12:20:49 | INFO     |   AUC: 0.5690 +/- 0.0870 (min=0.4267, max=0.7009)
+12:20:49 | INFO     |   Balanced Acc: 0.6018 +/- 0.0547 (min=0.5333, max=0.7009)
+12:20:49 | INFO     |   F1 Tuned: 0.6403 +/- 0.0668 (min=0.5185, max=0.7097)
+12:20:50 | INFO     | Per-fold predictions written to /fs04/scratch2/he12/carter/experiments/outputs/exp2_predictions/predictions_oof_exp2_simplecnn_smilestrf_fusemoe.json
+12:20:50 | INFO     | [4/4] Complete: Acc=0.563, AUC=0.569, F1=0.406
+12:20:50 | INFO     | Results saved to /fs04/scratch2/he12/carter/experiments/outputs/exp2_results
+12:20:50 | INFO     | 
+12:20:50 | INFO     | ======================================================================
+12:20:50 | INFO     | SUMMARY
+12:20:50 | INFO     | ======================================================================
+12:20:50 | INFO     | Experiment                               Acc        AUC        F1        
+12:20:50 | INFO     | ----------------------------------------------------------------------
+12:20:50 | INFO     | exp2_simplecnn_smilestrf_mlp             0.583      0.637      0.659     
+12:20:50 | INFO     | exp2_simplecnn_chemberta_fusemoe         0.564      0.585      0.645     
+12:20:50 | INFO     | exp2_simplecnn_chemberta_mlp             0.529      0.584      0.632     
+12:20:50 | INFO     | exp2_simplecnn_smilestrf_fusemoe         0.563      0.569      0.406     
+12:20:50 | INFO     | Experiment 2 completed successfully
+
+== exp3_fusion  --fusion mlp --log-predictions --deterministic ==
+
+================================================================================
+EXPERIMENT 3 RESULTS SUMMARY
+================================================================================
+Experiment                                   AUC     Accuracy           F1
+--------------------------------------------------------------------------------
+exp3a_pubmedbert_smilestrf           0.714±0.073  0.576±0.026  0.692±0.020
+exp3a_clinicalbert_chemberta         0.698±0.159  0.613±0.067  0.720±0.034
+exp3a_clinicalbert_smilestrf         0.665±0.105  0.568±0.067  0.679±0.049
+exp3a_pubmedbert_chemberta           0.648±0.062  0.532±0.057  0.425±0.347
+================================================================================
+
+Best model: exp3a_pubmedbert_smilestrf
+  AUC: 0.7145
+
+== exp4_baseline   --log-predictions --deterministic ==
+
+================================================================================
+EXPERIMENT 4 RESULTS SUMMARY
+================================================================================
+Experiment                         AUC      Bal Acc           F1     F1 Tuned
+--------------------------------------------------------------------------------
+exp4a_mlp                 0.6590 +/- 0.0573 0.6624 +/- 0.0381 0.5940 +/- 0.0415 0.6422 +/- 0.0719
+exp4b_attention           0.5912 +/- 0.0645 0.6421 +/- 0.0443 0.2454 +/- 0.3018 0.6231 +/- 0.0719
+================================================================================
+
+Per-fold AUC values:
+  exp4a_mlp: [0.6810, 0.5500, 0.6845, 0.6619, 0.7175]
+  exp4b_attention: [0.5071, 0.6929, 0.5726, 0.6310, 0.5525]
+
+== exp5_clinical_fusion   --log-predictions --deterministic ==
+
+== exp6_clinical_triple   --log-predictions --deterministic ==
+
+==========================================================================================
+EXPERIMENT 6 RESULTS SUMMARY
+==========================================================================================
+Experiment                                         AUC            Bal Acc           F1 Tuned
+------------------------------------------------------------------------------------------
+exp6a_clinicalbert_chemberta         0.6690 +/- 0.0652  0.6943 +/- 0.0393  0.6780 +/- 0.0754
+exp6a_clinicalbert_smilestrf         0.7242 +/- 0.0564  0.7383 +/- 0.0383  0.7339 +/- 0.0588
+exp6a_pubmedbert_chemberta           0.6893 +/- 0.0571  0.7032 +/- 0.0534  0.6916 +/- 0.0854
+exp6a_pubmedbert_smilestrf           0.7069 +/- 0.0808  0.7209 +/- 0.0641  0.6878 +/- 0.1159
+exp6b_simplecnn_chemberta            0.6324 +/- 0.0789  0.6633 +/- 0.0407  0.6545 +/- 0.0875
+exp6b_simplecnn_smilestrf            0.6754 +/- 0.1078  0.7133 +/- 0.0776  0.7341 +/- 0.0801
+==========================================================================================
+
+Comparison with baselines:
+  Exp4a (Clinical only):     AUC 0.664
+  Exp5a (Clinical + SMILES): AUC 0.689
+  Exp3 (Triple, no clinical): AUC 0.753
+
+  exp6a_clinicalbert_chemberta: 0.6690 (+0.0050 vs Exp4a, -0.0200 vs Exp5a)
+  exp6a_clinicalbert_smilestrf: 0.7242 (+0.0602 vs Exp4a, +0.0352 vs Exp5a)
+  exp6a_pubmedbert_chemberta: 0.6893 (+0.0253 vs Exp4a, +0.0003 vs Exp5a)
+  exp6a_pubmedbert_smilestrf: 0.7069 (+0.0429 vs Exp4a, +0.0179 vs Exp5a)
+  exp6b_simplecnn_chemberta: 0.6324 (-0.0316 vs Exp4a, -0.0566 vs Exp5a)
+  exp6b_simplecnn_smilestrf: 0.6754 (+0.0114 vs Exp4a, -0.0136 vs Exp5a)
+
+Per-fold AUC values:
+  exp6a_clinicalbert_chemberta: [0.7756, 0.6042, 0.6224, 0.6294, 0.7133]
+  exp6a_clinicalbert_smilestrf: [0.8013, 0.7778, 0.6993, 0.6503, 0.6923]
+  exp6a_pubmedbert_chemberta: [0.7244, 0.7639, 0.7133, 0.6224, 0.6224]
+  exp6a_pubmedbert_smilestrf: [0.8397, 0.6250, 0.7413, 0.6224, 0.7063]
+  exp6b_simplecnn_chemberta: [0.7250, 0.5733, 0.5556, 0.7321, 0.5759]
+  exp6b_simplecnn_smilestrf: [0.6500, 0.5111, 0.6356, 0.7545, 0.8259]
+
+== exp11_eeg_upgrade   --log-predictions --deterministic ==
+
+Experiment                                             AUC      Bal Acc     F1 Tuned
+-------------------------------------------------------------------------------------
+exp11_7a_clinicalbert_chemberta_trf           0.790+/-0.107 0.805+/-0.068 0.818+/-0.052
+exp11_7a_pubmedbert_chemberta_meanmax         0.776+/-0.146 0.794+/-0.128 0.802+/-0.122
+exp11_7a_pubmedbert_chemberta_trf             0.765+/-0.112 0.762+/-0.067 0.768+/-0.086
+exp11_7a_clinicalbert_chemberta_meanmax       0.753+/-0.122 0.761+/-0.083 0.772+/-0.050
+exp11_3a_clinicalbert_smilestrf_trf           0.716+/-0.026 0.746+/-0.032 0.719+/-0.055
+exp11_3a_clinicalbert_smilestrf_meanmax       0.702+/-0.111 0.739+/-0.112 0.736+/-0.128
+exp11_3a_clinicalbert_chemberta_meanmax       0.700+/-0.090 0.728+/-0.088 0.745+/-0.070
+exp11_3a_clinicalbert_chemberta_trf           0.697+/-0.064 0.732+/-0.066 0.737+/-0.057
+exp11_3a_pubmedbert_smilestrf_meanmax         0.685+/-0.083 0.719+/-0.085 0.726+/-0.079
+exp11_3a_pubmedbert_chemberta_meanmax         0.679+/-0.062 0.713+/-0.028 0.689+/-0.079
+exp11_6b_smilestrf_meanmax                    0.673+/-0.071 0.686+/-0.046 0.661+/-0.166
+exp11_6b_smilestrf_trf                        0.661+/-0.074 0.692+/-0.062 0.654+/-0.169
+exp11_6b_chemberta_trf                        0.659+/-0.127 0.703+/-0.080 0.669+/-0.135
+exp11_3a_pubmedbert_smilestrf_trf             0.634+/-0.052 0.690+/-0.042 0.650+/-0.081
+exp11_3a_pubmedbert_chemberta_trf             0.633+/-0.054 0.658+/-0.030 0.663+/-0.062
+exp11_6b_chemberta_meanmax                    0.628+/-0.084 0.668+/-0.041 0.653+/-0.096
+OK   outputs/exp7_predictions/predictions_oof.json (25703 bytes)
+OK   outputs/exp7_predictions/predictions_in_sample.json (19900 bytes)
+OK   outputs/exp7_predictions/predictions_oof_asmweighted.json (25612 bytes)
+OK   outputs/exp7_predictions/predictions_in_sample_asmweighted.json (19907 bytes)
+
+
+== Prediction files being packaged (relative to outputs/) ==
+./exp11_predictions/predictions_oof_exp11_exp11_3a_clinicalbert_chemberta_meanmax.json
+./exp11_predictions/predictions_oof_exp11_exp11_3a_clinicalbert_chemberta_trf.json
+./exp11_predictions/predictions_oof_exp11_exp11_3a_clinicalbert_smilestrf_meanmax.json
+./exp11_predictions/predictions_oof_exp11_exp11_3a_clinicalbert_smilestrf_trf.json
+./exp11_predictions/predictions_oof_exp11_exp11_3a_pubmedbert_chemberta_meanmax.json
+./exp11_predictions/predictions_oof_exp11_exp11_3a_pubmedbert_chemberta_trf.json
+./exp11_predictions/predictions_oof_exp11_exp11_3a_pubmedbert_smilestrf_meanmax.json
+./exp11_predictions/predictions_oof_exp11_exp11_3a_pubmedbert_smilestrf_trf.json
+./exp11_predictions/predictions_oof_exp11_exp11_6b_chemberta_meanmax.json
+./exp11_predictions/predictions_oof_exp11_exp11_6b_chemberta_trf.json
+./exp11_predictions/predictions_oof_exp11_exp11_6b_smilestrf_meanmax.json
+./exp11_predictions/predictions_oof_exp11_exp11_6b_smilestrf_trf.json
+./exp11_predictions/predictions_oof_exp11_exp11_7a_clinicalbert_chemberta_meanmax.json
+./exp11_predictions/predictions_oof_exp11_exp11_7a_clinicalbert_chemberta_trf.json
+./exp11_predictions/predictions_oof_exp11_exp11_7a_pubmedbert_chemberta_meanmax.json
+./exp11_predictions/predictions_oof_exp11_exp11_7a_pubmedbert_chemberta_trf.json
+./exp15_reve_quad/seed137_none/predictions_oof.json
+./exp15_reve_quad/seed137_stratified_batch/predictions_oof_asmstratbatch.json
+./exp15_reve_quad/seed137_weighted/predictions_oof_asmweighted.json
+./exp15_reve_quad/seed2025_none/predictions_oof.json
+./exp15_reve_quad/seed2025_stratified_batch/predictions_oof_asmstratbatch.json
+./exp15_reve_quad/seed2025_weighted/predictions_oof_asmweighted.json
+./exp15_reve_quad/seed314_none/predictions_oof.json
+./exp15_reve_quad/seed314_stratified_batch/predictions_oof_asmstratbatch.json
+./exp15_reve_quad/seed314_weighted/predictions_oof_asmweighted.json
+./exp15_reve_quad/seed42_none/predictions_oof.json
+./exp15_reve_quad/seed42_stratified_batch/predictions_oof_asmstratbatch.json
+./exp15_reve_quad/seed42_weighted/predictions_oof_asmweighted.json
+./exp15_reve_quad/seed7_none/predictions_oof.json
+./exp15_reve_quad/seed7_stratified_batch/predictions_oof_asmstratbatch.json
+./exp15_reve_quad/seed7_weighted/predictions_oof_asmweighted.json
+./exp1_predictions/predictions_oof_exp1a_clinicalbert_chemberta.json
+./exp1_predictions/predictions_oof_exp1a_clinicalbert_smilestrf.json
+./exp1_predictions/predictions_oof_exp1a_pubmedbert_chemberta.json
+./exp1_predictions/predictions_oof_exp1a_pubmedbert_smilestrf.json
+./exp1_predictions/predictions_oof_exp1b_clinicalbert_chemberta.json
+./exp1_predictions/predictions_oof_exp1b_clinicalbert_smilestrf.json
+./exp1_predictions/predictions_oof_exp1b_pubmedbert_chemberta.json
+./exp1_predictions/predictions_oof_exp1b_pubmedbert_smilestrf.json
+./exp2_predictions/predictions_oof_exp2_simplecnn_chemberta_fusemoe.json
+./exp2_predictions/predictions_oof_exp2_simplecnn_chemberta_mlp.json
+./exp2_predictions/predictions_oof_exp2_simplecnn_smilestrf_fusemoe.json
+./exp2_predictions/predictions_oof_exp2_simplecnn_smilestrf_mlp.json
+./exp3_predictions/predictions_oof_exp3a_clinicalbert_chemberta_asmstratbatch.json
+./exp3_predictions/predictions_oof_exp3a_clinicalbert_chemberta_asmweighted.json
+./exp3_predictions/predictions_oof_exp3a_clinicalbert_chemberta.json
+./exp3_predictions/predictions_oof_exp3a_clinicalbert_smilestrf_asmstratbatch.json
+./exp3_predictions/predictions_oof_exp3a_clinicalbert_smilestrf_asmweighted.json
+./exp3_predictions/predictions_oof_exp3a_clinicalbert_smilestrf.json
+./exp3_predictions/predictions_oof_exp3a_pubmedbert_chemberta_asmstratbatch.json
+./exp3_predictions/predictions_oof_exp3a_pubmedbert_chemberta_asmweighted.json
+./exp3_predictions/predictions_oof_exp3a_pubmedbert_chemberta.json
+./exp3_predictions/predictions_oof_exp3a_pubmedbert_smilestrf_asmstratbatch.json
+./exp3_predictions/predictions_oof_exp3a_pubmedbert_smilestrf_asmweighted.json
+./exp3_predictions/predictions_oof_exp3a_pubmedbert_smilestrf.json
+./exp3_predictions/predictions_oof_exp3b_clinicalbert_chemberta.json
+./exp3_predictions/predictions_oof_exp3b_clinicalbert_smilestrf.json
+./exp3_predictions/predictions_oof_exp3b_pubmedbert_chemberta.json
+./exp3_predictions/predictions_oof_exp3b_pubmedbert_smilestrf.json
+./exp4_predictions/predictions_oof.json
+./exp5_predictions/predictions_oof_exp5a_chemberta_asmstratbatch.json
+./exp5_predictions/predictions_oof_exp5a_chemberta_asmweighted.json
+./exp5_predictions/predictions_oof_exp5a_chemberta.json
+./exp5_predictions/predictions_oof_exp5a_smilestrf_asmstratbatch.json
+./exp5_predictions/predictions_oof_exp5a_smilestrf_asmweighted.json
+./exp5_predictions/predictions_oof_exp5a_smilestrf.json
+./exp5_predictions/predictions_oof_exp5b_clinicalbert.json
+./exp5_predictions/predictions_oof_exp5b_pubmedbert.json
+./exp5_predictions/predictions_oof_exp5c_eeg2vec.json
+./exp6_predictions/predictions_oof_exp6a_clinicalbert_chemberta_asmstratbatch.json
+./exp6_predictions/predictions_oof_exp6a_clinicalbert_chemberta_asmweighted.json
+./exp6_predictions/predictions_oof_exp6a_clinicalbert_chemberta.json
+./exp6_predictions/predictions_oof_exp6a_clinicalbert_smilestrf_asmstratbatch.json
+./exp6_predictions/predictions_oof_exp6a_clinicalbert_smilestrf_asmweighted.json
+./exp6_predictions/predictions_oof_exp6a_clinicalbert_smilestrf.json
+./exp6_predictions/predictions_oof_exp6a_pubmedbert_chemberta_asmstratbatch.json
+./exp6_predictions/predictions_oof_exp6a_pubmedbert_chemberta_asmweighted.json
+./exp6_predictions/predictions_oof_exp6a_pubmedbert_chemberta.json
+./exp6_predictions/predictions_oof_exp6a_pubmedbert_smilestrf_asmstratbatch.json
+./exp6_predictions/predictions_oof_exp6a_pubmedbert_smilestrf_asmweighted.json
+./exp6_predictions/predictions_oof_exp6a_pubmedbert_smilestrf.json
+./exp6_predictions/predictions_oof_exp6b_simplecnn_chemberta.json
+./exp6_predictions/predictions_oof_exp6b_simplecnn_smilestrf.json
+./exp7_predictions/predictions_in_sample_asmstratbatch.json
+./exp7_predictions/predictions_in_sample_asmweighted.json
+./exp7_predictions/predictions_in_sample.json
+./exp7_predictions/predictions_oof_asmstratbatch.json
+./exp7_predictions/predictions_oof_asmweighted.json
+./exp7_predictions/predictions_oof.json
+./exp9_predictions/predictions_oof_exp9_aggregator_attention.json
+./exp9_predictions/predictions_oof_exp9_aggregator_depth_0.json
+./exp9_predictions/predictions_oof_exp9_aggregator_depth_1.json
+./exp9_predictions/predictions_oof_exp9_aggregator_depth_4.json
+./exp9_predictions/predictions_oof_exp9_aggregator_lstm.json
+./exp9_predictions/predictions_oof_exp9_aggregator_maxpool.json
+./exp9_predictions/predictions_oof_exp9_aggregator_meanmax.json
+./exp9_predictions/predictions_oof_exp9_baseline_simplecnn_transformer.json
+./exp9_predictions/predictions_oof_exp9_embed_dim_128.json
+./exp9_predictions/predictions_oof_exp9_embed_dim_64.json
+./exp9_predictions/predictions_oof_exp9_encoder_eeg2vec.json
+./exp9_predictions/predictions_oof_exp9_encoder_frozen.json
+
+Packaged -> /fs04/scratch2/he12/carter/experiments/dn_rerun_predictions_20260716_155058.tar.gz
+
+==================================================================
+COPY BACK TO YOUR LAPTOP (run this locally in a new terminal):
+  scp carterfs@m3.massive.org.au:/fs04/scratch2/he12/carter/experiments/dn_rerun_predictions_20260716_155058.tar.gz ~/Downloads/
+Then extract into the experiments outputs dir:
+  mkdir -p ~/Sync/Academics/University/postgrad/MonashHonours/thesis/experiments/outputs
+  tar -xzf ~/Downloads/dn_rerun_predictions_20260716_155058.tar.gz -C ~/Sync/Academics/University/postgrad/MonashHonours/thesis/experiments/outputs
+==================================================================
