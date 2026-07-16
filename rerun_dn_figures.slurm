@@ -1,21 +1,40 @@
 #!/bin/bash
-# Regenerate the Exp7a headline-model predictions needed to satisfy Duong's
-# review (Fig 3, Fig 4, counterfactual, and the headline operating-point row),
-# for both the unbalanced (vanilla) and inverse-frequency-weighted configs.
+# Regenerate the predictions needed to satisfy Duong's review.
 #
-# Weighted = the "best class-balancing strategy" per thesis Section 3.4.4.
-# stratified_batch is deliberately NOT run (it over-corrected; rejected).
+# Part 1 (figures): Exp7a headline model, unbalanced (vanilla) + inverse-
+#   frequency-weighted, with per-ASM counterfactual logging. Feeds Fig 3,
+#   Fig 4, the counterfactual, and the headline operating-point row.
+#   Weighted = the "best class-balancing strategy" per thesis Section 3.4.4.
+#   stratified_batch is deliberately NOT run (it over-corrected; rejected).
+#
+# Part 2 (operating-point table): baseline (unbalanced) OOF predictions for
+#   the other configurations in the results table, so precision (and bootstrap
+#   sensitivity/specificity) can be computed for the whole table. The original
+#   per-config prediction files were never committed (outputs/ is gitignored)
+#   and are absent from a fresh clone, so they must be regenerated.
+#
+#   Config -> experiment (from analysis/runs_manifest.json):
+#     Clinical / Clinical+Text / Clinical+EEG (drug fixed) -> exp5, exp6, exp11
+#     Text / EEG / Text+EEG (embedding only)               -> exp1, exp2, exp3
+#     Clinical(MLP) ablation                               -> exp4
+#   Each experiment defaults to running all its sub-configs and encodes the
+#   config in the prediction filename (predictions_oof_<config>.json), so we
+#   run the default sweep and match files by name afterwards.
+#
+#   NOTE: these are fresh deterministic reruns. As with the headline (fresh
+#   0.804 vs published 0.790), derived metrics may differ slightly from the
+#   published table. Decide on the full-table re-derivation once files land.
 #
 # Run from the experiments repo root on M3:
 #     sbatch rerun_dn_figures.slurm
 # Then follow the scp instructions printed at the end of logs/dn_rerun_*.out.
 #
 # SBATCH directives copied from submit_job.sh; override on the CLI if needed,
-# e.g.  sbatch --gres=gpu:A100:1 --time=6:00:00 rerun_dn_figures.slurm
+# e.g.  sbatch --gres=gpu:A100:1 --time=10:00:00 rerun_dn_figures.slurm
 #SBATCH --job-name=dn_rerun
 #SBATCH --partition=gpu
 #SBATCH --gres=gpu:1
-#SBATCH --time=4:00:00
+#SBATCH --time=8:00:00
 #SBATCH --mem=32G
 #SBATCH --cpus-per-task=4
 #SBATCH --output=logs/dn_rerun_%j.out
@@ -36,24 +55,48 @@ source .venv-others/bin/activate
 echo "== GPU =="
 command -v nvidia-smi >/dev/null && nvidia-smi --query-gpu=name,memory.total,memory.free --format=csv || echo "(no nvidia-smi)"
 
+FAILED=()
+
+# ------------------------------------------------------------------
+# Part 1: Exp7a headline predictions (figures + headline row).
+# ------------------------------------------------------------------
 run_variant () {
     local mode="$1"
     echo ""
-    echo "=================================================================="
-    echo "== Exp7a predictions  --asm-balance ${mode}"
-    echo "=================================================================="
-    python -m exp7_all_modalities.run_experiments \
-        --mode predictions \
-        --asm-balance "${mode}" \
-        --deterministic \
-        --output_dir outputs/exp7_predictions
+    echo "== Exp7a predictions  --asm-balance ${mode} =="
+    if ! python -m exp7_all_modalities.run_experiments \
+            --mode predictions --asm-balance "${mode}" --deterministic \
+            --output_dir outputs/exp7_predictions; then
+        FAILED+=("exp7:${mode}")
+    fi
 }
-
 run_variant none
 run_variant weighted
 
 # ------------------------------------------------------------------
-# Verify the four files exist, then package for transfer.
+# Part 2: baseline OOF predictions for the other table configs.
+# Each row: "<module> <extra args>". --log-predictions --deterministic added.
+# A failure in one config is logged and skipped, not fatal, so the figure
+# predictions still come back.
+# ------------------------------------------------------------------
+run_config () {
+    local module="$1"; shift
+    echo ""
+    echo "== ${module}  $* --log-predictions --deterministic =="
+    if ! python -m "${module}.run_experiments" "$@" --log-predictions --deterministic; then
+        FAILED+=("${module}")
+    fi
+}
+run_config exp1_fusion
+run_config exp2_fusion
+run_config exp3_fusion --fusion mlp
+run_config exp4_baseline
+run_config exp5_clinical_fusion
+run_config exp6_clinical_triple
+run_config exp11_eeg_upgrade
+
+# ------------------------------------------------------------------
+# Verify the figure predictions, then package everything for transfer.
 # ------------------------------------------------------------------
 OUT=outputs/exp7_predictions
 EXPECTED=(
@@ -71,16 +114,20 @@ for f in "${EXPECTED[@]}"; do
         missing=1
     fi
 done
-[[ $missing -eq 0 ]] || { echo "ERROR: some prediction files are missing; not packaging." >&2; exit 1; }
+[[ $missing -eq 0 ]] || { echo "ERROR: figure predictions missing; not packaging." >&2; exit 1; }
 
-# Package the exp7 figure/counterfactual predictions PLUS every other config's
-# logged OOF predictions (outputs/exp*_predictions/predictions_*.json), so the
-# same archive also unblocks the operating-point (precision) table locally.
+if [[ ${#FAILED[@]} -gt 0 ]]; then
+    echo ""
+    echo "WARNING: these runs failed and are absent from the archive: ${FAILED[*]}" >&2
+fi
+
+# Package every logged prediction file (outputs/exp*_predictions/predictions_*.json):
+# the exp7 figure/counterfactual set plus the per-config baseline OOF predictions.
 STAMP="$(date +%Y%m%d_%H%M%S)"
 ARCHIVE="dn_rerun_predictions_${STAMP}.tar.gz"
 echo ""
 echo "== Prediction files being packaged (relative to outputs/) =="
-( cd outputs && find . -name 'predictions_*.json' -print )
+( cd outputs && find . -name 'predictions_*.json' -print | sort )
 ( cd outputs && find . -name 'predictions_*.json' -print0 | tar -czf "$REPO_DIR/$ARCHIVE" --null -T - )
 echo ""
 echo "Packaged -> $REPO_DIR/$ARCHIVE"
