@@ -5,12 +5,11 @@ sync_from_m3.sh
 .python-version
 OBJECTIVES.md
 __pycache__
-outputs/*
+# Patient-derived data and results are NOT tracked (public repo).
+# They live outside git in ~/Sync/experiments_data and reach other
+# machines via Syncthing. outputs/ here is a symlink into that folder.
+outputs
 logs/
-
-# Newly synced M3 results (2026-07-16) - tracked so they can be pulled on the MacBook
-!outputs/NEW_FROM_M3_20260716/
-!outputs/NEW_FROM_M3_20260716/logs/
 presentations/
 meeting_notes/
 docs/plans/
