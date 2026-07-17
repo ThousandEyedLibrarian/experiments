@@ -56,9 +56,12 @@ def test_dedupe_outcome_conflict_drops_pid():
     df = _frame([_row("954", 1), _row("954", 0), _row("keep", 1)])
     out = dedupe_by_pid(df)  # default on_outcome_conflict='drop'
     assert out["pid"].tolist() == ["keep"]
-    # 'first' variant keeps it instead
-    kept = dedupe_by_pid(df, on_outcome_conflict="first")
+    # 'first' keeps the FIRST row's label, even when a later row is fuller
+    # (row 0 here is blanker but must still win, per the documented contract).
+    df2 = _frame([_row("954", 1, mri=""), _row("954", 0), _row("keep", 1)])
+    kept = dedupe_by_pid(df2, on_outcome_conflict="first")
     assert set(kept["pid"]) == {"954", "keep"}
+    assert kept.loc[kept.pid == "954", "outcome"].item() == 1  # first row, not the fuller outcome-0 row
 
 
 def test_dedupe_mask_aligns_to_external_array():

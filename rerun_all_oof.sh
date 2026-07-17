@@ -80,6 +80,11 @@ echo ""
 echo "== verify_oof gate =="
 if $PY -m shared.verify_oof "$OUT"; then GATE="PASS"; else GATE="FAIL"; fi
 
+# verify_oof only checks files that EXIST; a config that errored produced none
+# (and its prior file was archived away), so a silent per-config failure would
+# otherwise slip through. Any FAILED entry forces the verdict to FAIL.
+if (( ${#FAILED[@]} )); then GATE="FAIL"; fi
+
 echo ""
 echo "=================================================================="
 echo "rerun complete. gate: $GATE"

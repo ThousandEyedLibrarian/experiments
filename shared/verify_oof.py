@@ -54,9 +54,9 @@ def verify_file(path: Path) -> list[str]:
     problems: list[str] = []
     try:
         payload = load_json_nul_tolerant(path)
-    except Exception as exc:  # noqa: BLE001 - report and continue
-        return [f"unreadable: {exc}"]
-    folds = fold_pid_lists(payload)
+        folds = fold_pid_lists(payload)  # a non-dict/malformed payload raises here
+    except Exception as exc:  # noqa: BLE001 - report per-file, never abort the run
+        return [f"unreadable/malformed: {exc}"]
     if not folds:
         return ["no folds / pids"]
     try:

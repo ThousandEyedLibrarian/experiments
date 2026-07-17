@@ -96,6 +96,11 @@ def dedupe_pid_mask(
     ``on_outcome_conflict``: 'drop' removes a pid whose rows disagree on outcome;
     'first' keeps the first row (logged). Feature-only conflicts always keep the
     fuller row (tie -> first) and are logged. Asserts surviving pids are unique.
+
+    Call AFTER outcome filtering (``filter_and_map_outcome`` or an ``isin`` on the
+    raw codes). On unfiltered outcomes an invalid code (e.g. raw ``0``) alongside
+    a valid one reads as two distinct labels and the pid is wrongly dropped as a
+    conflict; every pipeline filters first, so this is a precondition, not a bug.
     """
     if on_outcome_conflict not in ("drop", "first"):
         raise ValueError(f"on_outcome_conflict must be 'drop' or 'first', got {on_outcome_conflict!r}")
@@ -118,6 +123,8 @@ def dedupe_pid_mask(
                            "drop" if on_outcome_conflict == "drop" else "keep-first")
             if on_outcome_conflict == "drop":
                 continue
+            keep[pos[0]] = True  # 'first' keeps the first row, as documented
+            continue
         best = max(pos, key=lambda i: (fill.iat[i], -i))
         differing = [c for c in d.columns if c != pid_col and d.loc[pos, c].astype(str).nunique() > 1]
         if differing:

@@ -11,8 +11,10 @@ import pytest
 
 from shared.verify_oof import expected_for, verify_file
 
-# (real prediction-file rel path -> expected unique-pid cohort). Names come
-# straight from each experiment's config; suffixes match --asm-balance.
+# (real prediction-file rel path -> expected unique-pid cohort). exp1-6 names
+# come from each config; exp7 --mode predictions writes the bare headline file;
+# exp11 config names already start "exp11_" and run_experiments prepends another,
+# so its files carry a doubled prefix. Suffixes match --asm-balance.
 FILENAME_COHORTS = {
     "exp1_predictions/predictions_oof_exp1a_clinicalbert_chemberta.json": 117,
     "exp1_predictions/predictions_oof_exp1b_pubmedbert_smilestrf_asmweighted.json": 117,
@@ -27,11 +29,11 @@ FILENAME_COHORTS = {
     "exp5_predictions/predictions_oof_exp5c_eeg2vec.json": 147,
     "exp6_predictions/predictions_oof_exp6a_clinicalbert_chemberta.json": 117,
     "exp6_predictions/predictions_oof_exp6b_simplecnn_chemberta.json": 147,
-    "exp7_predictions/predictions_oof_exp7a_clinicalbert_chemberta.json": 107,
-    "exp7_predictions/predictions_oof_exp7b_pubmedbert_chemberta.json": 107,
-    "exp11_predictions/predictions_oof_exp11_3a_clinicalbert_chemberta_transformer.json": 107,
-    "exp11_predictions/predictions_oof_exp11_6b_chemberta_meanmax_asmweighted.json": 147,
-    "exp11_predictions/predictions_oof_exp11_7a_pubmedbert_chemberta_meanmax.json": 107,
+    "exp7_predictions/predictions_oof.json": 107,
+    "exp7_predictions/predictions_oof_asmweighted.json": 107,
+    "exp11_predictions/predictions_oof_exp11_exp11_3a_clinicalbert_chemberta_trf.json": 107,
+    "exp11_predictions/predictions_oof_exp11_exp11_6b_chemberta_meanmax_asmweighted.json": 147,
+    "exp11_predictions/predictions_oof_exp11_exp11_7a_pubmedbert_chemberta_meanmax.json": 107,
 }
 
 
@@ -41,8 +43,8 @@ def test_expected_for_matches_real_filenames(rel, cohort):
 
 
 def test_exp1_pattern_does_not_match_exp11():
-    # The '_' anchoring exists so exp1's pattern can't swallow an exp11 file.
-    assert expected_for("exp11_predictions/predictions_oof_exp11_3a_x_y_z.json") == 107
+    # exp1's pattern must not swallow an exp11 file (real doubled-prefix name).
+    assert expected_for("exp11_predictions/predictions_oof_exp11_exp11_3a_x_y_z.json") == 107
 
 
 def test_verify_file_flags_cross_fold_leakage(tmp_path):
