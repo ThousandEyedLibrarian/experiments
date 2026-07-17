@@ -11,7 +11,6 @@ import torch
 from torch.utils.data import Dataset
 
 from .config import (
-    ASM_NAME_MAPPING,
     ASM_NAMES_FILE,
     CLINICAL_CONFIG,
     CSV_PATH,
@@ -27,9 +26,10 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 from exp4_baseline.data_pipeline import (
     ClinicalFeaturePreprocessor,
     clean_lesion_column,
-    clean_outcome_column,
     clean_psy_column,
+    load_clinical_data as _exp4_load_clinical_data,
 )
+from shared.cohort import dedupe_by_pid, smiles_vector
 
 logger = logging.getLogger("exp5")
 
@@ -47,13 +47,9 @@ def load_clinical_data(filepath: Path = CSV_PATH) -> pd.DataFrame:
     Returns:
         Cleaned DataFrame with valid outcomes.
     """
-    df = pd.read_csv(filepath)
-    df = clean_psy_column(df)
-    df = clean_lesion_column(df)
-    df = clean_outcome_column(df)
-    df = df.reset_index(drop=True)
-    logger.info(f"Loaded {len(df)} patients with valid outcomes")
-    return df
+    # Delegate to exp4's loader (clean + dedupe-by-pid), the single clinical
+    # cohort definition shared across experiments.
+    return _exp4_load_clinical_data(filepath)
 
 
 def load_asm_drug_names(filepath: Path = ASM_NAMES_FILE) -> List[str]:
@@ -208,11 +204,10 @@ class ClinicalSMILESDataset(Dataset):
         """
         clinical = self.clinical_features[idx]
 
-        # Get SMILES embedding for this patient's drug
-        asm = self.asm_drugs[idx]
-        asm_full = ASM_NAME_MAPPING.get(str(asm).strip(), str(asm).strip())
-        smiles_idx = self.smiles_indices.get(asm_full, 0)
-        smiles = torch.from_numpy(self.smiles_embeddings[smiles_idx]).float()
+        # SMILES embedding for this patient's drug (mean fallback if unknown).
+        smiles = torch.from_numpy(
+            smiles_vector(self.asm_drugs[idx], self.smiles_embeddings, self.smiles_indices)
+        ).float()
 
         label = self.labels[idx]
 
@@ -227,6 +222,7 @@ class ClinicalTextDataset(Dataset):
         clinical_features: np.ndarray,
         text_embeddings: np.ndarray,
         labels: np.ndarray,
+        asm_drugs: Optional[List[str]] = None,
     ):
         """Initialise dataset.
 
@@ -234,10 +230,12 @@ class ClinicalTextDataset(Dataset):
             clinical_features: Clinical feature array (n_samples, 20).
             text_embeddings: Text embeddings array (n_samples, 768).
             labels: Label array (n_samples,).
+            asm_drugs: Per-sample ASM labels (for --asm-balance weighting).
         """
         self.clinical_features = torch.from_numpy(clinical_features).float()
         self.text_embeddings = torch.from_numpy(text_embeddings).float()
         self.labels = torch.from_numpy(labels).long()
+        self.asm_drugs = asm_drugs
 
     def __len__(self) -> int:
         return len(self.labels)
@@ -261,6 +259,7 @@ class ClinicalEEGDataset(Dataset):
         padding_masks: List[np.ndarray],
         labels: np.ndarray,
         max_channels: int = 27,
+        asm_drugs: Optional[List[str]] = None,
     ):
         """Initialise dataset.
 
@@ -270,12 +269,14 @@ class ClinicalEEGDataset(Dataset):
             padding_masks: List of padding masks per patient.
             labels: Label array (n_samples,).
             max_channels: Maximum number of EEG channels.
+            asm_drugs: Per-sample ASM labels (for --asm-balance weighting).
         """
         self.clinical_features = torch.from_numpy(clinical_features).float()
         self.eeg_windows = eeg_windows
         self.padding_masks = padding_masks
         self.labels = torch.from_numpy(labels).long()
         self.max_channels = max_channels
+        self.asm_drugs = asm_drugs
 
     def __len__(self) -> int:
         return len(self.labels)
@@ -330,12 +331,9 @@ def prepare_clinical_smiles_data(
     smiles_embeddings, smiles_indices = load_smiles_embeddings(smiles_model)
     logger.info(f"Loaded SMILES embeddings: shape={smiles_embeddings.shape}")
 
-    # Filter to patients with valid ASM mapping
-    valid_mask = df["ASM"].apply(
-        lambda x: ASM_NAME_MAPPING.get(str(x).strip(), str(x).strip()) in smiles_indices
-    )
-    df = df[valid_mask].reset_index(drop=True)
-    logger.info(f"Patients with valid SMILES: {len(df)}")
+    # SMILES is a fixed per-drug input attached to every patient (unknown drugs
+    # fall back to the dataset mean via smiles_vector), so no patient is dropped.
+    logger.info(f"Clinical + SMILES cohort: {len(df)}")
 
     return df, smiles_embeddings, smiles_indices
 
@@ -364,8 +362,10 @@ def prepare_clinical_text_data(
     text_embeddings = load_text_embeddings(text_model, df)
     logger.info(f"Loaded text embeddings for {len(text_embeddings)} patients")
 
-    # Filter to patients with text embeddings
-    df = df[df["pid"].astype(str).isin(text_embeddings.keys())].reset_index(drop=True)
+    # Filter to patients with text embeddings, then dedupe by pid before the
+    # fold split (text df is loaded un-deduped to keep embedding-row alignment).
+    df = df[df["pid"].astype(str).isin(text_embeddings.keys())]
+    df = dedupe_by_pid(df)
     logger.info(f"Patients with valid text embeddings: {len(df)}")
 
     return df, text_embeddings
@@ -485,12 +485,14 @@ def create_clinical_text_datasets(
         clinical_features=train_clinical,
         text_embeddings=train_text,
         labels=train_labels,
+        asm_drugs=train_df["ASM"].tolist(),
     )
 
     val_dataset = ClinicalTextDataset(
         clinical_features=val_clinical,
         text_embeddings=val_text,
         labels=val_labels,
+        asm_drugs=val_df["ASM"].tolist(),
     )
 
     return train_dataset, val_dataset, preprocessor
@@ -541,6 +543,7 @@ def create_clinical_eeg_datasets(
         padding_masks=train_masks,
         labels=train_labels,
         max_channels=max_channels,
+        asm_drugs=train_df["ASM"].tolist(),
     )
 
     val_dataset = ClinicalEEGDataset(
@@ -549,6 +552,7 @@ def create_clinical_eeg_datasets(
         padding_masks=val_masks,
         labels=val_labels,
         max_channels=max_channels,
+        asm_drugs=val_df["ASM"].tolist(),
     )
 
     return train_dataset, val_dataset, preprocessor

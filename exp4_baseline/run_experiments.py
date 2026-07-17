@@ -46,6 +46,7 @@ def run_all_experiments(
     device: torch.device = None,
     log_predictions: bool = False,
     predictions_dir: Optional[Path] = None,
+    asm_balance_mode: str = "none",
 ) -> Dict[str, Dict]:
     """Run all experiments and collect results.
 
@@ -75,12 +76,19 @@ def run_all_experiments(
         pred_logger = None
         if log_predictions:
             target_dir = predictions_dir if predictions_dir is not None else RESULTS_DIR.parent / "exp4_predictions"
-            pred_logger = PredictionLogger(exp_id=exp_name, output_dir=target_dir)
+            # Distinct filename per config (so exp4b_attention does not clobber
+            # exp4a_mlp) plus a balance-mode suffix, matching exp3/5/6/7.
+            suffix = {"weighted": "_asmweighted", "stratified_batch": "_asmstratbatch"}.get(asm_balance_mode, "")
+            pred_logger = PredictionLogger(
+                exp_id=exp_name, output_dir=target_dir,
+                filename=f"predictions_oof_{exp_name}{suffix}.json",
+            )
 
         fold_metrics = run_cross_validation(
             model_type=model_type,
             device=device,
             prediction_logger=pred_logger,
+            asm_balance_mode=asm_balance_mode,
         )
 
         if pred_logger is not None:
@@ -199,6 +207,13 @@ def main():
         action="store_true",
         help="Enable deterministic training (seeds, cuDNN deterministic)",
     )
+    parser.add_argument(
+        "--asm-balance",
+        type=str,
+        choices=["none", "weighted"],
+        default="none",
+        help="ASM class-balancing mode (weighted = inverse-sqrt sample weighting).",
+    )
     args = parser.parse_args()
 
     if args.deterministic:
@@ -229,6 +244,7 @@ def main():
         experiments=experiments,
         device=device,
         log_predictions=args.log_predictions,
+        asm_balance_mode=args.asm_balance,
     )
 
     # Print results

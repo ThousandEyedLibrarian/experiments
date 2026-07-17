@@ -1,5 +1,10 @@
 # Stage A: Prediction-Logging Infrastructure
 
+> **Superseded for reruns.** The rerun launch/cascade notes below predate the
+> data-leakage fix. Use `rerun_all_oof.sh` + `shared/verify_oof.py` (see the
+> "Consistent OOF rerun" section in `README.md`). This file is kept for the
+> prediction-logger design notes only.
+
 Purpose: enable patient-level OOF predictions to be dumped from every
 experiment so the supervisor-comment items #25 (pooled-AUC bootstrap),
 #27 (sensitivity/specificity), and the cross-cohort half of #31 (DeLong

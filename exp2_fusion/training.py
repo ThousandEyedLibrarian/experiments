@@ -18,6 +18,7 @@ from exp8_stratification.stratified_cv import get_multilabel_splits, get_outcome
 
 from .config import BATCH_SIZE_BY_ENCODER, CHUNK_SIZE_BY_ENCODER, MODEL_CONFIG, TRAIN_CONFIG
 from .data_pipeline import EEGSMILESDataset, create_datasets, get_max_channels, prepare_data
+from shared.asm_balancing import WeightedASMDataset, compute_asm_sample_weights, weighted_cross_entropy
 from .models.fusion import get_fusion_model
 
 logger = logging.getLogger("exp2")
@@ -31,6 +32,7 @@ def train_epoch(
     device: torch.device,
     is_moe: bool = False,
     global_step: int = 0,
+    asm_weighted: bool = False,
 ) -> Tuple[float, int]:
     """Train for one epoch.
 
@@ -51,7 +53,12 @@ def train_epoch(
     n_batches = 0
 
     for batch in dataloader:
-        eeg_windows, padding_mask, smiles_emb, labels = batch
+        if asm_weighted:
+            eeg_windows, padding_mask, smiles_emb, labels, sample_weights = batch
+            sample_weights = sample_weights.to(device)
+        else:
+            eeg_windows, padding_mask, smiles_emb, labels = batch
+            sample_weights = None
         eeg_windows = eeg_windows.to(device)
         padding_mask = padding_mask.to(device)
         smiles_emb = smiles_emb.to(device)
@@ -61,10 +68,12 @@ def train_epoch(
 
         if is_moe:
             logits, aux_loss = model(eeg_windows, padding_mask, smiles_emb)
-            loss = criterion(logits, labels) + aux_loss
         else:
             logits = model(eeg_windows, padding_mask, smiles_emb)
-            loss = criterion(logits, labels)
+            aux_loss = 0.0
+        ce = (weighted_cross_entropy(logits, labels, sample_weights, class_weight=criterion.weight)
+              if asm_weighted else criterion(logits, labels))
+        loss = ce + aux_loss
 
         loss.backward()
         torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
@@ -176,6 +185,7 @@ def train_fold(
     device: torch.device,
     config: Dict = TRAIN_CONFIG,
     model_config: Dict = MODEL_CONFIG,
+    asm_balance_mode: str = "none",
 ) -> Tuple[Dict[str, float], nn.Module]:
     """Train model for one fold.
 
@@ -193,6 +203,12 @@ def train_fold(
     Returns:
         Tuple of (best metrics dict, trained model).
     """
+    # ASM-balancing: wrap the training set with inverse-sqrt sample weights.
+    asm_weighted = asm_balance_mode == "weighted"
+    if asm_weighted:
+        asm_list = [train_dataset.asm_drugs[pid] for pid in train_dataset.patient_ids]
+        train_dataset = WeightedASMDataset(train_dataset, compute_asm_sample_weights(asm_list))
+
     # Create data loaders
     train_loader = DataLoader(
         train_dataset,
@@ -259,7 +275,7 @@ def train_fold(
     global_step = 0
 
     for epoch in range(config["epochs"]):
-        train_loss, global_step = train_epoch(model, train_loader, optimizer, criterion, device, is_moe, global_step)
+        train_loss, global_step = train_epoch(model, train_loader, optimizer, criterion, device, is_moe, global_step, asm_weighted=asm_weighted)
         val_loss, val_metrics = evaluate(model, val_loader, criterion, device, is_moe)
 
         scheduler.step(val_metrics["auc"])
@@ -299,6 +315,7 @@ def run_cross_validation(
     verbose: bool = True,
     use_multilabel_stratification: bool = True,
     prediction_logger=None,
+    asm_balance_mode: str = "none",
 ) -> Dict:
     """Run k-fold cross validation.
 
@@ -377,6 +394,7 @@ def run_cross_validation(
                 n_eeg_channels=n_eeg_channels,
                 device=device,
                 config=config,
+                asm_balance_mode=asm_balance_mode,
             )
 
             for key in fold_metrics:

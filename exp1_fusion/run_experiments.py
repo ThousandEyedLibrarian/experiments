@@ -42,7 +42,7 @@ def dry_run():
         for smiles_model in ['chemberta', 'smilestrf']:
             print(f"\n  Testing {text_model} + {smiles_model}...")
             try:
-                dataset, outcomes = get_full_dataset(text_model, smiles_model)
+                dataset, outcomes, _ = get_full_dataset(text_model, smiles_model)
                 sample = dataset[0]
                 print(f"    Dataset size: {len(dataset)}")
                 print(f"    Text shape: {sample['text_emb'].shape}")
@@ -105,6 +105,7 @@ def run_all_experiments(
     verbose: bool = True,
     log_predictions: bool = False,
     predictions_dir: str = None,
+    asm_balance_mode: str = "none",
 ) -> List[Dict]:
     """Run all specified experiments."""
     from shared.prediction_logger import PredictionLogger
@@ -122,8 +123,9 @@ def run_all_experiments(
 
         pred_logger = None
         if log_predictions:
+            suffix = {"weighted": "_asmweighted", "stratified_batch": "_asmstratbatch"}.get(asm_balance_mode, "")
             pred_logger = PredictionLogger(exp_id=exp['name'], output_dir=predictions_dir,
-                                            filename=f"predictions_oof_{exp['name']}.json")
+                                            filename=f"predictions_oof_{exp['name']}{suffix}.json")
 
         results = run_experiment(
             experiment_name=exp['name'],
@@ -132,6 +134,7 @@ def run_all_experiments(
             fusion_type=exp['fusion'],
             verbose=verbose,
             prediction_logger=pred_logger,
+            asm_balance_mode=asm_balance_mode,
         )
 
         if pred_logger is not None:
@@ -207,6 +210,9 @@ def main():
                         help='Dump per-fold OOF predictions to outputs/exp1_predictions/')
     parser.add_argument('--deterministic', action='store_true',
                         help='Enable deterministic training (seeds, cuDNN deterministic)')
+    parser.add_argument('--asm-balance', type=str, default='none',
+                        choices=['none', 'weighted'],
+                        help='ASM class-balancing mode (weighted = inverse-sqrt sample weighting).')
 
     args = parser.parse_args()
 
@@ -230,6 +236,7 @@ def main():
         experiments,
         verbose=not args.quiet,
         log_predictions=args.log_predictions,
+        asm_balance_mode=args.asm_balance,
     )
 
     # Print and save summary

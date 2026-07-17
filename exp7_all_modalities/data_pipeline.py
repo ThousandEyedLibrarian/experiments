@@ -11,7 +11,6 @@ import torch
 from torch.utils.data import Dataset
 
 from .config import (
-    ASM_NAME_MAPPING,
     ASM_NAMES_FILE,
     CSV_PATH,
     EEG_CACHE_PATH,
@@ -30,6 +29,7 @@ from exp4_baseline.data_pipeline import (
     clean_psy_column,
 )
 from exp2_fusion.eeg_pipeline import get_valid_patient_eeg_pairs
+from shared.cohort import dedupe_by_pid, filter_and_map_outcome, smiles_vector
 
 logger = logging.getLogger("exp7")
 
@@ -219,11 +219,10 @@ class QuadModalityDataset(Dataset):
         eeg = torch.from_numpy(windows).float()
         mask = torch.from_numpy(padding_mask).bool()
 
-        # SMILES embedding
-        asm = self.asm_drugs[idx]
-        asm_full = ASM_NAME_MAPPING.get(str(asm).strip(), str(asm).strip())
-        smiles_idx = self.smiles_indices.get(asm_full, 0)
-        smiles = torch.from_numpy(self.smiles_embeddings[smiles_idx]).float()
+        # SMILES embedding (mean fallback if the drug is unknown)
+        smiles = torch.from_numpy(
+            smiles_vector(self.asm_drugs[idx], self.smiles_embeddings, self.smiles_indices)
+        ).float()
 
         label = self.labels[idx]
 
@@ -264,9 +263,7 @@ def prepare_quad_modality_data(
     df = df[df["pid"].astype(str).isin(valid_pids)].copy()
 
     # Filter for valid outcomes and map
-    df["outcome"] = pd.to_numeric(df["outcome"], errors="coerce")
-    df = df[df["outcome"].isin([1, 2])].copy()
-    df["outcome"] = df["outcome"].map(OUTCOME_MAPPING).astype(int)
+    df = filter_and_map_outcome(df)
 
     # Clean clinical columns
     df = clean_psy_column(df)
@@ -286,19 +283,14 @@ def prepare_quad_modality_data(
     eeg_data = load_eeg_data()
     logger.info(f"Loaded EEG data for {len(eeg_data)} patients")
 
-    # Filter to patients with ALL 4 modalities:
-    # 1. Valid clinical data (from df)
-    # 2. Valid text embeddings
-    # 3. Valid EEG data
-    # 4. Valid SMILES mapping
+    # Filter to patients with clinical + text + EEG (SMILES is a fixed per-drug
+    # input attached to every patient via smiles_vector, so it does not gate the
+    # cohort), then dedupe by pid before the fold split.
     valid_mask = (
         df["pid"].astype(str).isin(text_embeddings.keys()) &
-        df["pid"].astype(str).isin(eeg_data.keys()) &
-        df["ASM"].apply(
-            lambda x: ASM_NAME_MAPPING.get(str(x).strip(), str(x).strip()) in smiles_indices
-        )
+        df["pid"].astype(str).isin(eeg_data.keys())
     )
-    df = df[valid_mask].reset_index(drop=True)
+    df = dedupe_by_pid(df[valid_mask])
     logger.info(f"Patients with all 4 modalities: {len(df)}")
 
     return df, smiles_embeddings, smiles_indices, text_embeddings, eeg_data

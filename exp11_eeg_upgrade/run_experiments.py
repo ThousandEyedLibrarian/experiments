@@ -48,16 +48,33 @@ from exp6_clinical_triple.data_pipeline import prepare_clinical_smiles_eeg_data,
 from exp6_clinical_triple.training import train_epoch_eeg, evaluate_eeg
 from exp7_all_modalities.data_pipeline import prepare_quad_modality_data, create_quad_modality_datasets
 from exp7_all_modalities.training import train_epoch_mlp as train_epoch_exp7, evaluate_mlp as evaluate_exp7
+from shared.asm_balancing import WeightedASMDataset, compute_asm_sample_weights
+
+
+def _asm_labels(ds):
+    """Per-sample ASM list for list-based (exp6/exp7) or pid-keyed (exp3) datasets."""
+    if isinstance(getattr(ds, "asm_drugs", None), dict):
+        return [ds.asm_drugs[pid] for pid in ds.patient_ids]
+    return list(ds.asm_drugs)
+
+
+def _maybe_weight(train_ds, asm_balance_mode):
+    """Wrap the train dataset with inverse-sqrt ASM weights when requested."""
+    if asm_balance_mode == "weighted":
+        return WeightedASMDataset(train_ds, compute_asm_sample_weights(_asm_labels(train_ds))), True
+    return train_ds, False
 
 logger = logging.getLogger("exp11")
 
 
-def _train_fold_generic(model, train_loader, val_loader, config, device, train_fn, eval_fn):
+def _train_fold_generic(model, train_loader, val_loader, config, device, train_fn, eval_fn, asm_weighted=False):
     """Generic training fold with early stopping."""
-    # Class weights from training data
+    # Class weights from training data. When the loader is ASM-weighted the
+    # label is batch[-2] (WeightedASMDataset appends the weight as batch[-1]).
+    label_pos = -2 if asm_weighted else -1
     train_labels = []
     for batch in train_loader:
-        train_labels.extend(batch[-1].numpy())
+        train_labels.extend(batch[label_pos].numpy())
 
     class_counts = np.bincount(train_labels)
     class_weights = 1.0 / class_counts
@@ -76,7 +93,8 @@ def _train_fold_generic(model, train_loader, val_loader, config, device, train_f
     patience_counter = 0
 
     for epoch in range(config["epochs"]):
-        train_loss = train_fn(model, train_loader, optimizer, criterion, device)
+        train_loss = train_fn(model, train_loader, optimizer, criterion, device,
+                              asm_weighted=asm_weighted, class_weights=class_weights)
         val_loss, val_metrics = eval_fn(model, val_loader, criterion, device)
 
         if val_metrics["auc"] > best_val_auc:
@@ -99,7 +117,7 @@ def _train_fold_generic(model, train_loader, val_loader, config, device, train_f
     return best_metrics
 
 
-def run_cv_exp3a(exp_config, device, prediction_logger=None):
+def run_cv_exp3a(exp_config, device, prediction_logger=None, asm_balance_mode="none"):
     """Run CV for exp3a-type experiment (Triple MLP: Text + EEG + SMILES)."""
     text_model = exp_config["text"]
     smiles_model = exp_config["smiles"]
@@ -122,6 +140,7 @@ def run_cv_exp3a(exp_config, device, prediction_logger=None):
         train_ds, val_ds = create_exp3_datasets(
             text_emb, eeg_data, smiles_emb, smiles_idx, df, train_idx, val_idx, max_channels,
         )
+        train_ds, asm_weighted = _maybe_weight(train_ds, asm_balance_mode)
 
         model = TripleMLPv2(
             text_dim=768,
@@ -143,8 +162,11 @@ def run_cv_exp3a(exp_config, device, prediction_logger=None):
 
         metrics = _train_fold_generic(
             model, train_loader, val_loader, config, device,
-            lambda m, dl, o, c, d: train_epoch_exp3(m, dl, o, c, d, is_moe=False, global_step=0)[0],
+            lambda m, dl, o, c, d, asm_weighted=False, class_weights=None: train_epoch_exp3(
+                m, dl, o, c, d, is_moe=False, global_step=0,
+                asm_weighted=asm_weighted, class_weights=class_weights)[0],
             lambda m, dl, c, d: evaluate_exp3(m, dl, c, d, is_moe=False),
+            asm_weighted=asm_weighted,
         )
 
         for key in fold_metrics:
@@ -163,7 +185,7 @@ def run_cv_exp3a(exp_config, device, prediction_logger=None):
     return fold_metrics
 
 
-def run_cv_exp6b(exp_config, device, prediction_logger=None):
+def run_cv_exp6b(exp_config, device, prediction_logger=None, asm_balance_mode="none"):
     """Run CV for exp6b-type experiment (Clinical + SMILES + EEG)."""
     smiles_model = exp_config["smiles"]
     aggregator = exp_config["aggregator"]
@@ -182,6 +204,7 @@ def run_cv_exp6b(exp_config, device, prediction_logger=None):
         train_ds, val_ds, _ = create_clinical_smiles_eeg_datasets(
             df, smiles_embeddings, smiles_indices, eeg_data, train_idx, val_idx,
         )
+        train_ds, asm_weighted = _maybe_weight(train_ds, asm_balance_mode)
 
         model = ClinicalEEGFusionv2(
             smiles_dim=smiles_dim,
@@ -203,7 +226,7 @@ def run_cv_exp6b(exp_config, device, prediction_logger=None):
 
         metrics = _train_fold_generic(
             model, train_loader, val_loader, config, device,
-            train_epoch_eeg, evaluate_eeg,
+            train_epoch_eeg, evaluate_eeg, asm_weighted=asm_weighted,
         )
 
         for key in fold_metrics:
@@ -222,7 +245,7 @@ def run_cv_exp6b(exp_config, device, prediction_logger=None):
     return fold_metrics
 
 
-def run_cv_exp7a(exp_config, device, prediction_logger=None):
+def run_cv_exp7a(exp_config, device, prediction_logger=None, asm_balance_mode="none"):
     """Run CV for exp7a-type experiment (Quad MLP: Clinical + Text + EEG + SMILES)."""
     text_model = exp_config["text"]
     smiles_model = exp_config["smiles"]
@@ -244,6 +267,7 @@ def run_cv_exp7a(exp_config, device, prediction_logger=None):
         train_ds, val_ds, _ = create_quad_modality_datasets(
             df, smiles_emb, smiles_idx, text_emb, eeg_data, train_idx, val_idx,
         )
+        train_ds, asm_weighted = _maybe_weight(train_ds, asm_balance_mode)
 
         model = QuadMLPv2(
             smiles_dim=smiles_dim,
@@ -264,7 +288,7 @@ def run_cv_exp7a(exp_config, device, prediction_logger=None):
 
         metrics = _train_fold_generic(
             model, train_loader, val_loader, config, device,
-            train_epoch_exp7, evaluate_exp7,
+            train_epoch_exp7, evaluate_exp7, asm_weighted=asm_weighted,
         )
 
         for key in fold_metrics:
@@ -301,6 +325,9 @@ def main():
                         help="Dump per-fold OOF predictions to outputs/exp11_predictions/")
     parser.add_argument("--deterministic", action="store_true",
                         help="Enable deterministic training (seeds, cuDNN deterministic)")
+    parser.add_argument("--asm-balance", type=str, default="none",
+                        choices=["none", "weighted"],
+                        help="ASM class-balancing mode (weighted = inverse-sqrt sample weighting).")
     args = parser.parse_args()
 
     if args.deterministic:
@@ -342,12 +369,14 @@ def main():
         if args.log_predictions:
             from shared.prediction_logger import PredictionLogger
             pred_dir = RESULTS_DIR.parent / "exp11_predictions"
+            suffix = {"weighted": "_asmweighted", "stratified_batch": "_asmstratbatch"}.get(args.asm_balance, "")
             pred_logger = PredictionLogger(
                 exp_id=f"exp11_{exp['name']}",
                 output_dir=pred_dir,
-                filename=f"predictions_oof_exp11_{exp['name']}.json",
+                filename=f"predictions_oof_exp11_{exp['name']}{suffix}.json",
             )
-        fold_metrics = runner(exp, device, prediction_logger=pred_logger)
+        fold_metrics = runner(exp, device, prediction_logger=pred_logger,
+                              asm_balance_mode=args.asm_balance)
         if pred_logger is not None:
             pred_logger.save()
 

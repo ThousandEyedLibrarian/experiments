@@ -332,7 +332,14 @@ def train_fold(
 
     asm_weighted = (asm_balance_mode == "weighted")
     asm_stratified = (asm_balance_mode == "stratified_batch")
-    train_asm_labels = list(train_dataset.asm_drugs)
+    # asm_drugs is only present on the SMILES dataset; text/EEG datasets omit it,
+    # so only require it when a balancing mode actually needs it.
+    train_asm_labels = list(getattr(train_dataset, "asm_drugs", []))
+    if (asm_weighted or asm_stratified) and not train_asm_labels:
+        raise ValueError(
+            f"asm_balance_mode={asm_balance_mode!r} needs per-sample ASM labels, but "
+            f"{type(train_dataset).__name__} does not expose asm_drugs."
+        )
 
     if asm_weighted:
         weights = compute_asm_sample_weights(train_asm_labels)

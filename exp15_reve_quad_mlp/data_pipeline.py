@@ -27,7 +27,6 @@ import torch
 from torch.utils.data import Dataset
 
 from .config import (
-    ASM_NAME_MAPPING,
     ASM_NAMES_FILE,
     CSV_PATH,
     MAX_WINDOWS,
@@ -36,6 +35,7 @@ from .config import (
     SMILES_EMBEDDINGS,
     TEXT_EMBEDDINGS,
 )
+from shared.cohort import dedupe_by_pid, filter_and_map_outcome, smiles_vector
 
 # Reuse exp4's clinical preprocessor + cleaning utilities, exp7's
 # get_valid_patient_eeg_pairs analogue is not used (the std-19 cache
@@ -194,10 +194,9 @@ class ReveQuadDataset(Dataset):
         eeg = torch.from_numpy(self.reve_windows[idx]).float()
         mask = torch.from_numpy(self.padding_masks[idx]).bool()
 
-        asm = self.asm_drugs[idx]
-        asm_full = ASM_NAME_MAPPING.get(str(asm).strip(), str(asm).strip())
-        smiles_idx = self.smiles_indices.get(asm_full, 0)
-        smiles = torch.from_numpy(self.smiles_embeddings[smiles_idx]).float()
+        smiles = torch.from_numpy(
+            smiles_vector(self.asm_drugs[idx], self.smiles_embeddings, self.smiles_indices)
+        ).float()
 
         label = self.labels[idx]
 
@@ -232,9 +231,7 @@ def prepare_quad_modality_data_reve(
     df = pd.read_csv(CSV_PATH)
 
     # Outcome filter + clean clinical columns
-    df["outcome"] = pd.to_numeric(df["outcome"], errors="coerce")
-    df = df[df["outcome"].isin([1, 2])].copy()
-    df["outcome"] = df["outcome"].map(OUTCOME_MAPPING).astype(int)
+    df = filter_and_map_outcome(df)
     df = clean_psy_column(df)
     df = clean_lesion_column(df)
     df = df.reset_index(drop=True)
@@ -250,15 +247,13 @@ def prepare_quad_modality_data_reve(
     # Load REVE features
     reve_data = load_reve_features()
 
-    # Intersect: clinical outcome AND text AND REVE AND ASM in SMILES vocab
+    # Intersect clinical + text + REVE (SMILES attaches to every patient via
+    # smiles_vector), then dedupe by pid before the fold split.
     valid_mask = (
         df["pid"].astype(str).isin(text_embeddings.keys())
         & df["pid"].astype(str).isin(reve_data.keys())
-        & df["ASM"].apply(
-            lambda x: ASM_NAME_MAPPING.get(str(x).strip(), str(x).strip()) in smiles_indices
-        )
     )
-    df = df[valid_mask].reset_index(drop=True)
+    df = dedupe_by_pid(df[valid_mask])
     logger.info(f"Patients with all 4 modalities: {len(df)}")
 
     return df, smiles_embeddings, smiles_indices, text_embeddings, reve_data

@@ -71,7 +71,7 @@ CV_CONFIG = {
 }
 
 # Outcome mapping: 1=failure->0, 2=success->1 (matching exp3)
-OUTCOME_MAPPING = {1: 0, 2: 1}
+from shared.cohort import OUTCOME_MAPPING  # single source of truth  # noqa: E402,F401
 
 # Experiments to run
 EXPERIMENTS = [

@@ -15,6 +15,7 @@ from .config import (
     CSV_PATH,
     OUTCOME_MAPPING,
 )
+from shared.cohort import dedupe_by_pid, filter_and_map_outcome
 
 logger = logging.getLogger("exp4")
 
@@ -83,18 +84,7 @@ def clean_outcome_column(df: pd.DataFrame) -> pd.DataFrame:
     Returns:
         DataFrame filtered to valid outcomes with mapped values (1->0, 2->1).
     """
-    df = df.copy()
-
-    # Convert to numeric, coercing errors to NaN
-    df["outcome"] = pd.to_numeric(df["outcome"], errors="coerce")
-
-    # Filter to valid outcomes (1 or 2)
-    df = df[df["outcome"].isin([1, 2])].copy()
-
-    # Map outcomes: 1=failure->0, 2=success->1
-    df["outcome"] = df["outcome"].map(OUTCOME_MAPPING).astype(int)
-
-    return df
+    return filter_and_map_outcome(df)
 
 
 def load_clinical_data(filepath: Path = CSV_PATH) -> pd.DataFrame:
@@ -113,8 +103,10 @@ def load_clinical_data(filepath: Path = CSV_PATH) -> pd.DataFrame:
     df = clean_lesion_column(df)
     df = clean_outcome_column(df)
 
-    df = df.reset_index(drop=True)
-    logger.info(f"Loaded {len(df)} patients with valid outcomes")
+    # Remove duplicate patient rows (one per pid) before any fold split, to
+    # prevent a patient landing in both train and test. See shared.cohort.
+    df = dedupe_by_pid(df).reset_index(drop=True)
+    logger.info(f"Loaded {len(df)} unique patients with valid outcomes")
 
     return df
 
@@ -232,15 +224,17 @@ class ClinicalFeaturePreprocessor:
 class ClinicalDataset(Dataset):
     """PyTorch Dataset for clinical features."""
 
-    def __init__(self, features: np.ndarray, labels: np.ndarray):
+    def __init__(self, features: np.ndarray, labels: np.ndarray, asm_drugs: Optional[List[str]] = None):
         """Initialise dataset.
 
         Args:
             features: Feature array of shape (n_samples, input_dim).
             labels: Label array of shape (n_samples,).
+            asm_drugs: Per-sample ASM labels (for --asm-balance weighting).
         """
         self.features = torch.from_numpy(features).float()
         self.labels = torch.from_numpy(labels).long()
+        self.asm_drugs = asm_drugs
 
     def __len__(self) -> int:
         return len(self.labels)
@@ -282,8 +276,8 @@ def create_datasets(
     val_labels = val_df["outcome"].values
 
     # Create datasets
-    train_dataset = ClinicalDataset(train_features, train_labels)
-    val_dataset = ClinicalDataset(val_features, val_labels)
+    train_dataset = ClinicalDataset(train_features, train_labels, asm_drugs=train_df["ASM"].tolist())
+    val_dataset = ClinicalDataset(val_features, val_labels, asm_drugs=val_df["ASM"].tolist())
 
     return train_dataset, val_dataset, preprocessor
 

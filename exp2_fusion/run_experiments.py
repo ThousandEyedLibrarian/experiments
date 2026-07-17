@@ -55,6 +55,7 @@ def run_all_experiments(
     output_dir: Path = OUTPUTS_DIR / "exp2_results",
     log_predictions: bool = False,
     predictions_dir: Path = None,
+    asm_balance_mode: str = "none",
 ):
     """Run all configured experiments.
 
@@ -114,8 +115,9 @@ def run_all_experiments(
                 from shared.prediction_logger import PredictionLogger
                 pred_dir = predictions_dir if predictions_dir is not None else OUTPUTS_DIR / "exp2_predictions"
                 exp_id = f"exp2_{exp['eeg_model']}_{smiles_model_name}_{exp['fusion']}"
+                suffix = {"weighted": "_asmweighted", "stratified_batch": "_asmstratbatch"}.get(asm_balance_mode, "")
                 pred_logger = PredictionLogger(exp_id=exp_id, output_dir=pred_dir,
-                                                filename=f"predictions_oof_{exp_id}.json")
+                                                filename=f"predictions_oof_{exp_id}{suffix}.json")
             results = run_cross_validation(
                 eeg_data=eeg_data,
                 smiles_embeddings=smiles_embeddings,
@@ -125,6 +127,7 @@ def run_all_experiments(
                 eeg_encoder_type=exp["eeg_model"],
                 smiles_model=smiles_model_name,
                 device=device,
+                asm_balance_mode=asm_balance_mode,
                 verbose=True,
                 prediction_logger=pred_logger,
             )
@@ -205,6 +208,9 @@ def main():
                         help="Dump per-fold OOF predictions to outputs/exp2_predictions/")
     parser.add_argument("--deterministic", action="store_true",
                         help="Enable deterministic training (seeds, cuDNN deterministic)")
+    parser.add_argument("--asm-balance", type=str, default="none",
+                        choices=["none", "weighted"],
+                        help="ASM class-balancing mode (weighted = inverse-sqrt sample weighting).")
 
     args = parser.parse_args()
 
@@ -241,6 +247,7 @@ def main():
             fusion_type=args.fusion,
             dry_run=args.dry_run,
             log_predictions=args.log_predictions,
+            asm_balance_mode=args.asm_balance,
         )
         logger.info("Experiment 2 completed successfully")
     except KeyboardInterrupt:

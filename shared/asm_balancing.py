@@ -192,8 +192,12 @@ class WeightedASMDataset(torch.utils.data.Dataset):
     def __len__(self) -> int:
         return len(self.base)
 
-    def __getitem__(self, idx: int) -> tuple:
+    def __getitem__(self, idx: int):
         item = self.base[idx]
+        # Dict-returning datasets (e.g. exp1) get the weight under a key; tuple
+        # datasets get it appended as the final element.
+        if isinstance(item, dict):
+            return {**item, "asm_weight": self.weights[idx]}
         if not isinstance(item, tuple):
             item = (item,)
         return (*item, self.weights[idx])

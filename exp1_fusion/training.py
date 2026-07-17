@@ -18,6 +18,7 @@ from .config import (
     TEXT_DIM, SMILES_DIMS,
 )
 from .data_pipeline import get_full_dataset, load_csv_data
+from shared.asm_balancing import WeightedASMDataset, compute_asm_sample_weights, weighted_cross_entropy
 from .models import ConcatMLPClassifier, SimplifiedFuseMoE
 
 
@@ -70,6 +71,7 @@ def train_one_epoch(
     use_aux_loss: bool = False,
     aux_loss_weight: float = 0.1,
     global_step: int = 0,
+    asm_weighted: bool = False,
 ) -> Tuple[float, int]:
     """Train for one epoch.
 
@@ -85,13 +87,16 @@ def train_one_epoch(
         text_emb = batch['text_emb'].to(device)
         smiles_emb = batch['smiles_emb'].to(device)
         labels = batch['label'].to(device)
+        sample_weights = batch['asm_weight'].to(device) if asm_weighted else None
 
         if use_aux_loss:
             logits, aux_loss = model(text_emb, smiles_emb)
-            loss = criterion(logits, labels) + aux_loss_weight * aux_loss
         else:
             logits = model(text_emb, smiles_emb)
-            loss = criterion(logits, labels)
+            aux_loss = 0.0
+        ce = (weighted_cross_entropy(logits, labels, sample_weights, class_weight=criterion.weight)
+              if asm_weighted else criterion(logits, labels))
+        loss = ce + aux_loss_weight * aux_loss
 
         loss.backward()
         torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
@@ -178,6 +183,7 @@ def run_experiment(
     fusion_type: str,
     verbose: bool = True,
     prediction_logger=None,
+    asm_balance_mode: str = "none",
 ) -> Dict:
     """
     Run a single experiment with 5-fold cross-validation.
@@ -240,9 +246,15 @@ def run_experiment(
         if verbose:
             print(f"\n--- Fold {fold + 1}/{CV_CONFIG['n_splits']} ---")
 
-        # Create dataloaders
+        # Create dataloaders (ASM-weighting wraps the train subset so each
+        # sample carries an inverse-sqrt weight, aligned with train_idx order).
         train_subset = Subset(dataset, train_idx)
         val_subset = Subset(dataset, val_idx)
+
+        asm_weighted = asm_balance_mode == "weighted"
+        if asm_weighted:
+            fold_weights = compute_asm_sample_weights([dataset.asm_drugs[i] for i in train_idx])
+            train_subset = WeightedASMDataset(train_subset, fold_weights)
 
         train_loader = DataLoader(
             train_subset,
@@ -294,6 +306,7 @@ def run_experiment(
                 use_aux_loss=use_aux_loss,
                 aux_loss_weight=config.get('aux_loss_weight', 0.1),
                 global_step=global_step,
+                asm_weighted=asm_weighted,
             )
 
             # Evaluate

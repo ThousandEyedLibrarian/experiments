@@ -8,8 +8,9 @@ from typing import List, Dict, Tuple, Optional
 
 from .config import (
     CSV_PATH, TEXT_EMBEDDINGS, SMILES_EMBEDDINGS, ASM_NAMES_FILE,
-    ASM_NAME_MAPPING, OUTCOME_MAPPING, TEXT_DIM, SMILES_DIMS
+    OUTCOME_MAPPING, TEXT_DIM, SMILES_DIMS
 )
+from shared.cohort import dedupe_pid_mask, smiles_vector
 
 
 def load_asm_drug_names(filepath: str = ASM_NAMES_FILE) -> List[str]:
@@ -107,7 +108,6 @@ class ASMFusionDataset(Dataset):
         outcomes: np.ndarray,
         smiles_embeddings: np.ndarray,
         drug_names: List[str],
-        asm_mapping: Dict[str, str] = ASM_NAME_MAPPING,
     ):
         """
         Args:
@@ -120,35 +120,15 @@ class ASMFusionDataset(Dataset):
         """
         self.text_emb = torch.FloatTensor(text_embeddings)
         self.outcomes = torch.LongTensor(outcomes)
+        self.asm_drugs = list(asm_labels)  # per-sample ASM (for --asm-balance)
 
-        # Create drug name to index mapping
+        # Pre-compute each patient's SMILES embedding (shared resolver:
+        # canonicalise the ASM, mean fallback if unknown).
         drug_to_idx = {name: i for i, name in enumerate(drug_names)}
-
-        # Pre-compute aligned SMILES embeddings for each patient
-        n_samples = len(asm_labels)
-        smiles_dim = smiles_embeddings.shape[1]
-        self.smiles_emb = torch.zeros(n_samples, smiles_dim)
-
-        # Track unknown ASMs
-        unknown_asms = set()
-
-        for i, asm in enumerate(asm_labels):
-            # Normalize ASM name
-            normalized = asm_mapping.get(asm.strip(), asm.strip())
-
-            if normalized in drug_to_idx:
-                self.smiles_emb[i] = torch.FloatTensor(
-                    smiles_embeddings[drug_to_idx[normalized]]
-                )
-            else:
-                # Use mean embedding for unknown drugs
-                self.smiles_emb[i] = torch.FloatTensor(
-                    smiles_embeddings.mean(axis=0)
-                )
-                unknown_asms.add(asm)
-
-        if unknown_asms:
-            print(f"Warning: Unknown ASMs (using mean embedding): {unknown_asms}")
+        self.smiles_emb = torch.stack([
+            torch.from_numpy(smiles_vector(asm, smiles_embeddings, drug_to_idx)).float()
+            for asm in asm_labels
+        ])
 
     def __len__(self) -> int:
         return len(self.outcomes)
@@ -268,6 +248,14 @@ def get_full_dataset(
 
     # Aligned patient IDs for OOF prediction logging.
     pids = df['pid'].astype(str).values
+
+    # Dedupe by pid before CV; apply the same mask to every row-aligned array
+    # (df, text_emb, asm_labels, outcomes, pids) to keep them in step.
+    keep = dedupe_pid_mask(df)
+    text_emb = text_emb[keep]
+    asm_labels = [a for a, k in zip(asm_labels, keep) if k]
+    outcomes = outcomes[keep]
+    pids = pids[keep]
 
     # Create full dataset
     dataset = ASMFusionDataset(

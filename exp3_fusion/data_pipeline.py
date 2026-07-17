@@ -11,7 +11,6 @@ import torch
 from torch.utils.data import Dataset, DataLoader
 
 from .config import (
-    ASM_NAME_MAPPING,
     ASM_NAMES_FILE,
     CSV_PATH,
     EEG_DIR,
@@ -25,6 +24,7 @@ from .config import (
 import sys
 sys.path.insert(0, str(Path(__file__).parent.parent))
 from exp2_fusion.eeg_pipeline import EEGPreprocessor, get_valid_patient_eeg_pairs
+from shared.cohort import dedupe_by_pid, smiles_vector
 
 logger = logging.getLogger("exp3")
 
@@ -96,11 +96,10 @@ class TripleModalityDataset(Dataset):
         eeg_windows = torch.from_numpy(windows).float()
         padding_mask = torch.from_numpy(padding_mask).bool()
 
-        # Get SMILES embedding
-        asm = self.asm_drugs[pid]
-        asm_full = ASM_NAME_MAPPING.get(asm.strip(), asm.strip())
-        smiles_idx = self.smiles_indices.get(asm_full, 0)
-        smiles_emb = torch.from_numpy(self.smiles_embeddings[smiles_idx]).float()
+        # Get SMILES embedding (mean fallback if the drug is unknown)
+        smiles_emb = torch.from_numpy(
+            smiles_vector(self.asm_drugs[pid], self.smiles_embeddings, self.smiles_indices)
+        ).float()
 
         # Get label
         label = torch.tensor(self.labels[pid], dtype=torch.long)
@@ -297,8 +296,8 @@ def prepare_data(
     common_pids = set(text_embeddings.keys()) & set(eeg_data.keys())
     logger.info(f"Patients with all three modalities: {len(common_pids)}")
 
-    # Filter df to common patients
-    df = df[df["pid"].astype(str).isin(common_pids)].copy()
+    # Filter df to common patients, then dedupe by pid before the fold split.
+    df = dedupe_by_pid(df[df["pid"].astype(str).isin(common_pids)])
 
     # Filter embeddings to common patients
     text_embeddings = {pid: emb for pid, emb in text_embeddings.items() if pid in common_pids}

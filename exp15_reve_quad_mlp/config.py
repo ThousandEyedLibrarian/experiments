@@ -92,17 +92,10 @@ CV_CONFIG = {
 }
 
 # ASM name mapping (re-used from exp7)
-ASM_NAME_MAPPING = {
-    "LEV": "Levetiracetam", "VPA": "Valproic_acid", "LTG": "Lamotrigine",
-    "CBZ": "Carbamazepine", "cBZ": "Carbamazepine", "PTN": "Phenytoin",
-    "TPM": "Topiramate", "OXC": "Oxcarbazepine", "LCM": "Lacosamide",
-    "BRV": "Brivaracetam", "PER": "Perampanel", "ZNS": "Zonisamide",
-    "GBP": "Gabapentin", "PGB": "Pregabalin", "CLB": "Clobazam",
-    "CZP": "Clonazepam",
-}
+from shared.cohort import ASM_NAME_MAPPING  # single source of truth  # noqa: E402,F401
 
 # Outcome mapping: 1=failure->0, 2=success->1 (identical to exp7)
-OUTCOME_MAPPING = {1: 0, 2: 1}
+from shared.cohort import OUTCOME_MAPPING  # single source of truth  # noqa: E402,F401
 
 # Experiment definitions - only Exp7a-equivalent (MLP + ClinicalBERT + ChemBERTa)
 EXPERIMENTS = [

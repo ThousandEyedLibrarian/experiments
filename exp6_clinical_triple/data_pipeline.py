@@ -11,7 +11,6 @@ import torch
 from torch.utils.data import Dataset
 
 from .config import (
-    ASM_NAME_MAPPING,
     ASM_NAMES_FILE,
     CLINICAL_CONFIG,
     CSV_PATH,
@@ -27,9 +26,10 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 from exp4_baseline.data_pipeline import (
     ClinicalFeaturePreprocessor,
     clean_lesion_column,
-    clean_outcome_column,
     clean_psy_column,
+    load_clinical_data as _exp4_load_clinical_data,
 )
+from shared.cohort import dedupe_by_pid, smiles_vector
 
 logger = logging.getLogger("exp6")
 
@@ -47,13 +47,9 @@ def load_clinical_data(filepath: Path = CSV_PATH) -> pd.DataFrame:
     Returns:
         Cleaned DataFrame with valid outcomes.
     """
-    df = pd.read_csv(filepath)
-    df = clean_psy_column(df)
-    df = clean_lesion_column(df)
-    df = clean_outcome_column(df)
-    df = df.reset_index(drop=True)
-    logger.info(f"Loaded {len(df)} patients with valid outcomes")
-    return df
+    # Delegate to exp4's loader (clean + dedupe-by-pid), the single shared
+    # clinical cohort definition.
+    return _exp4_load_clinical_data(filepath)
 
 
 def load_asm_drug_names(filepath: Path = ASM_NAMES_FILE) -> List[str]:
@@ -211,11 +207,10 @@ class ClinicalSMILESTextDataset(Dataset):
         """
         clinical = self.clinical_features[idx]
 
-        # Get SMILES embedding for this patient's drug
-        asm = self.asm_drugs[idx]
-        asm_full = ASM_NAME_MAPPING.get(str(asm).strip(), str(asm).strip())
-        smiles_idx = self.smiles_indices.get(asm_full, 0)
-        smiles = torch.from_numpy(self.smiles_embeddings[smiles_idx]).float()
+        # SMILES embedding for this patient's drug (mean fallback if unknown)
+        smiles = torch.from_numpy(
+            smiles_vector(self.asm_drugs[idx], self.smiles_embeddings, self.smiles_indices)
+        ).float()
 
         text = self.text_embeddings[idx]
         label = self.labels[idx]
@@ -269,11 +264,10 @@ class ClinicalSMILESEEGDataset(Dataset):
         """
         clinical = self.clinical_features[idx]
 
-        # Get SMILES embedding for this patient's drug
-        asm = self.asm_drugs[idx]
-        asm_full = ASM_NAME_MAPPING.get(str(asm).strip(), str(asm).strip())
-        smiles_idx = self.smiles_indices.get(asm_full, 0)
-        smiles = torch.from_numpy(self.smiles_embeddings[smiles_idx]).float()
+        # SMILES embedding for this patient's drug (mean fallback if unknown)
+        smiles = torch.from_numpy(
+            smiles_vector(self.asm_drugs[idx], self.smiles_embeddings, self.smiles_indices)
+        ).float()
 
         windows = self.eeg_windows[idx]
         padding_mask = self.padding_masks[idx]
@@ -327,14 +321,9 @@ def prepare_clinical_smiles_text_data(
     text_embeddings = load_text_embeddings(text_model, df)
     logger.info(f"Loaded text embeddings for {len(text_embeddings)} patients")
 
-    # Filter to patients with valid ASM mapping AND text embeddings
-    valid_mask = (
-        df["ASM"].apply(
-            lambda x: ASM_NAME_MAPPING.get(str(x).strip(), str(x).strip()) in smiles_indices
-        ) &
-        df["pid"].astype(str).isin(text_embeddings.keys())
-    )
-    df = df[valid_mask].reset_index(drop=True)
+    # SMILES attaches to every patient (mean fallback), so filter on text only,
+    # then dedupe by pid (text df is loaded un-deduped for embedding alignment).
+    df = dedupe_by_pid(df[df["pid"].astype(str).isin(text_embeddings.keys())])
     logger.info(f"Patients with valid SMILES and text: {len(df)}")
 
     return df, smiles_embeddings, smiles_indices, text_embeddings
@@ -363,14 +352,9 @@ def prepare_clinical_smiles_eeg_data(
     # Load cached EEG data
     eeg_data = load_eeg_data()
 
-    # Filter to patients with valid ASM mapping AND EEG data
-    valid_mask = (
-        df["ASM"].apply(
-            lambda x: ASM_NAME_MAPPING.get(str(x).strip(), str(x).strip()) in smiles_indices
-        ) &
-        df["pid"].astype(str).isin(eeg_data.keys())
-    )
-    df = df[valid_mask].reset_index(drop=True)
+    # SMILES attaches to every patient (mean fallback), so filter on EEG only.
+    # df is already deduped by load_clinical_data.
+    df = df[df["pid"].astype(str).isin(eeg_data.keys())].reset_index(drop=True)
     logger.info(f"Patients with valid SMILES and EEG: {len(df)}")
 
     return df, smiles_embeddings, smiles_indices, eeg_data

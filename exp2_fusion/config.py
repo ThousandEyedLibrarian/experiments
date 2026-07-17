@@ -91,25 +91,4 @@ EXPERIMENTS = [
 ]
 
 # ASM name mapping (same as exp1)
-ASM_NAME_MAP = {
-    "LEV": "Levetiracetam",
-    "VPA": "Valproate",
-    "CBZ": "Carbamazepine",
-    "PHT": "Phenytoin",
-    "LTG": "Lamotrigine",
-    "TPM": "Topiramate",
-    "OXC": "Oxcarbazepine",
-    "ZNS": "Zonisamide",
-    "LCM": "Lacosamide",
-    "PER": "Perampanel",
-    "BRV": "Brivaracetam",
-    "ESL": "Eslicarbazepine",
-    "PB": "Phenobarbital",
-    "CLB": "Clobazam",
-    "CZP": "Clonazepam",
-    "GBP": "Gabapentin",
-    "PGB": "Pregabalin",
-    "ETX": "Ethosuximide",
-    "RFM": "Rufinamide",
-    "VGB": "Vigabatrin",
-}
+from shared.cohort import ASM_NAME_MAPPING as ASM_NAME_MAP  # single source of truth  # noqa: E402,F401

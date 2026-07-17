@@ -20,6 +20,7 @@ from .config import (
     SMILESTRF_EMBEDDINGS,
 )
 from .eeg_pipeline import EEGPreprocessor, get_valid_patient_eeg_pairs
+from shared.cohort import dedupe_by_pid, smiles_vector
 
 logger = logging.getLogger("exp2")
 
@@ -91,11 +92,10 @@ class EEGSMILESDataset(Dataset):
         eeg_windows = torch.from_numpy(windows).float()
         padding_mask = torch.from_numpy(padding_mask).bool()
 
-        # Get SMILES embedding
-        asm = self.asm_drugs[pid]
-        asm_full = ASM_NAME_MAP.get(asm, asm)
-        smiles_idx = self.smiles_indices.get(asm_full, 0)
-        smiles_emb = torch.from_numpy(self.smiles_embeddings[smiles_idx]).float()
+        # Get SMILES embedding (mean fallback if the drug is unknown)
+        smiles_emb = torch.from_numpy(
+            smiles_vector(self.asm_drugs[pid], self.smiles_embeddings, self.smiles_indices)
+        ).float()
 
         # Get label
         label = torch.tensor(self.labels[pid], dtype=torch.long)
@@ -241,6 +241,8 @@ def prepare_data(
     if len(df) < initial_count:
         logger.warning(f"Filtered {initial_count - len(df)} patients without processed EEG")
 
+    # Dedupe by pid before the fold split (prevents cross-fold leakage).
+    df = dedupe_by_pid(df)
     logger.info(f"Final dataset: {len(df)} patients")
 
     # Log class distribution

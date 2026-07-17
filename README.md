@@ -2,6 +2,42 @@
 
 Multimodal fusion experiments for predicting anti-seizure medication (ASM) treatment outcomes by combining embeddings from clinical text reports, EEG signals, and drug molecular structures (SMILES).
 
+## Consistent OOF rerun (data-leakage fix)
+
+The published results table was assembled from runs on inconsistent code/data
+vintages and was affected by a **duplicate-patient leakage bug**: a handful of
+pids appeared twice in the CSV and landed in different CV folds, putting the
+same patient in train and test. `shared/cohort.py` is now the single source of
+truth that fixes this and unifies the previously-copied logic:
+
+- **Dedupe by pid before every CV split.** Fuller row wins; on an
+  outcome-label conflict the pid is **dropped** (pid 954 only -> clinical
+  cohorts 199->198); on a feature-only conflict keep-first and log it (pid
+  N009, stays in the quad). Every `data_pipeline.py` calls `dedupe_by_pid`
+  (exp1 applies the same mask to its row-aligned embedding matrix).
+- **One outcome map** (`{1:0, 2:1}`) and **one SMILES resolver**
+  (`smiles_vector`, keep-with-mean-fallback; the 15-drug index covers 100% of
+  the cohort's ASMs, so no patient is dropped for SMILES).
+- **Corrected cohorts:** clinical 198, text 117, EEG 147, text+EEG 107,
+  quad 107.
+- **Four bug fixes:** exp4 distinct per-config prediction filenames; exp5
+  `asm_drugs` guard so `--asm-balance none` no longer crashes; exp5/exp7
+  per-config try/except; exp3 run without the `--fusion mlp` filter so exp3b
+  is produced.
+- **`--asm-balance weighted`** (inverse-sqrt sample weighting) wired into every
+  table experiment so the unbalanced and weighted columns are both complete.
+
+Regenerate the whole prediction set and gate it in one command:
+
+```bash
+bash rerun_all_oof.sh              # archive old preds, rerun none+weighted, gate
+bash rerun_all_oof.sh --skip-exp11 # skip the slow EEG2Vec encoder config
+```
+
+The gate is `python -m shared.verify_oof outputs`: it asserts every OOF file is
+deduped, has no pid spanning two folds, and matches the expected cohort count.
+Unit tests: `pytest shared/tests/`.
+
 ## Prerequisites
 
 - Python 3.10
