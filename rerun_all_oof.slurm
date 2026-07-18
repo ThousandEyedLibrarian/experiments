@@ -30,7 +30,8 @@ command -v nvidia-smi >/dev/null && nvidia-smi --query-gpu=name,memory.total,mem
 # Run the portable core (archive + rerun none+weighted + gate). Capture its
 # exit code (0 == gate PASS) but keep going so the fresh files are packaged
 # regardless, for inspection.
-bash rerun_all_oof.sh
+# Forward any extra args (e.g. --extended) through:  sbatch rerun_all_oof.slurm --extended
+bash rerun_all_oof.sh "$@"
 GATE_RC=$?
 
 # Package every fresh OOF file for transfer back to the laptop.

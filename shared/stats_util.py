@@ -118,6 +118,38 @@ def delong_ci(y_true, y_scores, alpha=0.95):
     return auc, max(0.0, lower), min(1.0, upper), std, var
 
 
+def delong_test(y_true, scores_a, scores_b):
+    """Paired DeLong test comparing two models' AUCs on the SAME samples.
+
+    Both score arrays must be aligned to ``y_true`` (same patients, same order);
+    the shared-sample pairing is what makes the test more powerful than treating
+    the AUCs as independent. Stacks the two models as rows so ``fastDeLong``'s
+    covariance captures their correlation, then z = (aucA - aucB) / sd(diff).
+
+    Returns (auc_a, auc_b, diff, z, p_two_sided). p is 1.0 when the two score
+    vectors are identical (zero variance of the difference).
+    """
+    y_true = np.asarray(y_true)
+    scores_a = np.asarray(scores_a, dtype=float)
+    scores_b = np.asarray(scores_b, dtype=float)
+
+    # Reorder positives-first (fastDeLong's expected layout); apply the SAME
+    # permutation to both models so samples stay paired.
+    order = np.concatenate([np.where(y_true == 1)[0], np.where(y_true != 1)[0]])
+    pos_count = int((y_true == 1).sum())
+    stacked = np.vstack([scores_a[order], scores_b[order]])
+
+    aucs, cov = fastDeLong(stacked, pos_count)
+    auc_a, auc_b = float(aucs[0]), float(aucs[1])
+    var_diff = cov[0, 0] + cov[1, 1] - 2 * cov[0, 1]
+    diff = auc_a - auc_b
+    if var_diff <= 0:
+        return auc_a, auc_b, diff, 0.0, 1.0
+    z = diff / np.sqrt(var_diff)
+    p = 2 * (1 - norm.cdf(abs(z)))
+    return auc_a, auc_b, diff, float(z), float(p)
+
+
 def choose_threshold_max_ba(y_true, y_pred):
     fpr, tpr, thresholds = roc_curve(y_true, y_pred)
     specs = 1 - fpr

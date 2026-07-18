@@ -238,6 +238,7 @@ def run_exp7a_with_predictions(
     device: torch.device = None,
     asm_balance_mode: str = "none",
     output_suffix: str = "",
+    fusion: str = "mlp",
 ) -> Dict[str, Path]:
     """Run Exp7a with per-patient and ASM-swap prediction logging.
 
@@ -297,7 +298,7 @@ def run_exp7a_with_predictions(
         result = train_fold_with_predictions(
             train_ds,
             val_ds,
-            fusion="mlp",
+            fusion=fusion,
             text_model=text_model,
             smiles_model=smiles_model,
             device=device,
@@ -324,8 +325,10 @@ def run_exp7a_with_predictions(
             f"BalAcc_tuned={result['metrics'].get('balanced_acc_tuned', float('nan')):.4f}"
         )
 
+    exp_name = "exp7b" if fusion == "moe" else "exp7a"
+    fusion_part = "_7b" if fusion == "moe" else ""
     oof_payload = {
-        "experiment": "exp7a" + (f"_{output_suffix}" if output_suffix else ""),
+        "experiment": exp_name + (f"_{output_suffix}" if output_suffix else ""),
         "asm_balance_mode": asm_balance_mode,
         "text_model": text_model,
         "smiles_model": smiles_model,
@@ -335,7 +338,7 @@ def run_exp7a_with_predictions(
         "folds": folds_payload,
     }
     suffix_part = f"_{output_suffix}" if output_suffix else ""
-    oof_path = output_dir / f"predictions_oof{suffix_part}.json"
+    oof_path = output_dir / f"predictions_oof{fusion_part}{suffix_part}.json"
     _save_predictions_json(oof_payload, oof_path)
 
     # ------------------------------------------------------------------
@@ -364,7 +367,7 @@ def run_exp7a_with_predictions(
     refit_result = train_fold_with_predictions(
         train_ds_full,
         val_ds_full,
-        fusion="mlp",
+        fusion=fusion,
         text_model=text_model,
         smiles_model=smiles_model,
         device=device,
@@ -402,7 +405,7 @@ def run_exp7a_with_predictions(
     from .training import _predict_with_smiles_override
     from .config import MLP_CONFIG as _MLP_CONFIG
 
-    model_full = _get_model(fusion="mlp", text_model=text_model, smiles_model=smiles_model, device=device)
+    model_full = _get_model(fusion=fusion, text_model=text_model, smiles_model=smiles_model, device=device)
     if refit_result["model_state_dict"] is not None:
         model_full.load_state_dict(refit_result["model_state_dict"])
 
@@ -415,18 +418,18 @@ def run_exp7a_with_predictions(
     )
 
     pids_full, y_true_full, y_prob_full = _predict_with_smiles_override(
-        model_full, full_loader, device, fusion="mlp", smiles_override=None
+        model_full, full_loader, device, fusion=fusion, smiles_override=None
     )
     y_prob_per_asm_full: Dict[str, List[float]] = {}
     for asm_name, smiles_vec in candidate_smiles.items():
         override = torch.from_numpy(np.asarray(smiles_vec, dtype=np.float32))
         _, _, probs = _predict_with_smiles_override(
-            model_full, full_loader, device, fusion="mlp", smiles_override=override
+            model_full, full_loader, device, fusion=fusion, smiles_override=override
         )
         y_prob_per_asm_full[asm_name] = probs
 
     in_sample_payload = {
-        "experiment": "exp7a" + (f"_{output_suffix}" if output_suffix else ""),
+        "experiment": exp_name + (f"_{output_suffix}" if output_suffix else ""),
         "asm_balance_mode": asm_balance_mode,
         "text_model": text_model,
         "smiles_model": smiles_model,
@@ -439,7 +442,7 @@ def run_exp7a_with_predictions(
         "y_prob": y_prob_full,
         "y_prob_per_asm": y_prob_per_asm_full,
     }
-    in_sample_path = output_dir / f"predictions_in_sample{suffix_part}.json"
+    in_sample_path = output_dir / f"predictions_in_sample{fusion_part}{suffix_part}.json"
     _save_predictions_json(in_sample_payload, in_sample_path)
 
     return {"oof": oof_path, "in_sample": in_sample_path}
@@ -535,6 +538,7 @@ def main():
             device=device,
             asm_balance_mode=args.asm_balance,
             output_suffix=suffix,
+            fusion="moe" if args.exp == "7b" else "mlp",
         )
         return
 

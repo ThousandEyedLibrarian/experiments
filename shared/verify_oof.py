@@ -23,7 +23,9 @@ from shared.cohort import assert_oof_no_leakage
 # quad / text+eeg = 107, + one text = 117, + one eeg = 147, clinical(+smiles) = 198.
 # Anchored on '_' delimiters so 'exp1' cannot match an 'exp11' filename.
 EXPECTED_COUNTS = [
-    (r"exp7_predictions/predictions_oof", 107),        # quad headline
+    (r"exp7_predictions/predictions_oof", 107),        # quad headline (7a) + 7b MoE
+    (r"exp15_predictions/predictions_oof", 107),       # REVE quad
+    (r"exp9_predictions/predictions_oof", 147),        # standalone EEG encoder sweep
     (r"exp11_6b", 147), (r"exp11_(3a|7a)", 107),       # exp11 sub-configs (base leads the name)
     (r"_exp3[ab]_", 107),
     (r"_exp1[ab]_", 117), (r"_exp5b_", 117), (r"_exp6a_", 117),
