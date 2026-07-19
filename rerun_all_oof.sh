@@ -29,10 +29,15 @@ cd "$REPO_DIR"
 
 SKIP_EXP11=0
 EXTENDED=0
+EXTENDED_ONLY=0
 for arg in "$@"; do
     case "$arg" in
-        --skip-exp11) SKIP_EXP11=1 ;;
-        --extended)   EXTENDED=1 ;;
+        --skip-exp11)    SKIP_EXP11=1 ;;
+        --extended)      EXTENDED=1 ;;
+        # Only the supplementary set (exp7b/exp7-stratified/exp15/exp9): no
+        # archive, no base configs. Use when the base set is already complete
+        # (e.g. a prior run) so the job fits in walltime.
+        --extended-only) EXTENDED=1; EXTENDED_ONLY=1 ;;
     esac
 done
 
@@ -47,11 +52,15 @@ STAMP="$(date +%Y%m%d_%H%M%S)"
 # 1. Archive every prior prediction set so the gate sees only fresh files.
 #    Non-table experiments (exp9/exp15/...) are archived and not regenerated.
 #    The archive lives one level deeper than the gate's glob, so it is ignored.
+#    --extended-only keeps the existing (complete) base set in place.
 ARCHIVE="$OUT/_prediction_archive_$STAMP"
 shopt -s nullglob
 old=("$OUT"/exp*_predictions)
 shopt -u nullglob
-if (( ${#old[@]} )); then
+if (( EXTENDED_ONLY )); then
+    echo "== --extended-only: keeping existing base predictions, no archive =="
+    ARCHIVE="(none; --extended-only)"
+elif (( ${#old[@]} )); then
     mkdir -p "$ARCHIVE"
     echo "== Archiving ${#old[@]} prior prediction dir(s) -> $ARCHIVE =="
     mv "${old[@]}" "$ARCHIVE"/
@@ -60,16 +69,6 @@ fi
 FAILED=()
 
 # 2. exp7 headline: figures + Quad table row + counterfactual + in-sample.
-for mode in none weighted; do
-    echo ""
-    echo "== exp7a predictions  --asm-balance $mode =="
-    $PY -m exp7_all_modalities.run_experiments \
-        --mode predictions --asm-balance "$mode" --deterministic \
-        --output_dir "$OUT/exp7_predictions" || FAILED+=("exp7:$mode")
-done
-
-# 3. Per-config OOF for every other table experiment, none + weighted.
-#    exp2/exp3 omit --fusion so both the mlp (a) and fusemoe (b) sub-configs run.
 run_config () {
     local module="$1"; shift
     for mode in none weighted; do
@@ -80,13 +79,25 @@ run_config () {
             || FAILED+=("$module:$mode")
     done
 }
-run_config exp1_fusion
-run_config exp2_fusion
-run_config exp3_fusion
-run_config exp4_baseline
-run_config exp5_clinical_fusion
-run_config exp6_clinical_triple
-(( SKIP_EXP11 )) || run_config exp11_eeg_upgrade
+if (( ! EXTENDED_ONLY )); then
+    for mode in none weighted; do
+        echo ""
+        echo "== exp7a predictions  --asm-balance $mode =="
+        $PY -m exp7_all_modalities.run_experiments \
+            --mode predictions --asm-balance "$mode" --deterministic \
+            --output_dir "$OUT/exp7_predictions" || FAILED+=("exp7:$mode")
+    done
+
+    # 3. Per-config OOF for every other table experiment, none + weighted.
+    #    exp2/exp3 omit --fusion so both mlp (a) and fusemoe (b) sub-configs run.
+    run_config exp1_fusion
+    run_config exp2_fusion
+    run_config exp3_fusion
+    run_config exp4_baseline
+    run_config exp5_clinical_fusion
+    run_config exp6_clinical_triple
+    (( SKIP_EXP11 )) || run_config exp11_eeg_upgrade
+fi
 
 # 3b. Extended set (GPU-heavy; refreshes the caveated supplementary analyses).
 if (( EXTENDED )); then
