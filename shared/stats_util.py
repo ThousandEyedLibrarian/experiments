@@ -219,7 +219,13 @@ def bootstrap_ci(data, metric_fn, n_resamples=1000, confidence_level=0.95, rando
 
 def meta_analysis_sj_robust(yi, vi, alpha=0.05):
     """
-    Random-effects meta-analysis with Sidik–Jonkman estimator and robust variance.
+    Random-effects meta-analysis with a Knapp-Hartung t-interval.
+
+    NOTE: despite the historical name, the between-study variance below is the
+    Hedges / variance-component method-of-moments estimator (unweighted sample
+    variance of yi minus mean within-study variance, truncated at zero), NOT the
+    literal Sidik-Jonkman estimator. The pooled interval is a Knapp-Hartung
+    t-approximation. Thesis captions describe it as method-of-moments accordingly.
 
     Parameters
     ----------
@@ -254,7 +260,7 @@ def meta_analysis_sj_robust(yi, vi, alpha=0.05):
     mu_fixed = np.sum(wi * yi) / np.sum(wi)
     Q = np.sum(wi * (yi - mu_fixed)**2)
     
-    # --- Step 2: Sidik–Jonkman τ² estimator
+    # --- Step 2: method-of-moments (Hedges / variance-component) τ² estimator
     mean_v = np.mean(vi)
     term = np.sum((yi - np.mean(yi))**2) / (k - 1)
     tau2 = max(0, term - mean_v)  # ensure non-negative τ²
