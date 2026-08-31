@@ -27,8 +27,7 @@ EXPECTED_COUNTS = [
     (r"exp15_predictions/predictions_oof", 108),       # REVE quad (107 shared with
     #  the EEG2Vec quad + pid 187, whose EEG REVE's preprocessing accepts)
     (r"exp16_predictions/predictions_oof", 107),       # reduced-capacity quad (same 107 as exp7)
-    # (r"exp17_predictions/predictions_oof", NN),       # focal-only quad: set NN to the focal
-    #  subset size printed by the first run's "Focal filter: N/107 patients are focal" log line.
+    (r"exp17_predictions/predictions_oof", 82),        # focal-only quad (focal subset of the 107)
     (r"exp9_predictions/predictions_oof", 147),        # standalone EEG encoder sweep
     (r"exp11_6b", 147), (r"exp11_(3a|7a)", 107),       # exp11 sub-configs (base leads the name)
     (r"_exp3[ab]_", 107),
