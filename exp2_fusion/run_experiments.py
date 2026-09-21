@@ -12,6 +12,7 @@ import torch
 
 from .config import EXPERIMENTS, OUTPUTS_DIR, SMILES_EMBED_DIMS
 from .utils.logging_utils import setup_logging, log_environment_info, log_exception
+from shared.cv_splits import add_cv_args, cv_suffix
 
 # Set up module logger (will be configured in main)
 logger = logging.getLogger("exp2")
@@ -56,15 +57,19 @@ def run_all_experiments(
     log_predictions: bool = False,
     predictions_dir: Path = None,
     asm_balance_mode: str = "none",
+    splitter: str = "legacy",
+    inner_val: float = 0.0,
 ):
     """Run all configured experiments.
 
     Args:
-        eeg_encoder: EEG encoder type to use ('labram', 'simplecnn').
+        eeg_encoder: EEG encoder type to use ('labram', 'simplecnn', 'eeg2vec').
         smiles_model: SMILES model filter (None = all).
         fusion_type: Fusion type filter (None = all).
         dry_run: If True, just print what would run.
         output_dir: Directory for results.
+        splitter: Outer splitter ('legacy' = original multilabel splits).
+        inner_val: Inner early-stopping fraction (0 = legacy protocol).
     """
     # Import here to allow --check-env to work even if these fail
     from .data_pipeline import prepare_data
@@ -92,6 +97,8 @@ def run_all_experiments(
 
     output_dir.mkdir(parents=True, exist_ok=True)
     all_results = []
+    # Empty for the legacy protocol, so archived result/prediction names hold.
+    protocol_suffix = cv_suffix(splitter, inner_val)
 
     # Run experiments
     for i, exp in enumerate(experiments):
@@ -116,8 +123,12 @@ def run_all_experiments(
                 pred_dir = predictions_dir if predictions_dir is not None else OUTPUTS_DIR / "exp2_predictions"
                 exp_id = f"exp2_{exp['eeg_model']}_{smiles_model_name}_{exp['fusion']}"
                 suffix = {"weighted": "_asmweighted", "stratified_batch": "_asmstratbatch"}.get(asm_balance_mode, "")
-                pred_logger = PredictionLogger(exp_id=exp_id, output_dir=pred_dir,
-                                                filename=f"predictions_oof_{exp_id}{suffix}.json")
+                suffix += protocol_suffix
+                pred_logger = PredictionLogger(
+                    exp_id=exp_id, output_dir=pred_dir,
+                    filename=f"predictions_oof_{exp_id}{suffix}.json",
+                    metadata={"splitter": splitter, "inner_val": inner_val, "asm_balance": asm_balance_mode},
+                )
             results = run_cross_validation(
                 eeg_data=eeg_data,
                 smiles_embeddings=smiles_embeddings,
@@ -130,6 +141,8 @@ def run_all_experiments(
                 asm_balance_mode=asm_balance_mode,
                 verbose=True,
                 prediction_logger=pred_logger,
+                splitter=splitter,
+                inner_val=inner_val,
             )
             if pred_logger is not None:
                 saved = pred_logger.save()
@@ -139,7 +152,7 @@ def run_all_experiments(
             all_results.append(results)
 
             # Save individual result
-            result_file = output_dir / f"{results['experiment']}.json"
+            result_file = output_dir / f"{results['experiment']}{protocol_suffix}.json"
             with open(result_file, "w") as f:
                 json.dump(results, f, indent=2)
 
@@ -165,7 +178,7 @@ def run_all_experiments(
         "n_experiments": len(all_results),
         "experiments": all_results,
     }
-    summary_file = output_dir / "summary.json"
+    summary_file = output_dir / f"summary{protocol_suffix}.json"
     with open(summary_file, "w") as f:
         json.dump(summary, f, indent=2)
 
@@ -189,8 +202,10 @@ def run_all_experiments(
 def main():
     parser = argparse.ArgumentParser(description="Run Experiment 2: EEG + SMILES fusion")
     parser.add_argument("--eeg-encoder", type=str, default="simplecnn",
-                        choices=["labram", "simplecnn"],
-                        help="EEG encoder type (default: simplecnn)")
+                        choices=["labram", "simplecnn", "eeg2vec"],
+                        help="EEG encoder type (default: simplecnn). The pre-specified "
+                             "exp2_eeg2vec_chemberta_mlp row is --eeg-encoder eeg2vec "
+                             "--smiles-model chemberta --fusion mlp.")
     parser.add_argument("--smiles-model", type=str, default=None,
                         choices=["chemberta", "smilestrf"],
                         help="SMILES model to use (default: all)")
@@ -211,6 +226,9 @@ def main():
     parser.add_argument("--asm-balance", type=str, default="none",
                         choices=["none", "weighted"],
                         help="ASM class-balancing mode (weighted = inverse-sqrt sample weighting).")
+    parser.add_argument("--predictions-dir", type=str, default=None,
+                        help="Directory for OOF prediction files (default: outputs/exp2_predictions).")
+    add_cv_args(parser)
 
     args = parser.parse_args()
 
@@ -247,7 +265,10 @@ def main():
             fusion_type=args.fusion,
             dry_run=args.dry_run,
             log_predictions=args.log_predictions,
+            predictions_dir=Path(args.predictions_dir) if args.predictions_dir else None,
             asm_balance_mode=args.asm_balance,
+            splitter=args.splitter,
+            inner_val=args.inner_val,
         )
         logger.info("Experiment 2 completed successfully")
     except KeyboardInterrupt:

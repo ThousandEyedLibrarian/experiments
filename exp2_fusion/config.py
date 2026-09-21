@@ -55,6 +55,13 @@ CHUNK_SIZE_BY_ENCODER = {
     "eeg2vec": 32,  # Similar footprint to SimpleCNN
 }
 
+# Encoder-specific window embedding size. Encoders not listed keep the fusion
+# models' default (200). EEG2Vec is 256-d to match exp5c/exp7, which the
+# pre-specified exp2_eeg2vec_chemberta_mlp row uses.
+EMBED_DIM_BY_ENCODER = {
+    "eeg2vec": 256,
+}
+
 # Model configuration
 MODEL_CONFIG = {
     "hidden_dim": 256,

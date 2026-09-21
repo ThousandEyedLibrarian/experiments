@@ -297,7 +297,8 @@ def get_fusion_model(
         Fusion model
     """
     # Common arguments for both models
-    common_keys = ["hidden_dim", "num_classes", "num_heads", "num_layers", "dropout", "window_chunk_size"]
+    common_keys = ["hidden_dim", "num_classes", "num_heads", "num_layers", "dropout", "window_chunk_size",
+                   "eeg_embed_dim"]
     common_kwargs = {k: v for k, v in kwargs.items() if k in common_keys}
 
     if fusion_type == "mlp":

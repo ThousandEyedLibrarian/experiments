@@ -11,9 +11,11 @@ Usage:
     python -m exp11_eeg_upgrade.run_experiments --base exp7a       # Only exp7a variants
     python -m exp11_eeg_upgrade.run_experiments --aggregator meanmax  # Only MeanMax
     python -m exp11_eeg_upgrade.run_experiments --dry-run           # Test data loading
+    python -m exp11_eeg_upgrade.run_experiments --splitter multilabel --inner-val 0.2  # Clean CV
 """
 
 import argparse
+import copy
 import json
 import logging
 from datetime import datetime
@@ -22,7 +24,6 @@ from typing import Dict, List
 import numpy as np
 import torch
 import torch.nn as nn
-from sklearn.model_selection import StratifiedKFold
 from torch.utils.data import DataLoader
 
 # Local config and models
@@ -48,7 +49,9 @@ from exp6_clinical_triple.data_pipeline import prepare_clinical_smiles_eeg_data,
 from exp6_clinical_triple.training import train_epoch_eeg, evaluate_eeg
 from exp7_all_modalities.data_pipeline import prepare_quad_modality_data, create_quad_modality_datasets
 from exp7_all_modalities.training import train_epoch_mlp as train_epoch_exp7, evaluate_mlp as evaluate_exp7
+from exp2_fusion.eeg_pipeline import add_stratification_columns
 from shared.asm_balancing import WeightedASMDataset, compute_asm_sample_weights
+from shared.cv_splits import add_cv_args, cv_suffix, fold_indices, outer_splits, rethreshold
 
 
 def _asm_labels(ds):
@@ -67,8 +70,26 @@ def _maybe_weight(train_ds, asm_balance_mode):
 logger = logging.getLogger("exp11")
 
 
-def _train_fold_generic(model, train_loader, val_loader, config, device, train_fn, eval_fn, asm_weighted=False):
-    """Generic training fold with early stopping."""
+def _outer_splits(df, splitter):
+    """Outer folds. Legacy is outcome-only StratifiedKFold(**CV_CONFIG); the
+    multilabel splitter gets focal/sex joined on when df lacks them (the exp3
+    EEG cohort frame)."""
+    split_df = df if splitter == "legacy" else add_stratification_columns(df)
+    return outer_splits(
+        split_df, mode=splitter, n_splits=CV_CONFIG["n_splits"], seed=CV_CONFIG["random_state"],
+    )
+
+
+def _train_fold_generic(model, train_loader, val_loader, config, device, train_fn, eval_fn, asm_weighted=False,
+                        test_loader=None):
+    """Generic training fold with early stopping.
+
+    ``val_loader`` is the early-stopping set (the outer fold in legacy runs,
+    the inner split in clean runs). ``test_loader`` is given in clean runs
+    only: the untouched outer fold, scored once with the best early-stopping
+    weights at the early-stopping threshold. None keeps the legacy behaviour
+    (report the best epoch's metrics on ``val_loader``).
+    """
     # Class weights from training data. When the loader is ASM-weighted the
     # label is batch[-2] (WeightedASMDataset appends the weight as batch[-1]).
     label_pos = -2 if asm_weighted else -1
@@ -90,6 +111,7 @@ def _train_fold_generic(model, train_loader, val_loader, config, device, train_f
 
     best_val_auc = 0.0
     best_metrics = {}
+    best_state = None
     patience_counter = 0
 
     for epoch in range(config["epochs"]):
@@ -100,6 +122,8 @@ def _train_fold_generic(model, train_loader, val_loader, config, device, train_f
         if val_metrics["auc"] > best_val_auc:
             best_val_auc = val_metrics["auc"]
             best_metrics = val_metrics.copy()
+            if test_loader is not None:
+                best_state = copy.deepcopy(model.state_dict())
             patience_counter = 0
         else:
             patience_counter += 1
@@ -114,10 +138,21 @@ def _train_fold_generic(model, train_loader, val_loader, config, device, train_f
             logger.info(f"    Early stopping at epoch {epoch + 1}")
             break
 
-    return best_metrics
+    if test_loader is None:
+        return best_metrics
+
+    # Clean protocol: score the outer fold once with the early-stopping-best
+    # weights, at the threshold chosen on the early-stopping set.
+    if best_state is not None:
+        model.load_state_dict(best_state)
+    _, test_metrics = eval_fn(model, test_loader, criterion, device)
+    test_metrics = rethreshold(test_metrics, best_metrics.get("optimal_threshold", 0.5))
+    test_metrics["es_auc"] = best_val_auc
+    return test_metrics
 
 
-def run_cv_exp3a(exp_config, device, prediction_logger=None, asm_balance_mode="none"):
+def run_cv_exp3a(exp_config, device, prediction_logger=None, asm_balance_mode="none",
+                 splitter="legacy", inner_val=0.0):
     """Run CV for exp3a-type experiment (Triple MLP: Text + EEG + SMILES)."""
     text_model = exp_config["text"]
     smiles_model = exp_config["smiles"]
@@ -132,14 +167,19 @@ def run_cv_exp3a(exp_config, device, prediction_logger=None, asm_balance_mode="n
     max_channels = get_max_channels(eeg_data)
     outcomes = df["outcome"].values
 
-    kfold = StratifiedKFold(**CV_CONFIG)
     fold_metrics = {"auc": [], "accuracy": [], "f1": [], "f1_tuned": [], "balanced_acc_tuned": []}
 
-    for fold, (train_idx, val_idx) in enumerate(kfold.split(np.zeros(len(outcomes)), outcomes)):
+    for fold, (train_idx, val_idx) in enumerate(_outer_splits(df, splitter)):
         logger.info(f"  Fold {fold + 1}/{CV_CONFIG['n_splits']}")
+        # Clean runs early-stop on an inner split and score the outer fold
+        # separately (preprocessing fitted on fit_idx for both).
+        fit_idx, es_idx, test_idx = fold_indices(outcomes, train_idx, val_idx, fold, inner_val)
         train_ds, val_ds = create_exp3_datasets(
-            text_emb, eeg_data, smiles_emb, smiles_idx, df, train_idx, val_idx, max_channels,
+            text_emb, eeg_data, smiles_emb, smiles_idx, df, fit_idx, es_idx, max_channels,
         )
+        test_ds = create_exp3_datasets(
+            text_emb, eeg_data, smiles_emb, smiles_idx, df, fit_idx, test_idx, max_channels,
+        )[1] if test_idx is not None else None
         train_ds, asm_weighted = _maybe_weight(train_ds, asm_balance_mode)
 
         model = TripleMLPv2(
@@ -159,6 +199,8 @@ def run_cv_exp3a(exp_config, device, prediction_logger=None, asm_balance_mode="n
 
         train_loader = DataLoader(train_ds, batch_size=config["batch_size"], shuffle=True)
         val_loader = DataLoader(val_ds, batch_size=config["batch_size"], shuffle=False)
+        test_loader = (DataLoader(test_ds, batch_size=config["batch_size"], shuffle=False)
+                       if test_ds is not None else None)
 
         metrics = _train_fold_generic(
             model, train_loader, val_loader, config, device,
@@ -167,6 +209,7 @@ def run_cv_exp3a(exp_config, device, prediction_logger=None, asm_balance_mode="n
                 asm_weighted=asm_weighted, class_weights=class_weights)[0],
             lambda m, dl, c, d: evaluate_exp3(m, dl, c, d, is_moe=False),
             asm_weighted=asm_weighted,
+            test_loader=test_loader,
         )
 
         for key in fold_metrics:
@@ -185,7 +228,8 @@ def run_cv_exp3a(exp_config, device, prediction_logger=None, asm_balance_mode="n
     return fold_metrics
 
 
-def run_cv_exp6b(exp_config, device, prediction_logger=None, asm_balance_mode="none"):
+def run_cv_exp6b(exp_config, device, prediction_logger=None, asm_balance_mode="none",
+                 splitter="legacy", inner_val=0.0):
     """Run CV for exp6b-type experiment (Clinical + SMILES + EEG)."""
     smiles_model = exp_config["smiles"]
     aggregator = exp_config["aggregator"]
@@ -196,14 +240,19 @@ def run_cv_exp6b(exp_config, device, prediction_logger=None, asm_balance_mode="n
     smiles_dim = SMILES_DIMS[smiles_model]
     outcomes = df["outcome"].values
 
-    kfold = StratifiedKFold(**CV_CONFIG)
     fold_metrics = {"auc": [], "accuracy": [], "f1": [], "f1_tuned": [], "balanced_acc_tuned": []}
 
-    for fold, (train_idx, val_idx) in enumerate(kfold.split(np.zeros(len(outcomes)), outcomes)):
+    for fold, (train_idx, val_idx) in enumerate(_outer_splits(df, splitter)):
         logger.info(f"  Fold {fold + 1}/{CV_CONFIG['n_splits']}")
+        # Clean runs early-stop on an inner split and score the outer fold
+        # separately (preprocessing fitted on fit_idx for both).
+        fit_idx, es_idx, test_idx = fold_indices(outcomes, train_idx, val_idx, fold, inner_val)
         train_ds, val_ds, _ = create_clinical_smiles_eeg_datasets(
-            df, smiles_embeddings, smiles_indices, eeg_data, train_idx, val_idx,
+            df, smiles_embeddings, smiles_indices, eeg_data, fit_idx, es_idx,
         )
+        test_ds = create_clinical_smiles_eeg_datasets(
+            df, smiles_embeddings, smiles_indices, eeg_data, fit_idx, test_idx,
+        )[1] if test_idx is not None else None
         train_ds, asm_weighted = _maybe_weight(train_ds, asm_balance_mode)
 
         model = ClinicalEEGFusionv2(
@@ -223,10 +272,12 @@ def run_cv_exp6b(exp_config, device, prediction_logger=None, asm_balance_mode="n
         batch_size = config["batch_size_eeg"]
         train_loader = DataLoader(train_ds, batch_size=batch_size, shuffle=True)
         val_loader = DataLoader(val_ds, batch_size=batch_size, shuffle=False)
+        test_loader = DataLoader(test_ds, batch_size=batch_size, shuffle=False) if test_ds is not None else None
 
         metrics = _train_fold_generic(
             model, train_loader, val_loader, config, device,
             train_epoch_eeg, evaluate_eeg, asm_weighted=asm_weighted,
+            test_loader=test_loader,
         )
 
         for key in fold_metrics:
@@ -245,7 +296,8 @@ def run_cv_exp6b(exp_config, device, prediction_logger=None, asm_balance_mode="n
     return fold_metrics
 
 
-def run_cv_exp7a(exp_config, device, prediction_logger=None, asm_balance_mode="none"):
+def run_cv_exp7a(exp_config, device, prediction_logger=None, asm_balance_mode="none",
+                 splitter="legacy", inner_val=0.0):
     """Run CV for exp7a-type experiment (Quad MLP: Clinical + Text + EEG + SMILES)."""
     text_model = exp_config["text"]
     smiles_model = exp_config["smiles"]
@@ -259,14 +311,19 @@ def run_cv_exp7a(exp_config, device, prediction_logger=None, asm_balance_mode="n
     smiles_dim = SMILES_DIMS[smiles_model]
     outcomes = df["outcome"].values
 
-    kfold = StratifiedKFold(**CV_CONFIG)
     fold_metrics = {"auc": [], "accuracy": [], "f1": [], "f1_tuned": [], "balanced_acc_tuned": []}
 
-    for fold, (train_idx, val_idx) in enumerate(kfold.split(np.zeros(len(outcomes)), outcomes)):
+    for fold, (train_idx, val_idx) in enumerate(_outer_splits(df, splitter)):
         logger.info(f"  Fold {fold + 1}/{CV_CONFIG['n_splits']}")
+        # Clean runs early-stop on an inner split and score the outer fold
+        # separately (preprocessing fitted on fit_idx for both).
+        fit_idx, es_idx, test_idx = fold_indices(outcomes, train_idx, val_idx, fold, inner_val)
         train_ds, val_ds, _ = create_quad_modality_datasets(
-            df, smiles_emb, smiles_idx, text_emb, eeg_data, train_idx, val_idx,
+            df, smiles_emb, smiles_idx, text_emb, eeg_data, fit_idx, es_idx,
         )
+        test_ds = create_quad_modality_datasets(
+            df, smiles_emb, smiles_idx, text_emb, eeg_data, fit_idx, test_idx,
+        )[1] if test_idx is not None else None
         train_ds, asm_weighted = _maybe_weight(train_ds, asm_balance_mode)
 
         model = QuadMLPv2(
@@ -285,10 +342,13 @@ def run_cv_exp7a(exp_config, device, prediction_logger=None, asm_balance_mode="n
 
         train_loader = DataLoader(train_ds, batch_size=config["batch_size"], shuffle=True)
         val_loader = DataLoader(val_ds, batch_size=config["batch_size"], shuffle=False)
+        test_loader = (DataLoader(test_ds, batch_size=config["batch_size"], shuffle=False)
+                       if test_ds is not None else None)
 
         metrics = _train_fold_generic(
             model, train_loader, val_loader, config, device,
             train_epoch_exp7, evaluate_exp7, asm_weighted=asm_weighted,
+            test_loader=test_loader,
         )
 
         for key in fold_metrics:
@@ -328,6 +388,9 @@ def main():
     parser.add_argument("--asm-balance", type=str, default="none",
                         choices=["none", "weighted"],
                         help="ASM class-balancing mode (weighted = inverse-sqrt sample weighting).")
+    parser.add_argument("--predictions-dir", type=str, default=None,
+                        help="Directory for OOF prediction files (default: outputs/exp11_predictions).")
+    add_cv_args(parser)
     args = parser.parse_args()
 
     if args.deterministic:
@@ -368,15 +431,19 @@ def main():
         pred_logger = None
         if args.log_predictions:
             from shared.prediction_logger import PredictionLogger
-            pred_dir = RESULTS_DIR.parent / "exp11_predictions"
+            pred_dir = Path(args.predictions_dir) if args.predictions_dir else RESULTS_DIR.parent / "exp11_predictions"
             suffix = {"weighted": "_asmweighted", "stratified_batch": "_asmstratbatch"}.get(args.asm_balance, "")
+            suffix += cv_suffix(args.splitter, args.inner_val)
             pred_logger = PredictionLogger(
                 exp_id=f"exp11_{exp['name']}",
                 output_dir=pred_dir,
                 filename=f"predictions_oof_exp11_{exp['name']}{suffix}.json",
+                metadata={"splitter": args.splitter, "inner_val": args.inner_val,
+                          "asm_balance": args.asm_balance},
             )
         fold_metrics = runner(exp, device, prediction_logger=pred_logger,
-                              asm_balance_mode=args.asm_balance)
+                              asm_balance_mode=args.asm_balance,
+                              splitter=args.splitter, inner_val=args.inner_val)
         if pred_logger is not None:
             pred_logger.save()
 

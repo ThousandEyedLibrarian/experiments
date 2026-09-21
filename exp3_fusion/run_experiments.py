@@ -6,13 +6,14 @@ import json
 import logging
 from datetime import datetime
 from pathlib import Path
-from typing import Dict, List
+from typing import Dict, List, Optional
 
 import numpy as np
 import torch
 
 from .config import EXPERIMENTS, RESULTS_DIR
 from .training import run_cross_validation
+from shared.cv_splits import add_cv_args, cv_suffix
 from shared.prediction_logger import PredictionLogger
 
 logger = logging.getLogger("exp3")
@@ -23,6 +24,9 @@ def run_single_experiment(
     device: torch.device,
     log_predictions: bool = False,
     asm_balance_mode: str = "none",
+    predictions_dir: Optional[Path] = None,
+    splitter: str = "legacy",
+    inner_val: float = 0.0,
 ) -> Dict[str, List[float]]:
     """Run a single experiment configuration."""
     logger.info(f"\n{'=' * 60}")
@@ -30,19 +34,26 @@ def run_single_experiment(
     logger.info(f"  Text: {exp_config['text']}")
     logger.info(f"  SMILES: {exp_config['smiles']}")
     logger.info(f"  Fusion: {exp_config['fusion']}")
+    if exp_config.get("eeg_encoder"):
+        logger.info(f"  EEG encoder: {exp_config['eeg_encoder']}")
     logger.info(f"{'=' * 60}")
 
     pred_logger = None
     if log_predictions:
         import os
-        pred_dir = os.path.join(os.path.dirname(RESULTS_DIR), "exp3_predictions")
+        pred_dir = predictions_dir if predictions_dir is not None else os.path.join(
+            os.path.dirname(RESULTS_DIR), "exp3_predictions")
         suffix = ""
         if asm_balance_mode == "weighted":
             suffix = "_asmweighted"
         elif asm_balance_mode == "stratified_batch":
             suffix = "_asmstratbatch"
-        pred_logger = PredictionLogger(exp_id=exp_config['name'], output_dir=pred_dir,
-                                        filename=f"predictions_oof_{exp_config['name']}{suffix}.json")
+        suffix += cv_suffix(splitter, inner_val)
+        pred_logger = PredictionLogger(
+            exp_id=exp_config['name'], output_dir=pred_dir,
+            filename=f"predictions_oof_{exp_config['name']}{suffix}.json",
+            metadata={"splitter": splitter, "inner_val": inner_val, "asm_balance": asm_balance_mode},
+        )
 
     results = run_cross_validation(
         text_model=exp_config["text"],
@@ -51,6 +62,9 @@ def run_single_experiment(
         device=device,
         prediction_logger=pred_logger,
         asm_balance_mode=asm_balance_mode,
+        eeg_encoder_type=exp_config.get("eeg_encoder"),
+        splitter=splitter,
+        inner_val=inner_val,
     )
 
     if pred_logger is not None:
@@ -65,6 +79,9 @@ def run_all_experiments(
     device: torch.device = None,
     log_predictions: bool = False,
     asm_balance_mode: str = "none",
+    predictions_dir: Optional[Path] = None,
+    splitter: str = "legacy",
+    inner_val: float = 0.0,
 ) -> Dict[str, Dict]:
     """Run all experiments and collect results."""
     if experiments is None:
@@ -83,6 +100,9 @@ def run_all_experiments(
                 exp_config, device,
                 log_predictions=log_predictions,
                 asm_balance_mode=asm_balance_mode,
+                predictions_dir=predictions_dir,
+                splitter=splitter,
+                inner_val=inner_val,
             )
             all_results[name] = {
                 "config": exp_config,
@@ -214,6 +234,13 @@ def main():
         default="none",
         help="Stage B ASM-balancing mode",
     )
+    parser.add_argument(
+        "--predictions-dir",
+        type=str,
+        default=None,
+        help="Directory for OOF prediction files (default: outputs/exp3_predictions).",
+    )
+    add_cv_args(parser)
     args = parser.parse_args()
 
     if args.deterministic:
@@ -255,6 +282,9 @@ def main():
         experiments, device,
         log_predictions=args.log_predictions,
         asm_balance_mode=args.asm_balance,
+        predictions_dir=Path(args.predictions_dir) if args.predictions_dir else None,
+        splitter=args.splitter,
+        inner_val=args.inner_val,
     )
 
     # Print results

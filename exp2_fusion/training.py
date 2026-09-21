@@ -1,5 +1,6 @@
 """Training utilities for Experiment 2: EEG + SMILES fusion."""
 
+import copy
 import logging
 import sys
 from pathlib import Path
@@ -16,9 +17,11 @@ from torch.utils.data import DataLoader
 sys.path.insert(0, str(Path(__file__).parent.parent))
 from exp8_stratification.stratified_cv import get_multilabel_splits, get_outcome_only_splits
 
-from .config import BATCH_SIZE_BY_ENCODER, CHUNK_SIZE_BY_ENCODER, MODEL_CONFIG, TRAIN_CONFIG
+from .config import BATCH_SIZE_BY_ENCODER, CHUNK_SIZE_BY_ENCODER, EMBED_DIM_BY_ENCODER, MODEL_CONFIG, TRAIN_CONFIG
 from .data_pipeline import EEGSMILESDataset, create_datasets, get_max_channels, prepare_data
+from .eeg_pipeline import add_stratification_columns
 from shared.asm_balancing import WeightedASMDataset, compute_asm_sample_weights, weighted_cross_entropy
+from shared.cv_splits import fold_indices, outer_splits, rethreshold
 from .models.fusion import get_fusion_model
 
 logger = logging.getLogger("exp2")
@@ -186,12 +189,14 @@ def train_fold(
     config: Dict = TRAIN_CONFIG,
     model_config: Dict = MODEL_CONFIG,
     asm_balance_mode: str = "none",
+    test_dataset: Optional[EEGSMILESDataset] = None,
 ) -> Tuple[Dict[str, float], nn.Module]:
     """Train model for one fold.
 
     Args:
         train_dataset: Training dataset.
-        val_dataset: Validation dataset.
+        val_dataset: Early-stopping dataset (the outer fold in legacy runs,
+            the inner split in clean runs). It also drives ReduceLROnPlateau.
         fusion_type: Type of fusion model.
         eeg_encoder_type: Type of EEG encoder.
         smiles_embed_dim: SMILES embedding dimension.
@@ -199,9 +204,13 @@ def train_fold(
         device: Device to use.
         config: Training configuration.
         model_config: Model configuration.
+        test_dataset: Clean runs only: the untouched outer fold, scored once
+            with the best early-stopping weights at the early-stopping
+            threshold. None keeps the legacy behaviour (report the best
+            epoch's metrics on ``val_dataset``).
 
     Returns:
-        Tuple of (best metrics dict, trained model).
+        Tuple of (metrics dict for the reported fold, trained model).
     """
     # ASM-balancing: wrap the training set with inverse-sqrt sample weights.
     asm_weighted = asm_balance_mode == "weighted"
@@ -228,6 +237,11 @@ def train_fold(
     # Create model
     is_moe = fusion_type == "fusemoe"
     window_chunk_size = CHUNK_SIZE_BY_ENCODER.get(eeg_encoder_type, 16)
+    # Only encoders listed in EMBED_DIM_BY_ENCODER override the model default.
+    embed_kwargs = (
+        {"eeg_embed_dim": EMBED_DIM_BY_ENCODER[eeg_encoder_type]}
+        if eeg_encoder_type in EMBED_DIM_BY_ENCODER else {}
+    )
     model = get_fusion_model(
         fusion_type=fusion_type,
         eeg_encoder_type=eeg_encoder_type,
@@ -242,6 +256,7 @@ def train_fold(
         dropout=model_config["dropout"],
         aux_loss_weight=model_config.get("aux_loss_weight", 0.1),
         window_chunk_size=window_chunk_size,
+        **embed_kwargs,
     )
     model = model.to(device)
 
@@ -271,6 +286,7 @@ def train_fold(
     # Training loop
     best_auc = 0.0
     best_metrics = {}
+    best_state = None
     patience_counter = 0
     global_step = 0
 
@@ -291,6 +307,8 @@ def train_fold(
         if val_metrics["auc"] > best_auc:
             best_auc = val_metrics["auc"]
             best_metrics = val_metrics.copy()
+            if test_dataset is not None:
+                best_state = copy.deepcopy(model.state_dict())
             patience_counter = 0
         else:
             patience_counter += 1
@@ -299,7 +317,24 @@ def train_fold(
             logger.debug(f"Early stopping at epoch {epoch+1} (patience={config['patience']})")
             break
 
-    return best_metrics, model
+    if test_dataset is None:
+        return best_metrics, model
+
+    # Clean protocol: score the outer fold once with the early-stopping-best
+    # weights, at the threshold chosen on the early-stopping set.
+    if best_state is not None:
+        model.load_state_dict(best_state)
+    test_loader = DataLoader(
+        test_dataset,
+        batch_size=config["batch_size"],
+        shuffle=False,
+        num_workers=0,
+        pin_memory=True,
+    )
+    _, test_metrics = evaluate(model, test_loader, criterion, device, is_moe)
+    test_metrics = rethreshold(test_metrics, best_metrics.get("optimal_threshold", 0.5))
+    test_metrics["es_auc"] = best_auc
+    return test_metrics, model
 
 
 def run_cross_validation(
@@ -316,6 +351,8 @@ def run_cross_validation(
     use_multilabel_stratification: bool = True,
     prediction_logger=None,
     asm_balance_mode: str = "none",
+    splitter: str = "legacy",
+    inner_val: float = 0.0,
 ) -> Dict:
     """Run k-fold cross validation.
 
@@ -331,7 +368,11 @@ def run_cross_validation(
         config: Training configuration.
         verbose: Whether to print progress.
         use_multilabel_stratification: Whether to use multi-label stratification
-            on outcome + focal + sex (reduces fold variance by 5-8x).
+            on outcome + focal + sex (reduces fold variance by 5-8x). Legacy
+            splitter only.
+        splitter: Outer splitter ('legacy' = this experiment's original
+            splits, 'multilabel' = shared outcome/focal/sex splitter).
+        inner_val: Inner early-stopping fraction (0 = legacy protocol).
 
     Returns:
         Results dictionary with metrics.
@@ -350,11 +391,22 @@ def run_cross_validation(
 
     # Cross-validation with stratification
     strat_type = "multilabel" if use_multilabel_stratification else "outcome-only"
+    if splitter != "legacy":
+        strat_type = f"shared {splitter}"
     if verbose:
-        logger.info(f"  Using {strat_type} stratification")
+        logger.info(f"  Using {strat_type} stratification (inner_val={inner_val})")
 
-    if use_multilabel_stratification:
-        # Use multi-label stratification on outcome + focal + sex
+    if splitter != "legacy":
+        # The EEG cohort frame has no focal/sex columns, so join them on for
+        # the splitter only (datasets keep using df unchanged).
+        splits = outer_splits(
+            add_stratification_columns(df), mode=splitter,
+            n_splits=config["n_folds"], seed=config["seed"],
+        )
+    elif use_multilabel_stratification:
+        # Use multi-label stratification on outcome + focal + sex. df has no
+        # focal/sex columns, so these folds are effectively outcome-only; kept
+        # as-is so archived runs reproduce.
         splits = list(get_multilabel_splits(
             df,
             stratify_cols=["outcome", "focal", "sex"],
@@ -372,17 +424,29 @@ def run_cross_validation(
         ))
 
     fold_metrics = {"accuracy": [], "auc": [], "f1": [], "f1_tuned": [], "balanced_acc_tuned": []}
+    outcomes = df["outcome"].values
 
     for fold, (train_idx, val_idx) in enumerate(splits):
+        # Clean runs early-stop on an inner split and score the outer fold
+        # separately; legacy runs early-stop on the outer fold itself.
+        fit_idx, es_idx, test_idx = fold_indices(outcomes, train_idx, val_idx, fold, inner_val)
         if verbose:
-            logger.info(f"  Fold {fold + 1}/{config['n_folds']} (train={len(train_idx)}, val={len(val_idx)})")
+            logger.info(
+                f"  Fold {fold + 1}/{config['n_folds']} (train={len(fit_idx)}, early-stop={len(es_idx)}"
+                + (f", test={len(test_idx)})" if test_idx is not None else ")")
+            )
 
         # Create datasets (pass max_channels for consistent padding)
         train_ds, val_ds = create_datasets(
             eeg_data, smiles_embeddings, smiles_indices, df,
-            train_idx, val_idx,
+            fit_idx, es_idx,
             max_channels=n_eeg_channels,
         )
+        test_ds = create_datasets(
+            eeg_data, smiles_embeddings, smiles_indices, df,
+            fit_idx, test_idx,
+            max_channels=n_eeg_channels,
+        )[1] if test_idx is not None else None
 
         # Train
         try:
@@ -395,6 +459,7 @@ def run_cross_validation(
                 device=device,
                 config=config,
                 asm_balance_mode=asm_balance_mode,
+                test_dataset=test_ds,
             )
 
             for key in fold_metrics:

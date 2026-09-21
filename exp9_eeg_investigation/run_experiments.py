@@ -5,12 +5,13 @@ contribute most to the high fold-to-fold variance in EEG experiments.
 """
 
 import argparse
+import copy
 import json
 import logging
 import sys
 from datetime import datetime
 from pathlib import Path
-from typing import Dict, List, Tuple
+from typing import Dict, List, Optional, Tuple
 
 import numpy as np
 import torch
@@ -23,11 +24,13 @@ sys.path.insert(0, str(BASE_DIR))
 
 from exp2_fusion.config import EEG_CONFIG, MODEL_CONFIG, TRAIN_CONFIG, BATCH_SIZE_BY_ENCODER, CHUNK_SIZE_BY_ENCODER
 from exp2_fusion.data_pipeline import prepare_data, create_datasets, get_max_channels
+from exp2_fusion.eeg_pipeline import add_stratification_columns
 from exp2_fusion.models.eeg_encoders import get_eeg_encoder, SimpleCNNEncoder
 from exp2_fusion.models.eeg_transformer import EEGWindowTransformer
 from exp2_fusion.models.aggregators import get_aggregator
 from exp2_fusion.training import train_epoch, evaluate
 from exp8_stratification.stratified_cv import get_multilabel_splits, get_outcome_only_splits
+from shared.cv_splits import add_cv_args, cv_suffix, fold_indices, outer_splits, rethreshold
 from .config import RESULTS_DIR, CV_CONFIG
 
 logging.basicConfig(level=logging.INFO)
@@ -176,6 +179,8 @@ def run_ablation_experiment(
     device: torch.device,
     use_multilabel_stratification: bool = True,
     prediction_logger=None,
+    splitter: str = "legacy",
+    inner_val: float = 0.0,
 ) -> Dict:
     """Run a single ablation experiment.
 
@@ -186,7 +191,13 @@ def run_ablation_experiment(
         smiles_indices: SMILES index mapping.
         df: DataFrame with labels.
         device: Device to use.
-        use_multilabel_stratification: Whether to use multi-label stratification.
+        use_multilabel_stratification: Whether to use multi-label stratification
+            (legacy splitter only).
+        splitter: Outer splitter ('legacy' = this experiment's original splits,
+            'multilabel' = shared outcome/focal/sex splitter).
+        inner_val: Inner early-stopping fraction (0 = legacy protocol). Clean
+            runs early-stop on the inner split, restore the best weights and
+            score the untouched outer fold once at the inner split's threshold.
 
     Returns:
         Results dictionary.
@@ -194,7 +205,16 @@ def run_ablation_experiment(
     logger.info(f"Running ablation: {ablation_config['name']}")
 
     # Get splits (fall back to outcome-only if iterative-stratification unavailable)
-    if use_multilabel_stratification:
+    if splitter != "legacy":
+        # The EEG cohort frame has no focal/sex columns, so join them on for
+        # the splitter only (datasets keep using df unchanged).
+        splits = outer_splits(
+            add_stratification_columns(df), mode=splitter,
+            n_splits=CV_CONFIG["n_splits"], seed=CV_CONFIG["random_state"],
+        )
+    elif use_multilabel_stratification:
+        # df has no focal/sex/age_init columns, so these folds are effectively
+        # outcome-only; kept as-is so archived runs reproduce.
         try:
             splits = list(get_multilabel_splits(
                 df,
@@ -215,16 +235,24 @@ def run_ablation_experiment(
     smiles_dim = smiles_embeddings.shape[1]
 
     fold_metrics = {"auc": [], "balanced_acc_tuned": [], "f1_tuned": []}
+    outcomes = df["outcome"].values
 
     for fold, (train_idx, val_idx) in enumerate(splits):
         logger.info(f"  Fold {fold + 1}/{len(splits)}")
 
-        # Create datasets
+        # Create datasets. Clean runs early-stop on an inner split and score
+        # the outer fold separately.
+        fit_idx, es_idx, test_idx = fold_indices(outcomes, train_idx, val_idx, fold, inner_val)
         train_ds, val_ds = create_datasets(
             eeg_data, smiles_embeddings, smiles_indices, df,
-            train_idx, val_idx,
+            fit_idx, es_idx,
             max_channels=n_channels,
         )
+        test_ds = create_datasets(
+            eeg_data, smiles_embeddings, smiles_indices, df,
+            fit_idx, test_idx,
+            max_channels=n_channels,
+        )[1] if test_idx is not None else None
 
         encoder_type = ablation_config.get("encoder_type", "simplecnn")
         batch_size = BATCH_SIZE_BY_ENCODER.get(encoder_type, 8)
@@ -263,6 +291,7 @@ def run_ablation_experiment(
         # Train
         best_auc = 0.0
         best_metrics = {}
+        best_state = None
         patience_counter = 0
 
         for epoch in range(100):
@@ -272,12 +301,25 @@ def run_ablation_experiment(
             if metrics["auc"] > best_auc:
                 best_auc = metrics["auc"]
                 best_metrics = metrics.copy()
+                if test_ds is not None:
+                    best_state = copy.deepcopy(model.state_dict())
                 patience_counter = 0
             else:
                 patience_counter += 1
 
             if patience_counter >= 20:
                 break
+
+        if test_ds is not None:
+            # Clean protocol: score the outer fold once with the
+            # early-stopping-best weights, at the threshold chosen on the
+            # early-stopping set. best_metrics then holds the outer-fold scores.
+            if best_state is not None:
+                model.load_state_dict(best_state)
+            test_loader = DataLoader(test_ds, batch_size=batch_size, shuffle=False)
+            _, test_metrics = evaluate(model, test_loader, criterion, device, is_moe=False)
+            best_metrics = rethreshold(test_metrics, best_metrics.get("optimal_threshold", 0.5))
+            best_metrics["es_auc"] = best_auc
 
         for key in fold_metrics:
             if key in best_metrics:
@@ -415,13 +457,21 @@ def run_all_ablations(
     use_multilabel: bool = True,
     experiments: List[Dict] = None,
     log_predictions: bool = False,
+    predictions_dir: Optional[Path] = None,
+    splitter: str = "legacy",
+    inner_val: float = 0.0,
 ) -> List[Dict]:
     """Run all ablation experiments.
 
     Args:
         smiles_model: SMILES model to use.
-        use_multilabel: Whether to use multi-label stratification.
+        use_multilabel: Whether to use multi-label stratification (legacy
+            splitter only).
         experiments: List of experiments to run (defaults to all).
+        predictions_dir: Directory for OOF prediction files (default:
+            outputs/exp9_predictions).
+        splitter: Outer splitter ('legacy' = original splits).
+        inner_val: Inner early-stopping fraction (0 = legacy protocol).
 
     Returns:
         List of results dictionaries.
@@ -448,16 +498,18 @@ def run_all_ablations(
     pred_dir = None
     if log_predictions:
         from shared.prediction_logger import PredictionLogger
-        pred_dir = RESULTS_DIR.parent / "exp9_predictions"
+        pred_dir = predictions_dir if predictions_dir is not None else RESULTS_DIR.parent / "exp9_predictions"
 
     for exp_config in experiments:
         try:
             pred_logger = None
             if log_predictions:
+                suffix = cv_suffix(splitter, inner_val)
                 pred_logger = PredictionLogger(
                     exp_id=f"exp9_{exp_config['name']}",
                     output_dir=pred_dir,
-                    filename=f"predictions_oof_exp9_{exp_config['name']}.json",
+                    filename=f"predictions_oof_exp9_{exp_config['name']}{suffix}.json",
+                    metadata={"splitter": splitter, "inner_val": inner_val},
                 )
             results = run_ablation_experiment(
                 exp_config,
@@ -465,6 +517,8 @@ def run_all_ablations(
                 device,
                 use_multilabel_stratification=use_multilabel,
                 prediction_logger=pred_logger,
+                splitter=splitter,
+                inner_val=inner_val,
             )
             if pred_logger is not None:
                 pred_logger.save()
@@ -518,7 +572,8 @@ def print_ablation_summary(results: List[Dict]):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="EEG Ablation Study")
     parser.add_argument("--smiles-model", default="chemberta", help="SMILES model")
-    parser.add_argument("--no-multilabel", action="store_true", help="Disable multi-label stratification")
+    parser.add_argument("--no-multilabel", action="store_true",
+                        help="Disable multi-label stratification (legacy splitter only)")
     parser.add_argument("--quick", action="store_true", help="Run only baseline experiment")
     parser.add_argument("--experiment", type=str, default=None,
                         help="Run only the named experiment (e.g. encoder_labram)")
@@ -526,6 +581,9 @@ if __name__ == "__main__":
                         help="Dump per-fold OOF predictions to outputs/exp9_predictions/")
     parser.add_argument("--deterministic", action="store_true",
                         help="Enable deterministic training (seeds, cuDNN deterministic)")
+    parser.add_argument("--predictions-dir", type=str, default=None,
+                        help="Directory for OOF prediction files (default: outputs/exp9_predictions).")
+    add_cv_args(parser)
     args = parser.parse_args()
 
     if args.deterministic:
@@ -547,6 +605,9 @@ if __name__ == "__main__":
         use_multilabel=not args.no_multilabel,
         experiments=experiments,
         log_predictions=args.log_predictions,
+        predictions_dir=Path(args.predictions_dir) if args.predictions_dir else None,
+        splitter=args.splitter,
+        inner_val=args.inner_val,
     )
 
     print_ablation_summary(results)

@@ -82,7 +82,8 @@ CV_CONFIG = {
     "random_state": 42,
 }
 
-# EEG encoder config
+# EEG encoder config. A config's optional "eeg_encoder" key overrides
+# encoder_type (e.g. the EEG2Vec headline row); other settings are shared.
 EEG_ENCODER_CONFIG = {
     "encoder_type": "simplecnn",
     "n_channels": 27,
@@ -100,13 +101,17 @@ from shared.cohort import ASM_NAME_MAPPING  # single source of truth  # noqa: E4
 # Outcome mapping: 1=failure->0, 2=success->1
 from shared.cohort import OUTCOME_MAPPING  # single source of truth  # noqa: E402,F401
 
-# Experiment matrix (8 experiments)
+# Experiment matrix (9 experiments)
 EXPERIMENTS = [
     # Exp3a: MLP fusion
     {"name": "exp3a_clinicalbert_chemberta", "text": "clinicalbert", "smiles": "chemberta", "fusion": "mlp"},
     {"name": "exp3a_clinicalbert_smilestrf", "text": "clinicalbert", "smiles": "smilestrf", "fusion": "mlp"},
     {"name": "exp3a_pubmedbert_chemberta", "text": "pubmedbert", "smiles": "chemberta", "fusion": "mlp"},
     {"name": "exp3a_pubmedbert_smilestrf", "text": "pubmedbert", "smiles": "smilestrf", "fusion": "mlp"},
+    # Exp3a with EEG2Vec (256-d, transformer aggregator): the analysis plan's
+    # pre-specified Text + EEG row.
+    {"name": "exp3a_clinicalbert_chemberta_eeg2vec", "text": "clinicalbert", "smiles": "chemberta", "fusion": "mlp",
+     "eeg_encoder": "eeg2vec"},
     # Exp3b: FuseMoE fusion
     {"name": "exp3b_clinicalbert_chemberta", "text": "clinicalbert", "smiles": "chemberta", "fusion": "fusemoe"},
     {"name": "exp3b_clinicalbert_smilestrf", "text": "clinicalbert", "smiles": "smilestrf", "fusion": "fusemoe"},

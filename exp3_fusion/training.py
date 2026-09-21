@@ -1,13 +1,13 @@
 """Training utilities for Experiment 3: LLM + EEG + SMILES triple fusion."""
 
+import copy
 import logging
-from typing import Dict, List, Tuple
+from typing import Dict, List, Optional, Tuple
 
 import numpy as np
 import torch
 import torch.nn as nn
 from sklearn.metrics import accuracy_score, balanced_accuracy_score, f1_score, roc_auc_score, roc_curve
-from sklearn.model_selection import StratifiedKFold
 from torch.utils.data import DataLoader
 
 from .config import CONFIG_3A, CONFIG_3B, CV_CONFIG, EEG_ENCODER_CONFIG, SMILES_DIMS
@@ -18,6 +18,8 @@ from .data_pipeline import (
     prepare_data,
 )
 from .models import TripleModalityMLP, TripleModalityFuseMoE
+from exp2_fusion.eeg_pipeline import add_stratification_columns
+from shared.cv_splits import fold_indices, outer_splits, rethreshold
 
 logger = logging.getLogger("exp3")
 
@@ -167,8 +169,14 @@ def get_model(
     text_dim: int,
     smiles_dim: int,
     device: torch.device,
+    eeg_encoder_type: Optional[str] = None,
 ) -> nn.Module:
-    """Create fusion model based on type."""
+    """Create fusion model based on type.
+
+    ``eeg_encoder_type`` overrides EEG_ENCODER_CONFIG["encoder_type"] (None
+    keeps the default SimpleCNN); all other EEG settings are shared.
+    """
+    eeg_encoder_type = eeg_encoder_type or EEG_ENCODER_CONFIG["encoder_type"]
     if fusion_type == "mlp":
         config = CONFIG_3A
         model = TripleModalityMLP(
@@ -177,7 +185,7 @@ def get_model(
             hidden_dim=config["hidden_dim"],
             num_classes=config["num_classes"],
             dropout=config["dropout"],
-            eeg_encoder_type=EEG_ENCODER_CONFIG["encoder_type"],
+            eeg_encoder_type=eeg_encoder_type,
             n_eeg_channels=EEG_ENCODER_CONFIG["n_channels"],
             n_eeg_times=EEG_ENCODER_CONFIG["n_times"],
             eeg_embed_dim=EEG_ENCODER_CONFIG["embed_dim"],
@@ -198,7 +206,7 @@ def get_model(
             num_heads=config["num_heads"],
             dropout=config["dropout"],
             aux_loss_weight=config["aux_loss_weight"],
-            eeg_encoder_type=EEG_ENCODER_CONFIG["encoder_type"],
+            eeg_encoder_type=eeg_encoder_type,
             n_eeg_channels=EEG_ENCODER_CONFIG["n_channels"],
             n_eeg_times=EEG_ENCODER_CONFIG["n_times"],
             eeg_embed_dim=EEG_ENCODER_CONFIG["embed_dim"],
@@ -221,8 +229,17 @@ def train_fold(
     device: torch.device,
     fold: int,
     asm_balance_mode: str = "none",
+    test_dataset: Optional[TripleModalityDataset] = None,
+    eeg_encoder_type: Optional[str] = None,
 ) -> Dict[str, float]:
-    """Train and evaluate a single fold."""
+    """Train and evaluate a single fold.
+
+    ``val_dataset`` is the early-stopping set (the outer fold in legacy runs,
+    the inner split in clean runs). ``test_dataset`` is given in clean runs
+    only: the untouched outer fold, scored once with the best early-stopping
+    weights at the early-stopping threshold. None keeps the legacy behaviour
+    (report the best epoch's metrics on ``val_dataset``).
+    """
     from shared.asm_balancing import (
         WeightedASMDataset,
         StratifiedASMBatchSampler,
@@ -272,7 +289,7 @@ def train_fold(
     )
 
     # Create model
-    model = get_model(fusion_type, text_dim, smiles_dim, device)
+    model = get_model(fusion_type, text_dim, smiles_dim, device, eeg_encoder_type=eeg_encoder_type)
     # If we don't have asm_weighted/stratified, the train fold's label
     # extraction below uses train_dataset[i][4]; the WeightedASMDataset
     # wrapper preserves index 4 (label) while appending the weight at
@@ -299,6 +316,8 @@ def train_fold(
     # Training loop
     best_val_auc = 0.0
     best_metrics = {}
+    best_state = None
+    best_step = 0
     patience_counter = 0
     global_step = 0
 
@@ -312,6 +331,9 @@ def train_fold(
         if val_metrics["auc"] > best_val_auc:
             best_val_auc = val_metrics["auc"]
             best_metrics = val_metrics.copy()
+            if test_dataset is not None:
+                best_state = copy.deepcopy(model.state_dict())
+                best_step = global_step
             patience_counter = 0
         else:
             patience_counter += 1
@@ -326,7 +348,28 @@ def train_fold(
             logger.info(f"    Early stopping at epoch {epoch + 1}")
             break
 
-    return best_metrics
+    if test_dataset is None:
+        return best_metrics
+
+    # Clean protocol: score the outer fold once with the early-stopping-best
+    # weights, at the threshold chosen on the early-stopping set.
+    if best_state is not None:
+        model.load_state_dict(best_state)
+        # FuseMoE's annealed gating temperature is not in the state_dict: set
+        # it back to its value at the best epoch (last update used step - 1).
+        if hasattr(model, "update_temperature") and best_step > 0:
+            model.update_temperature(best_step - 1)
+    test_loader = DataLoader(
+        test_dataset,
+        batch_size=config["batch_size"],
+        shuffle=False,
+        drop_last=False,
+        num_workers=0,
+    )
+    _, test_metrics = evaluate(model, test_loader, criterion, device, is_moe)
+    test_metrics = rethreshold(test_metrics, best_metrics.get("optimal_threshold", 0.5))
+    test_metrics["es_auc"] = best_val_auc
+    return test_metrics
 
 
 def run_cross_validation(
@@ -336,12 +379,24 @@ def run_cross_validation(
     device: torch.device = None,
     prediction_logger=None,
     asm_balance_mode: str = "none",
+    eeg_encoder_type: Optional[str] = None,
+    splitter: str = "legacy",
+    inner_val: float = 0.0,
 ) -> Dict[str, List[float]]:
-    """Run 5-fold cross-validation for a specific configuration."""
+    """Run 5-fold cross-validation for a specific configuration.
+
+    Args:
+        eeg_encoder_type: EEG encoder override (None = EEG_ENCODER_CONFIG).
+        splitter: Outer splitter ('legacy' = outcome-only StratifiedKFold).
+        inner_val: Inner early-stopping fraction (0 = legacy protocol).
+    """
     if device is None:
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-    logger.info(f"Running CV: text={text_model}, smiles={smiles_model}, fusion={fusion_type}")
+    logger.info(
+        f"Running CV: text={text_model}, smiles={smiles_model}, fusion={fusion_type}, "
+        f"eeg={eeg_encoder_type or EEG_ENCODER_CONFIG['encoder_type']}"
+    )
 
     # Prepare data
     text_emb, eeg_data, smiles_emb, smiles_idx, df = prepare_data(
@@ -357,29 +412,39 @@ def run_cross_validation(
     # Get outcomes for stratified split
     outcomes = df["outcome"].values
 
-    # Cross-validation
-    kfold = StratifiedKFold(
-        n_splits=CV_CONFIG["n_splits"],
-        shuffle=CV_CONFIG["shuffle"],
-        random_state=CV_CONFIG["random_state"],
+    # Cross-validation. The EEG cohort frame has no focal/sex columns, so the
+    # multilabel splitter gets them joined on (datasets keep using df).
+    split_df = df if splitter == "legacy" else add_stratification_columns(df)
+    splits = outer_splits(
+        split_df, mode=splitter, n_splits=CV_CONFIG["n_splits"], seed=CV_CONFIG["random_state"],
     )
 
     fold_metrics = {"auc": [], "accuracy": [], "f1": [], "f1_tuned": [], "balanced_acc_tuned": []}
 
-    for fold, (train_idx, val_idx) in enumerate(kfold.split(np.zeros(len(outcomes)), outcomes)):
+    for fold, (train_idx, val_idx) in enumerate(splits):
         logger.info(f"Fold {fold + 1}/{CV_CONFIG['n_splits']}")
 
-        # Create datasets
+        # Create datasets. Clean runs early-stop on an inner split and score
+        # the outer fold separately.
+        fit_idx, es_idx, test_idx = fold_indices(outcomes, train_idx, val_idx, fold, inner_val)
         train_ds, val_ds = create_datasets(
             text_emb, eeg_data, smiles_emb, smiles_idx, df,
-            train_idx, val_idx, max_channels,
+            fit_idx, es_idx, max_channels,
         )
-        logger.info(f"  Train: {len(train_ds)}, Val: {len(val_ds)}")
+        test_ds = create_datasets(
+            text_emb, eeg_data, smiles_emb, smiles_idx, df,
+            fit_idx, test_idx, max_channels,
+        )[1] if test_idx is not None else None
+        logger.info(
+            f"  Train: {len(train_ds)}, Early-stop: {len(val_ds)}"
+            + (f", Test: {len(test_ds)}" if test_ds is not None else "")
+        )
 
         # Train fold
         metrics = train_fold(
             train_ds, val_ds, fusion_type, text_dim, smiles_dim, device, fold,
-            asm_balance_mode=asm_balance_mode,
+            asm_balance_mode=asm_balance_mode, test_dataset=test_ds,
+            eeg_encoder_type=eeg_encoder_type,
         )
 
         if prediction_logger is not None and "y_prob" in metrics:

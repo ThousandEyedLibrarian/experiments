@@ -971,6 +971,38 @@ def get_valid_patient_eeg_pairs(
     return result
 
 
+def add_stratification_columns(
+    df: pd.DataFrame,
+    cols: Tuple[str, ...] = ("focal", "sex"),
+    csv_path: Path = CSV_PATH,
+) -> pd.DataFrame:
+    """Copy of ``df`` with the multilabel splitter's covariates joined by pid.
+
+    ``get_valid_patient_eeg_pairs`` keeps only pid/outcome/eeg_path/ASM, so
+    iterative stratification on outcome/focal/sex silently skips the missing
+    columns and stratifies on outcome alone. The clean splitter uses this copy
+    to build folds only; row order (and so every fold index) is unchanged.
+    Columns already present are left alone.
+    """
+    from shared.cohort import dedupe_by_pid
+
+    missing = [c for c in cols if c not in df.columns]
+    if not missing:
+        return df
+    raw = pd.read_csv(csv_path)
+    raw["outcome"] = pd.to_numeric(raw["outcome"], errors="coerce")
+    raw = dedupe_by_pid(raw[raw["outcome"].isin([1, 2])])
+    lookup = raw.set_index(raw["pid"].astype(str))
+    out = df.copy()
+    pids = out["pid"].astype(str)
+    for col in missing:
+        out[col] = pids.map(lookup[col]).to_numpy()
+    n_unmatched = int(out[missing].isna().all(axis=1).sum())
+    if n_unmatched:
+        logger.warning(f"{n_unmatched} patients have no {missing} in {csv_path.name}")
+    return out
+
+
 def test_pipeline():
     """Test the EEG pipeline on a sample file."""
     print("Testing EEG pipeline...")
