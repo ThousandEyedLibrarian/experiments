@@ -1,19 +1,20 @@
 """Training utilities for Experiment 4: Clinical features baseline."""
 
+import copy
 import logging
-from typing import Dict, List, Tuple
+from typing import Dict, List, Optional, Tuple
 
 import numpy as np
 import torch
 import torch.nn as nn
 from sklearn.metrics import accuracy_score, balanced_accuracy_score, f1_score, roc_auc_score, roc_curve
-from sklearn.model_selection import StratifiedKFold
 from torch.utils.data import DataLoader
 
 from .config import CONFIG_4A, CONFIG_4B, CV_CONFIG
 from .data_pipeline import ClinicalDataset, create_datasets, load_clinical_data
 from .models import get_model
 from shared.asm_balancing import WeightedASMDataset, compute_asm_sample_weights, weighted_cross_entropy
+from shared.cv_splits import fold_indices, outer_splits, rethreshold
 
 logger = logging.getLogger("exp4")
 
@@ -158,18 +159,24 @@ def train_fold(
     device: torch.device,
     fold: int,
     asm_balance_mode: str = "none",
+    test_dataset: Optional[ClinicalDataset] = None,
 ) -> Dict[str, float]:
     """Train and evaluate a single fold.
 
     Args:
         train_dataset: Training dataset.
-        val_dataset: Validation dataset.
+        val_dataset: Early-stopping dataset (the outer fold in legacy runs,
+            the inner split in clean runs).
         model_type: Either 'mlp' or 'attention'.
         device: Device to use.
         fold: Fold number (for logging).
+        test_dataset: Clean runs only: the untouched outer fold, scored once
+            with the best early-stopping weights at the early-stopping
+            threshold. None keeps the legacy behaviour (report the best
+            epoch's metrics on ``val_dataset``).
 
     Returns:
-        Dictionary of best validation metrics.
+        Dictionary of metrics for the reported fold.
     """
     config = CONFIG_4A if model_type == "mlp" else CONFIG_4B
 
@@ -220,6 +227,7 @@ def train_fold(
     # Training loop with early stopping
     best_val_auc = 0.0
     best_metrics = {}
+    best_state = None
     patience_counter = 0
 
     for epoch in range(config["epochs"]):
@@ -229,6 +237,8 @@ def train_fold(
         if val_metrics["auc"] > best_val_auc:
             best_val_auc = val_metrics["auc"]
             best_metrics = val_metrics.copy()
+            if test_dataset is not None:
+                best_state = copy.deepcopy(model.state_dict())
             patience_counter = 0
         else:
             patience_counter += 1
@@ -243,7 +253,20 @@ def train_fold(
             logger.info(f"    Early stopping at epoch {epoch + 1}")
             break
 
-    return best_metrics
+    if test_dataset is None:
+        return best_metrics
+
+    # Clean protocol: score the outer fold once with the early-stopping-best
+    # weights, at the threshold chosen on the early-stopping set.
+    if best_state is not None:
+        model.load_state_dict(best_state)
+    test_loader = DataLoader(
+        test_dataset, batch_size=config["batch_size"], shuffle=False, drop_last=False, num_workers=0,
+    )
+    _, test_metrics = evaluate(model, test_loader, criterion, device)
+    test_metrics = rethreshold(test_metrics, best_metrics.get("optimal_threshold", 0.5))
+    test_metrics["es_auc"] = best_val_auc
+    return test_metrics
 
 
 def run_cross_validation(
@@ -251,12 +274,16 @@ def run_cross_validation(
     device: torch.device = None,
     prediction_logger=None,
     asm_balance_mode: str = "none",
+    splitter: str = "legacy",
+    inner_val: float = 0.0,
 ) -> Dict[str, List[float]]:
     """Run 5-fold stratified cross-validation.
 
     Args:
         model_type: Either 'mlp' or 'attention'.
         device: Device to use.
+        splitter: Outer splitter ('legacy' = outcome-only StratifiedKFold).
+        inner_val: Inner early-stopping fraction (0 = legacy protocol).
 
     Returns:
         Dictionary mapping metric names to lists of per-fold values.
@@ -273,10 +300,8 @@ def run_cross_validation(
     outcomes = df["outcome"].values
 
     # Cross-validation
-    kfold = StratifiedKFold(
-        n_splits=CV_CONFIG["n_splits"],
-        shuffle=CV_CONFIG["shuffle"],
-        random_state=CV_CONFIG["random_state"],
+    splits = outer_splits(
+        df, mode=splitter, n_splits=CV_CONFIG["n_splits"], seed=CV_CONFIG["random_state"],
     )
 
     fold_metrics = {
@@ -287,15 +312,24 @@ def run_cross_validation(
         "balanced_acc_tuned": [],
     }
 
-    for fold, (train_idx, val_idx) in enumerate(kfold.split(np.zeros(len(outcomes)), outcomes)):
+    for fold, (train_idx, val_idx) in enumerate(splits):
         logger.info(f"Fold {fold + 1}/{CV_CONFIG['n_splits']}")
 
-        # Create datasets (preprocessor fit on training fold only)
-        train_ds, val_ds, _ = create_datasets(df, train_idx, val_idx)
-        logger.info(f"  Train: {len(train_ds)}, Val: {len(val_ds)}")
+        # Create datasets (preprocessor fit on the fit set only). Clean runs
+        # early-stop on an inner split and score the outer fold separately.
+        fit_idx, es_idx, test_idx = fold_indices(outcomes, train_idx, val_idx, fold, inner_val)
+        train_ds, val_ds, _ = create_datasets(df, fit_idx, es_idx)
+        test_ds = create_datasets(df, fit_idx, test_idx)[1] if test_idx is not None else None
+        logger.info(
+            f"  Train: {len(train_ds)}, Early-stop: {len(val_ds)}"
+            + (f", Test: {len(test_ds)}" if test_ds is not None else "")
+        )
 
         # Train fold
-        metrics = train_fold(train_ds, val_ds, model_type, device, fold, asm_balance_mode=asm_balance_mode)
+        metrics = train_fold(
+            train_ds, val_ds, model_type, device, fold,
+            asm_balance_mode=asm_balance_mode, test_dataset=test_ds,
+        )
 
         if prediction_logger is not None:
             val_pids = df["pid"].iloc[val_idx].tolist()

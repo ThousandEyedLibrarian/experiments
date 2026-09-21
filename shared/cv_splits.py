@@ -115,3 +115,59 @@ def cv_suffix(splitter: str, inner_val: float) -> str:
     if splitter == "legacy" and inner_val == 0:
         return ""
     return f"_sp-{splitter}_iv{int(round(inner_val * 100))}"
+
+
+def fold_indices(
+    strat_labels: np.ndarray,
+    train_idx: np.ndarray,
+    test_idx: np.ndarray,
+    fold: int,
+    inner_val: float,
+    seed: int = DEFAULT_SEED,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray | None]:
+    """Index sets for one outer fold: (fit_idx, es_idx, clean_test_idx).
+
+    Legacy (``inner_val == 0``) returns ``(train_idx, test_idx, None)``: fit on
+    the whole outer training fold and early-stop on the outer test fold, i.e.
+    the original behaviour, so callers keep their old code path. Clean runs
+    return a stratified inner split of ``train_idx`` (seed ``seed + fold``) plus
+    the untouched outer test fold, which is scored once after early stopping.
+    """
+    if inner_val == 0:
+        return np.asarray(train_idx), np.asarray(test_idx), None
+    fit_idx, es_idx = inner_val_split(strat_labels, train_idx, inner_val, seed + fold)
+    return fit_idx, es_idx, np.asarray(test_idx)
+
+
+def youden_threshold(y_true, y_prob) -> float:
+    """Threshold maximising Youden's J (equivalently balanced accuracy)."""
+    from sklearn.metrics import roc_curve
+
+    y_true, y_prob = np.asarray(y_true), np.asarray(y_prob)
+    if len(np.unique(y_true)) < 2:
+        return 0.5
+    fpr, tpr, thresholds = roc_curve(y_true, y_prob)
+    return float(thresholds[int(np.argmax(tpr - fpr))])
+
+
+def rethreshold(metrics: dict, threshold: float) -> dict:
+    """Recompute the threshold-dependent metrics at a threshold chosen elsewhere.
+
+    ``metrics`` is an experiment's evaluate() dict for the outer test fold (it
+    must carry ``y_true``/``y_prob``). Its own ``optimal_threshold`` was tuned
+    on that test fold; this replaces it with the inner early-stopping set's
+    threshold and recomputes ``balanced_acc_tuned`` and ``f1_tuned``.
+    Threshold-free metrics (AUC, argmax accuracy/F1) are left untouched.
+    """
+    from sklearn.metrics import balanced_accuracy_score, f1_score
+
+    y_true = np.asarray(metrics["y_true"])
+    y_pred = (np.asarray(metrics["y_prob"]) >= threshold).astype(int)
+    out = dict(metrics)
+    out["balanced_acc_tuned"] = (
+        float(balanced_accuracy_score(y_true, y_pred)) if len(np.unique(y_true)) > 1 else 0.5
+    )
+    out["f1_tuned"] = float(f1_score(y_true, y_pred, zero_division=0))
+    out["optimal_threshold"] = float(threshold)
+    out["threshold_source"] = "inner_val"
+    return out

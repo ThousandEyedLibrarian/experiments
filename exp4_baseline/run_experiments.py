@@ -16,6 +16,7 @@ from typing import Dict, List, Optional
 import numpy as np
 import torch
 
+from shared.cv_splits import add_cv_args, cv_suffix
 from shared.prediction_logger import PredictionLogger
 
 from .config import EXPERIMENTS, RESULTS_DIR
@@ -47,6 +48,8 @@ def run_all_experiments(
     log_predictions: bool = False,
     predictions_dir: Optional[Path] = None,
     asm_balance_mode: str = "none",
+    splitter: str = "legacy",
+    inner_val: float = 0.0,
 ) -> Dict[str, Dict]:
     """Run all experiments and collect results.
 
@@ -79,9 +82,11 @@ def run_all_experiments(
             # Distinct filename per config (so exp4b_attention does not clobber
             # exp4a_mlp) plus a balance-mode suffix, matching exp3/5/6/7.
             suffix = {"weighted": "_asmweighted", "stratified_batch": "_asmstratbatch"}.get(asm_balance_mode, "")
+            suffix += cv_suffix(splitter, inner_val)
             pred_logger = PredictionLogger(
                 exp_id=exp_name, output_dir=target_dir,
                 filename=f"predictions_oof_{exp_name}{suffix}.json",
+                metadata={"splitter": splitter, "inner_val": inner_val, "asm_balance": asm_balance_mode},
             )
 
         fold_metrics = run_cross_validation(
@@ -89,6 +94,8 @@ def run_all_experiments(
             device=device,
             prediction_logger=pred_logger,
             asm_balance_mode=asm_balance_mode,
+            splitter=splitter,
+            inner_val=inner_val,
         )
 
         if pred_logger is not None:
@@ -214,6 +221,13 @@ def main():
         default="none",
         help="ASM class-balancing mode (weighted = inverse-sqrt sample weighting).",
     )
+    parser.add_argument(
+        "--predictions-dir",
+        type=str,
+        default=None,
+        help="Directory for OOF prediction files (default: outputs/exp4_predictions).",
+    )
+    add_cv_args(parser)
     args = parser.parse_args()
 
     if args.deterministic:
@@ -244,7 +258,10 @@ def main():
         experiments=experiments,
         device=device,
         log_predictions=args.log_predictions,
+        predictions_dir=Path(args.predictions_dir) if args.predictions_dir else None,
         asm_balance_mode=args.asm_balance,
+        splitter=args.splitter,
+        inner_val=args.inner_val,
     )
 
     # Print results
