@@ -32,14 +32,50 @@ The resulting JSON has the schema:
             {"fold": 0, "pids": [...], "y_true": [...], "y_prob": [...], "threshold": 0.42},
             ...
         ],
+        "metadata": {"splitter": ..., "inner_val": ..., "provenance": {...}},
     }
+
+``metadata`` records the CV protocol (see shared/cv_splits.py) and the git
+commits the run came from; consumers that only read ``folds`` ignore it.
 """
 
 from __future__ import annotations
 
+import datetime
 import json
+import socket
+import subprocess
 from pathlib import Path
 from typing import Iterable
+
+_EXPERIMENTS_ROOT = Path(__file__).resolve().parent.parent
+
+
+def _git_head(repo: Path) -> str | None:
+    """Short HEAD hash (with '+dirty' if the tree has changes), or None."""
+    try:
+        head = subprocess.run(
+            ["git", "-C", str(repo), "rev-parse", "--short", "HEAD"],
+            capture_output=True, text=True, check=True, timeout=10,
+        ).stdout.strip()
+        dirty = subprocess.run(
+            ["git", "-C", str(repo), "status", "--porcelain", "--untracked-files=no"],
+            capture_output=True, text=True, check=True, timeout=10,
+        ).stdout.strip()
+    except (OSError, subprocess.SubprocessError):
+        return None
+    return f"{head}+dirty" if dirty else head
+
+
+def run_provenance() -> dict:
+    """Where and from which code a prediction file was produced."""
+    thesis = _EXPERIMENTS_ROOT / "thesisStandalone"
+    return {
+        "experiments_commit": _git_head(_EXPERIMENTS_ROOT),
+        "thesis_commit": _git_head(thesis) if (thesis / ".git").exists() else None,
+        "host": socket.gethostname(),
+        "written_at": datetime.datetime.now().isoformat(timespec="seconds"),
+    }
 
 
 class PredictionLogger:
@@ -49,10 +85,17 @@ class PredictionLogger:
     (not numpy arrays) so the JSON dump is portable across environments.
     """
 
-    def __init__(self, exp_id: str, output_dir: str | Path, filename: str = "predictions_oof.json"):
+    def __init__(
+        self,
+        exp_id: str,
+        output_dir: str | Path,
+        filename: str = "predictions_oof.json",
+        metadata: dict | None = None,
+    ):
         self.exp_id = exp_id
         self.output_path = Path(output_dir) / filename
         self.folds: list[dict] = []
+        self.metadata: dict = dict(metadata or {})
 
     def log_fold(
         self,
@@ -90,6 +133,7 @@ class PredictionLogger:
             "exp_id": self.exp_id,
             "n_folds": len(self.folds),
             "folds": self.folds,
+            "metadata": {**self.metadata, "provenance": run_provenance()},
         }
         with self.output_path.open("w") as handle:
             json.dump(payload, handle, indent=2)

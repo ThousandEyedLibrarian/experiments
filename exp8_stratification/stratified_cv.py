@@ -58,7 +58,7 @@ def get_outcome_only_splits(
     """
     n_splits = n_splits or CV_CONFIG["n_splits"]
     shuffle = shuffle if shuffle is not None else CV_CONFIG["shuffle"]
-    random_state = random_state or CV_CONFIG["random_state"]
+    random_state = CV_CONFIG["random_state"] if random_state is None else random_state
 
     skf = StratifiedKFold(
         n_splits=n_splits,
@@ -103,7 +103,7 @@ def get_multilabel_splits(
 
     n_splits = n_splits or CV_CONFIG["n_splits"]
     shuffle = shuffle if shuffle is not None else CV_CONFIG["shuffle"]
-    random_state = random_state or CV_CONFIG["random_state"]
+    random_state = CV_CONFIG["random_state"] if random_state is None else random_state
 
     # Default stratification columns
     if stratify_cols is None:
@@ -174,7 +174,7 @@ def get_composite_key_splits(
     """
     n_splits = n_splits or CV_CONFIG["n_splits"]
     shuffle = shuffle if shuffle is not None else CV_CONFIG["shuffle"]
-    random_state = random_state or CV_CONFIG["random_state"]
+    random_state = CV_CONFIG["random_state"] if random_state is None else random_state
 
     if key_cols is None:
         key_cols = ["outcome", "focal"]

@@ -9,7 +9,7 @@ import json
 
 import pytest
 
-from shared.verify_oof import expected_for, verify_file
+from shared.verify_oof import expected_for, missing_expected, verify_file
 
 # (real prediction-file rel path -> expected unique-pid cohort). exp1-6 names
 # come from each config; exp7 --mode predictions writes the bare headline file;
@@ -58,7 +58,28 @@ def test_verify_file_flags_cross_fold_leakage(tmp_path):
 
 
 def test_verify_file_passes_clean_disjoint_folds(tmp_path):
-    payload = {"folds": [{"pids": ["a", "b"]}, {"pids": ["c", "d"]}]}
+    payload = {"folds": [{"pids": [f"{k}a", f"{k}b"]} for k in range(5)]}
     f = tmp_path / "predictions_oof_clean.json"  # unmapped name -> no count check
     f.write_text(json.dumps(payload))
     assert verify_file(f) == []
+
+
+def test_verify_file_flags_wrong_fold_count(tmp_path):
+    payload = {"folds": [{"pids": ["a", "b"]}, {"pids": ["c", "d"]}]}
+    f = tmp_path / "predictions_oof_twofold.json"
+    f.write_text(json.dumps(payload))
+    assert any("folds != expected" in p for p in verify_file(f))
+
+
+def test_missing_expected_reports_only_absent_patterns(tmp_path):
+    (tmp_path / "exp4_predictions").mkdir()
+    (tmp_path / "exp4_predictions" / "predictions_oof_exp4a_mlp_sp-multilabel_iv20.json").write_text("{}")
+    manifest = tmp_path / "expect.txt"
+    manifest.write_text(
+        "# required clean files\n"
+        "exp4_predictions/predictions_oof_exp4a_mlp_sp-multilabel_iv20.json\n"
+        "exp5_predictions/predictions_oof_exp5a_*_sp-multilabel_iv20.json\n"
+    )
+    assert missing_expected(tmp_path, manifest) == [
+        "exp5_predictions/predictions_oof_exp5a_*_sp-multilabel_iv20.json"
+    ]
