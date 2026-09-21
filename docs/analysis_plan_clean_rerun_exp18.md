@@ -144,4 +144,25 @@ overlap audit finds.
 
 ## Deviations
 
-(none yet)
+**2026-09-21, seeds (decided before any M3 clean run).** Section 2 used a
+single seed (42) for the single-cohort experiments. While building the
+retrofit, local development runs (not reported, and not used to choose any
+configuration) showed clean-protocol Exp4a fold AUCs from 0.24 to 0.73, and the
+same legacy code gave fold-mean AUCs 0.03 apart on two machines. One seed
+cannot separate tier differences of 0.02-0.05, so every single-cohort
+configuration and variant, the HEP1 external validation and the REVE row now
+run with seeds 42-46:
+
+- outer split seed `s`, inner split seed `s + fold`, determinism seed `s`
+  (per fold `s + fold` where an experiment already seeded per fold);
+- file suffix `_sp-multilabel_iv20_s<seed>`;
+- reported estimate: the mean over seeds of each seed's pooled estimate
+  (Section 4), with the 95% CI as the mean of the per-seed CI bounds and the
+  seed-to-seed SD shown alongside;
+- HEP1 external AUC: mean over seeds of the external AUC of each seed's
+  five-fold ensemble, with the patient-level bootstrap CI averaged the same way;
+- all-pairs DeLong (exploratory): run per seed; report the median p-value and
+  the number of seeds with BH-adjusted p < 0.05.
+
+The change was motivated by variance, not by the direction of any dev result.
+exp18's seeds (Section 6) are unchanged.
