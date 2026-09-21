@@ -108,13 +108,15 @@ EXPERIMENTS = [
     {"name": "exp3a_clinicalbert_smilestrf", "text": "clinicalbert", "smiles": "smilestrf", "fusion": "mlp"},
     {"name": "exp3a_pubmedbert_chemberta", "text": "pubmedbert", "smiles": "chemberta", "fusion": "mlp"},
     {"name": "exp3a_pubmedbert_smilestrf", "text": "pubmedbert", "smiles": "smilestrf", "fusion": "mlp"},
-    # Exp3a with EEG2Vec (256-d, transformer aggregator): the analysis plan's
-    # pre-specified Text + EEG row.
-    {"name": "exp3a_clinicalbert_chemberta_eeg2vec", "text": "clinicalbert", "smiles": "chemberta", "fusion": "mlp",
-     "eeg_encoder": "eeg2vec"},
     # Exp3b: FuseMoE fusion
     {"name": "exp3b_clinicalbert_chemberta", "text": "clinicalbert", "smiles": "chemberta", "fusion": "fusemoe"},
     {"name": "exp3b_clinicalbert_smilestrf", "text": "clinicalbert", "smiles": "smilestrf", "fusion": "fusemoe"},
     {"name": "exp3b_pubmedbert_chemberta", "text": "pubmedbert", "smiles": "chemberta", "fusion": "fusemoe"},
     {"name": "exp3b_pubmedbert_smilestrf", "text": "pubmedbert", "smiles": "smilestrf", "fusion": "fusemoe"},
+    # Exp3a with EEG2Vec (256-d, transformer aggregator): the analysis plan's
+    # pre-specified Text + EEG row. Kept last: configs share one RNG stream
+    # (determinism is seeded once per run), so inserting it earlier would
+    # shift every later config's legacy output.
+    {"name": "exp3a_clinicalbert_chemberta_eeg2vec", "text": "clinicalbert", "smiles": "chemberta", "fusion": "mlp",
+     "eeg_encoder": "eeg2vec"},
 ]

@@ -158,10 +158,19 @@ def run_all_experiments(
 
         # Clean-protocol results get the CV suffix so they do not overwrite the
         # archived legacy per-experiment files (the suffix is empty for legacy).
-        save_results(results, f"{exp['name']}{cv_suffix(splitter, inner_val)}.json")
+        save_results(results, f"{exp['name']}{_results_suffix(splitter, inner_val, asm_balance_mode)}.json")
         all_results.append(results)
 
     return all_results
+
+
+def _results_suffix(splitter: str, inner_val: float, asm_balance_mode: str) -> str:
+    """Suffix for results/summary JSONs: empty for legacy runs (archived names);
+    clean runs add the balance tag so the weighted run keeps its own file."""
+    protocol = cv_suffix(splitter, inner_val)
+    if not protocol:
+        return ""
+    return {"weighted": "_asmweighted", "stratified_batch": "_asmstratbatch"}.get(asm_balance_mode, "") + protocol
 
 
 def print_summary(results: List[Dict]):
@@ -266,7 +275,7 @@ def main():
 
     # Print and save summary
     print_summary(results)
-    save_summary(results, f"summary{cv_suffix(args.splitter, args.inner_val)}.json")
+    save_summary(results, f"summary{_results_suffix(args.splitter, args.inner_val, args.asm_balance)}.json")
 
 
 if __name__ == '__main__':

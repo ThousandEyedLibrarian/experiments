@@ -21,6 +21,7 @@ from .config import MLP_CONFIG
 from .models import get_model
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
+from shared.cv_splits import current_seed  # noqa: E402
 from exp7_all_modalities.training import (  # noqa: E402
     _DropPidWrapper,
     _predict_with_smiles_override,
@@ -91,7 +92,7 @@ def train_fold_with_predictions(
 
     if asm_stratified:
         batch_sampler = StratifiedASMBatchSampler(
-            train_asm_labels, batch_size=config["batch_size"], seed=fold,
+            train_asm_labels, batch_size=config["batch_size"], seed=current_seed(0) + fold,
         )
         train_loader = DataLoader(train_no_pid, batch_sampler=batch_sampler, num_workers=0)
     else:

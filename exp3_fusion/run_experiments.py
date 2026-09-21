@@ -301,6 +301,10 @@ def main():
 
     save_results(all_results, output_path)
 
+    failed = [name for name, r in all_results.items() if "error" in r]
+    if failed:
+        raise SystemExit(f"{len(failed)} configuration(s) failed: {failed}")
+
 
 if __name__ == "__main__":
     main()

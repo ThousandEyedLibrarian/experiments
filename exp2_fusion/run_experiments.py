@@ -100,6 +100,11 @@ def run_all_experiments(
     all_results = []
     # Empty for the legacy protocol, so archived result/prediction names hold.
     protocol_suffix = cv_suffix(splitter, inner_val)
+    results_suffix = protocol_suffix
+    if protocol_suffix:
+        results_suffix = {"weighted": "_asmweighted", "stratified_batch": "_asmstratbatch"}.get(
+            asm_balance_mode, "") + protocol_suffix
+    failed = []
 
     # Run experiments
     for i, exp in enumerate(experiments):
@@ -153,7 +158,7 @@ def run_all_experiments(
             all_results.append(results)
 
             # Save individual result
-            result_file = output_dir / f"{results['experiment']}{protocol_suffix}.json"
+            result_file = output_dir / f"{results['experiment']}{results_suffix}.json"
             with open(result_file, "w") as f:
                 json.dump(results, f, indent=2)
 
@@ -167,11 +172,11 @@ def run_all_experiments(
         except Exception as e:
             log_exception(logger, e, f"Experiment {exp_name} failed")
             logger.error(f"Skipping experiment {exp_name} due to error")
+            failed.append(exp_name)
             continue
 
     if not all_results:
-        logger.error("No experiments completed successfully!")
-        return
+        raise RuntimeError("No experiments completed successfully!")
 
     # Save summary
     summary = {
@@ -179,9 +184,11 @@ def run_all_experiments(
         "n_experiments": len(all_results),
         "experiments": all_results,
     }
-    summary_file = output_dir / f"summary{protocol_suffix}.json"
+    summary_file = output_dir / f"summary{results_suffix}.json"
     with open(summary_file, "w") as f:
         json.dump(summary, f, indent=2)
+    if failed:
+        raise RuntimeError(f"{len(failed)} experiment(s) failed: {failed}")
 
     logger.info(f"Results saved to {output_dir}")
 

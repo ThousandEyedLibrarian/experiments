@@ -166,3 +166,30 @@ run with seeds 42-46:
 
 The change was motivated by variance, not by the direction of any dev result.
 exp18's seeds (Section 6) are unchanged.
+
+**2026-09-21, exp18 cross-cohort duplicates (decided before any M3 clean
+run).** Section 6 excludes duplicates confirmed by the overlap audit before
+pooling. The audit found no strong candidate (best report similarity 0.46;
+the loose-match rate at the RMH site, 18 of 29, equals the rate at HEP1 sites
+that cannot overlap, 244 of 409), and the data custodian's confirmation is
+still pending. exp18 is therefore run on the unmodified pooled cohort now. If
+any duplicate is confirmed, exp18 is rerun excluding those HEP1 patients
+(variant `_dedup`) and that run becomes the primary analysis, with the
+unmodified run reported alongside. The RMH-excluded sensitivity analysis
+(Section 6) bounds the effect in the meantime.
+
+**2026-09-21, audit fixes (before any M3 clean run).** An independent code
+audit led to these implementation clarifications, none of which changes an
+estimand:
+
+- A non-finite early-stopping Youden threshold (flat or inverted ROC on a
+  small inner set) falls back to 0.5.
+- HEP1 external sensitivity and specificity in clean runs are labelled
+  `_ownthr`, because their threshold is tuned on the scored cohort. They are
+  descriptive only; external AUC stays the reported metric.
+- Calibration-in-the-large is computed as the mean predicted minus the
+  observed rate.
+- The Nadeau-Bengio variance inflation uses n_test / n_train of the outer
+  folds.
+- Size-matched draws are compared with the own-cohort and mixed arms by
+  paired DeLong per draw (exploratory).

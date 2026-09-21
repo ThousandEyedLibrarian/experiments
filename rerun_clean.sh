@@ -12,10 +12,15 @@
 # --inner-val 0.2) under each repeated-CV seed 42-46 (--cv-seed; the plan's
 # 2026-09-21 deviation), writing files suffixed _sp-multilabel_iv20_s<seed>
 # next to the legacy ones, so nothing needs archiving and nothing legacy is
-# overwritten. exp18 keeps its own seed sets (EEG configurations 42-44). A
-# finished item writes outputs/_clean_rerun/<task>_s<seed>.done; rerunning a
-# done item is a no-op unless FORCE=1. Set ASM_EXPERIMENTS_DIR if
-# thesisStandalone is not cloned inside this repo.
+# overwritten. exp18 keeps its own seed sets (EEG configurations 42-44, so
+# those items are not listed for seeds 45/46). If
+# outputs/exp18_mixed_cohort/confirmed_duplicates.txt exists (HEP1 pids the
+# data custodian confirmed as Melbourne patients; patient-level, so it lives
+# in the gitignored outputs), exp18 excludes them and writes the _dedup
+# variant, which the analysis then treats as primary. A finished item writes
+# outputs/_clean_rerun/<task>_s<seed>.done; rerunning a done item is a no-op
+# unless FORCE=1 (which also makes exp18 overwrite its outputs). Set
+# ASM_EXPERIMENTS_DIR if thesisStandalone is not cloned inside this repo.
 set -uo pipefail
 
 REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -26,6 +31,14 @@ DONE="$OUT/_clean_rerun"
 THESIS="$REPO_DIR/thesisStandalone"
 SEEDS=(42 43 44 45 46)
 EXP18_EEG_SEEDS=" 42 43 44 "
+EXP18_DUPLICATES="$OUT/exp18_mixed_cohort/confirmed_duplicates.txt"
+
+exp18 () {
+    local extra=()
+    [[ "${FORCE:-0}" == 1 ]] && extra+=(--force)
+    [[ -f "$EXP18_DUPLICATES" ]] && extra+=(--exclude-hep-pids "$EXP18_DUPLICATES")
+    "$PY" -m exp18_mixed_cohort.run_experiments "$@" "${extra[@]}"
+}
 export ASM_EXPERIMENTS_DIR="${ASM_EXPERIMENTS_DIR:-$REPO_DIR}"
 
 TASKS=(
@@ -97,14 +110,13 @@ run_task () {
         hep_reduced) (cd "$THESIS" && "$PY" -m analysis.hep_reduced_external_validation "${CV[@]}") ;;
         reve) (cd "$THESIS" && "$PY" analysis/reve_standalone.py "${CV[@]}" \
                    --log-predictions "$REPO_DIR/$OUT/exp9_predictions") ;;
-        exp18_noRMH) "$PY" -m exp18_mixed_cohort.run_experiments --config Exp4a Exp5a Exp5b \
-                         --exclude-rmh --seeds "$seed" ;;
+        exp18_noRMH) exp18 --config Exp4a Exp5a Exp5b --exclude-rmh --seeds "$seed" ;;
         exp18_Exp5c|exp18_Exp6b|exp18_Exp7a)
             if [[ "$EXP18_EEG_SEEDS" != *" $seed "* ]]; then
                 echo "   (exp18 EEG configurations use seeds${EXP18_EEG_SEEDS}only; nothing to do)"; return 0
             fi
-            "$PY" -m exp18_mixed_cohort.run_experiments --config "${task#exp18_}" --seeds "$seed" ;;
-        exp18_*) "$PY" -m exp18_mixed_cohort.run_experiments --config "${task#exp18_}" --seeds "$seed" ;;
+            exp18 --config "${task#exp18_}" --seeds "$seed" ;;
+        exp18_*) exp18 --config "${task#exp18_}" --seeds "$seed" ;;
         *) echo "unknown task: $task (see: bash rerun_clean.sh list)" >&2; return 2 ;;
     esac
 }
@@ -122,11 +134,16 @@ verify () {
     done
     echo "$n_done/$(items | wc -l) work items done"
     echo ""
-    echo "== clean HEP outputs =="
-    for f in hep_external_summary hep_external_summary_eeg hep_reverse_summary \
-             hep_focal_external_summary hep_reduced_external_summary; do
+    echo "== clean HEP outputs (file per seed, one summary row per configuration) =="
+    local f want csv rows
+    for spec in hep_external_summary:3 hep_external_summary_eeg:3 hep_reverse_summary:3 \
+                hep_focal_external_summary:2 hep_reduced_external_summary:1; do
+        f="${spec%%:*}"; want="${spec##*:}"
         for seed in "${SEEDS[@]}"; do
-            [[ -f "$THESIS/analysis/output/${f}_sp-multilabel_iv20_s${seed}.csv" ]] || { echo "MISSING ${f} s${seed}"; rc=1; }
+            csv="$THESIS/analysis/output/${f}_sp-multilabel_iv20_s${seed}.csv"
+            if [[ ! -f "$csv" ]]; then echo "MISSING ${f} s${seed}"; rc=1; continue; fi
+            rows=$(( $(wc -l < "$csv") - 1 ))
+            (( rows == want )) || { echo "INCOMPLETE ${f} s${seed}: $rows of $want rows"; rc=1; }
         done
     done
     echo ""
@@ -151,6 +168,14 @@ preflight () {
         "[[ -f $OUT/eeg_cache/processed_eeg_std19_alfred.pkl && -f $OUT/eeg_cache/processed_eeg_std19_hep.pkl ]]"
     check "text + SMILES embeddings" "[[ -f $OUT/bert_alfred_1stregimen_eeg_embeddings.npy && -f $OUT/hep_clinicalbert_eeg_embeddings.npy && -f $OUT/chemberta_asm_embeddings.npy ]]"
     check "REVE features (exp15, reve)" "ls $OUT/reve_features_alfred*.npz"
+    check "legacy exp9 EEG2Vec OOF file (reve's 147-patient cohort)" \
+        "[[ -f $OUT/exp9_predictions/predictions_oof_exp9_encoder_eeg2vec.json ]]"
+    check "logs/ directory (slurm opens its log files before the job starts)" "mkdir -p logs"
+    if [[ -f "$EXP18_DUPLICATES" ]]; then
+        echo "note    exp18 will exclude $(grep -c . "$EXP18_DUPLICATES") confirmed duplicate HEP1 pid(s)"
+    else
+        echo "note    no confirmed-duplicates file: exp18 runs on the unmodified pooled cohort"
+    fi
     check "thesisStandalone clone" "[[ -f '$THESIS/analysis/hep_external_validation.py' ]]"
     check "expected-files manifest" "[[ -f clean_rerun_expected.txt ]]"
     echo "experiments $(git rev-parse --short HEAD)  thesisStandalone $(git -C "$THESIS" rev-parse --short HEAD 2>/dev/null)"
@@ -160,7 +185,15 @@ preflight () {
 
 items () {
     local t s
-    for t in "${TASKS[@]}"; do for s in "${SEEDS[@]}"; do echo "$t:$s"; done; done
+    for t in "${TASKS[@]}"; do
+        for s in "${SEEDS[@]}"; do
+            # exp18 EEG configurations run seeds 42-44 only; do not queue no-op GPU jobs.
+            case "$t" in exp18_Exp5c|exp18_Exp6b|exp18_Exp7a)
+                [[ "$EXP18_EEG_SEEDS" == *" $s "* ]] || continue ;;
+            esac
+            echo "$t:$s"
+        done
+    done
 }
 
 case "${1:-}" in

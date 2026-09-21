@@ -178,15 +178,27 @@ def fold_indices(
     return fit_idx, es_idx, np.asarray(test_idx)
 
 
+def finite_threshold(threshold: float, fallback: float = 0.5) -> float:
+    """``threshold``, or ``fallback`` when it is not finite.
+
+    roc_curve's first threshold is +inf; Youden's J picks it when no cut-off
+    beats the diagonal (flat or inverted ROC, likely on a 20-40 patient
+    early-stopping set), which would classify every test patient negative.
+    """
+    threshold = float(threshold)
+    return threshold if np.isfinite(threshold) else fallback
+
+
 def youden_threshold(y_true, y_prob) -> float:
-    """Threshold maximising Youden's J (equivalently balanced accuracy)."""
+    """Threshold maximising Youden's J (equivalently balanced accuracy); 0.5
+    when undefined (one class) or not finite."""
     from sklearn.metrics import roc_curve
 
     y_true, y_prob = np.asarray(y_true), np.asarray(y_prob)
     if len(np.unique(y_true)) < 2:
         return 0.5
     fpr, tpr, thresholds = roc_curve(y_true, y_prob)
-    return float(thresholds[int(np.argmax(tpr - fpr))])
+    return finite_threshold(thresholds[int(np.argmax(tpr - fpr))])
 
 
 def rethreshold(metrics: dict, threshold: float) -> dict:
@@ -200,6 +212,7 @@ def rethreshold(metrics: dict, threshold: float) -> dict:
     """
     from sklearn.metrics import balanced_accuracy_score, f1_score
 
+    threshold = finite_threshold(threshold)
     y_true = np.asarray(metrics["y_true"])
     y_pred = (np.asarray(metrics["y_prob"]) >= threshold).astype(int)
     out = dict(metrics)

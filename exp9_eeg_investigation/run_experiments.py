@@ -613,3 +613,7 @@ if __name__ == "__main__":
     )
 
     print_ablation_summary(results)
+
+    failed = [r["name"] for r in results if "error" in r]
+    if failed:
+        raise SystemExit(f"{len(failed)} ablation(s) failed: {failed}")

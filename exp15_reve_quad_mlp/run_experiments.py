@@ -16,7 +16,7 @@ from typing import Dict, List
 import numpy as np
 import torch
 
-from shared.cv_splits import add_cv_args, cv_suffix, fold_indices, outer_splits
+from shared.cv_splits import add_cv_args, current_seed, cv_suffix, fold_indices, outer_splits
 from shared.cv_splits import set_repeat_seed  # noqa: E402
 from shared.prediction_logger import run_provenance
 
@@ -193,7 +193,7 @@ def run_exp15_with_predictions(
         "text_model": text_model,
         "smiles_model": smiles_model,
         "asms": asms_used,
-        "cv_random_state": CV_CONFIG["random_state"],
+        "cv_random_state": current_seed(CV_CONFIG["random_state"]),
         "n_splits": CV_CONFIG["n_splits"],
         "folds": folds_payload,
         "metadata": {
@@ -220,8 +220,8 @@ def main():
         help="'predictions' (default) logs per-fold OOF + counterfactual swap; 'cv' is just metrics.",
     )
     parser.add_argument(
-        "--seed", type=int, default=42,
-        help="Random seed for determinism (default: 42).",
+        "--seed", type=int, default=None,
+        help="Random seed for determinism (default: --cv-seed if given, else 42).",
     )
     parser.add_argument(
         "--output-dir", "--output_dir", type=str, default=None,
@@ -247,6 +247,8 @@ def main():
     add_cv_args(parser)
     args = parser.parse_args()
     set_repeat_seed(args.cv_seed)  # repeated-CV seed; None keeps the original seeds
+    if args.seed is None:
+        args.seed = 42 if args.cv_seed is None else args.cv_seed
 
     logging.basicConfig(
         level=logging.INFO,

@@ -19,7 +19,7 @@ from .data_pipeline import (
 )
 from .models import TripleModalityMLP, TripleModalityFuseMoE
 from exp2_fusion.eeg_pipeline import add_stratification_columns
-from shared.cv_splits import fold_indices, outer_splits, rethreshold
+from shared.cv_splits import fold_indices, outer_splits, rethreshold, current_seed
 
 logger = logging.getLogger("exp3")
 
@@ -264,7 +264,7 @@ def train_fold(
         batch_sampler = StratifiedASMBatchSampler(
             train_asm_labels,
             batch_size=config["batch_size"],
-            seed=fold,
+            seed=current_seed(0) + fold,
         )
         logger.info(f"  Stratified ASM batch sampler: {len(batch_sampler)} batches, ASMs={len(batch_sampler.unique_asms)}")
         train_loader = DataLoader(

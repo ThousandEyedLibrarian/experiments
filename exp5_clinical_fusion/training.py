@@ -16,7 +16,7 @@ from torch.utils.data import DataLoader
 # Add parent directory for exp8_stratification import
 sys.path.insert(0, str(Path(__file__).parent.parent))
 from exp8_stratification.stratified_cv import get_multilabel_splits, get_outcome_only_splits
-from shared.cv_splits import fold_indices, outer_splits, rethreshold
+from shared.cv_splits import fold_indices, outer_splits, rethreshold, current_seed
 
 from .config import CV_CONFIG, TRAINING_CONFIG
 from .data_pipeline import (
@@ -361,7 +361,7 @@ def train_fold(
         batch_sampler = StratifiedASMBatchSampler(
             train_asm_labels,
             batch_size=config["batch_size"],
-            seed=fold,
+            seed=current_seed(0) + fold,
         )
         logger.info(f"  Stratified ASM batch sampler: {len(batch_sampler)} batches, ASMs={len(batch_sampler.unique_asms)}")
         train_loader = DataLoader(

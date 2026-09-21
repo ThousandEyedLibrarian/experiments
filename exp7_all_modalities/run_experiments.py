@@ -17,7 +17,7 @@ from typing import Dict, List, Optional
 import numpy as np
 import torch
 
-from shared.cv_splits import add_cv_args, cv_suffix, fold_indices, outer_splits
+from shared.cv_splits import add_cv_args, current_seed, cv_suffix, fold_indices, outer_splits
 from shared.cv_splits import set_repeat_seed  # noqa: E402
 from shared.prediction_logger import run_provenance
 
@@ -380,7 +380,7 @@ def run_exp7a_with_predictions(
         "text_model": text_model,
         "smiles_model": smiles_model,
         "asms": asms_used,
-        "cv_random_state": CV_CONFIG["random_state"],
+        "cv_random_state": current_seed(CV_CONFIG["random_state"]),
         "n_splits": CV_CONFIG["n_splits"],
         "folds": folds_payload,
         "metadata": metadata,
@@ -392,7 +392,7 @@ def run_exp7a_with_predictions(
     # Final all-data refit with 10% random early-stop split.
     # ------------------------------------------------------------------
     logger.info("Final all-data refit (90/10 random split for early stopping)")
-    rng = np.random.RandomState(CV_CONFIG["random_state"])
+    rng = np.random.RandomState(current_seed(CV_CONFIG["random_state"]))
     n = len(df)
     perm = rng.permutation(n)
     n_val = max(1, int(round(0.1 * n)))

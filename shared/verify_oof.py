@@ -108,7 +108,8 @@ def main(argv: list[str]) -> int:
     root = Path(args.root)
     # OOF files only: in-sample predictions have no folds and legitimately
     # repeat pids, so the leakage/cohort checks don't apply to them.
-    files = sorted(root.glob("exp*_predictions/predictions_oof*.json"))
+    files = sorted(root.glob("exp*_predictions/predictions_oof*.json")) + sorted(
+        root.glob("exp4_decomposition/predictions_oof*.json"))
     if not files:
         print(f"no prediction files under {root}", file=sys.stderr)
         return 1

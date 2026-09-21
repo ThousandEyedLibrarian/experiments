@@ -34,7 +34,7 @@ from sklearn.metrics import roc_auc_score
 from sklearn.model_selection import train_test_split
 
 import shared.portable_models as portable
-from shared.cv_splits import inner_val_split, outer_splits, youden_threshold
+from shared.cv_splits import inner_val_split, outer_splits, set_repeat_seed, youden_threshold
 from shared.determinism import enable_determinism
 from shared.prediction_logger import run_provenance
 
@@ -86,6 +86,17 @@ def sizematched_subsample(pooled: PooledCohort, train_idx, n: int, random_state:
 
 def run_seed(pooled: PooledCohort, seed: int, device, arms=ARMS, sizematch: bool = False,
              max_folds: int | None = None, draws: int = SIZEMATCH_DRAWS):
+    # The shared EEG loop draws its batch order from the repeat seed; set it so
+    # each exp18 seed shuffles differently (splits below pass ``seed`` explicitly).
+    set_repeat_seed(seed)
+    try:
+        return _run_seed(pooled, seed, device, arms, sizematch, max_folds, draws)
+    finally:
+        set_repeat_seed(None)
+
+
+def _run_seed(pooled: PooledCohort, seed: int, device, arms, sizematch: bool,
+              max_folds: int | None, draws: int):
     df, y = pooled.df, pooled.labels.numpy()
     cohort = df["cohort"].to_numpy()
     splits = outer_splits(df.assign(outcome=y), mode="joint", n_splits=N_SPLITS, seed=seed,
@@ -182,8 +193,9 @@ def main() -> None:
                 max_folds=1 if args.smoke else None, draws=1 if args.smoke else SIZEMATCH_DRAWS,
             )
             stem = f"{cfg}{variant}_seed{seed}"
-            preds.to_csv(args.out_dir / f"predictions_{stem}.csv", index=False)
+            # Predictions last: their presence marks the seed as done.
             folds.to_csv(args.out_dir / f"folds_{stem}.csv", index=False)
+            preds.to_csv(args.out_dir / f"predictions_{stem}.csv", index=False)
             (args.out_dir / f"run_{stem}.json").write_text(json.dumps({
                 "config": cfg, "seed": seed, "arms": args.arms, "variant": variant,
                 "exclude_rmh": args.exclude_rmh, "excluded_hep_pids": len(excluded),

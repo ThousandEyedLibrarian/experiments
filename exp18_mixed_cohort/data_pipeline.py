@@ -66,10 +66,16 @@ def load_pooled(config: str, exclude_rmh: bool = False, exclude_hep_pids=()) -> 
     """
     mods = MODALITIES[config]
     mel, hep = load_alfred(), load_hep()
+    if len(exclude_hep_pids):
+        # Accept source pids or pooled "HEP_" pids; every listed pid must be a
+        # HEP1 patient, so a typo or the wrong id scheme cannot exclude nobody.
+        wanted = {str(p).removeprefix("HEP_") for p in exclude_hep_pids}
+        unknown = sorted(wanted - set(hep["pid"].astype(str)))
+        if unknown:
+            raise ValueError(f"{len(unknown)} listed duplicate pid(s) are not HEP1 pids")
+        hep = hep[~hep["pid"].astype(str).isin(wanted)]
     if exclude_rmh:
         hep = hep[~hep["pid"].astype(str).str.startswith(RMH_PREFIX)]
-    if len(exclude_hep_pids):
-        hep = hep[~hep["pid"].astype(str).isin({str(p) for p in exclude_hep_pids})]
 
     text_maps = None
     if "text" in mods:

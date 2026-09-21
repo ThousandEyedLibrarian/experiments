@@ -3,7 +3,8 @@
 # `bash rerun_clean.sh list`. Tasks are independent and skip themselves once
 # done, so a failed or timed-out index can simply be resubmitted.
 #
-# Submit from the experiments repo root on M3 (after pulling both repos):
+# Submit from the experiments repo root on M3 (after pulling both repos and
+# running `bash rerun_clean.sh preflight`, which also creates logs/):
 #     bash rerun_clean.sh list | cat -n              # index <-> task
 #     sbatch rerun_clean.slurm                        # every item (24 at a time)
 #     sbatch --array=0,5,14 rerun_clean.slurm         # a subset
@@ -13,7 +14,7 @@
 #SBATCH --job-name=clean_rerun
 #SBATCH --partition=gpu
 #SBATCH --gres=gpu:1
-#SBATCH --array=0-139%24
+#SBATCH --array=0-133%24
 #SBATCH --time=16:00:00
 #SBATCH --mem=64G
 #SBATCH --cpus-per-task=4
@@ -31,5 +32,7 @@ if [[ -z "$TASK" ]]; then
     exit 2
 fi
 echo "== array index ${SLURM_ARRAY_TASK_ID:-0} -> $TASK =="
+# Match BLAS/OpenMP threads to the allocation (CPU-side work otherwise oversubscribes).
+export OMP_NUM_THREADS="${SLURM_CPUS_PER_TASK:-4}" MKL_NUM_THREADS="${SLURM_CPUS_PER_TASK:-4}"
 command -v nvidia-smi >/dev/null && nvidia-smi --query-gpu=name,memory.total --format=csv,noheader
 bash rerun_clean.sh "$TASK"

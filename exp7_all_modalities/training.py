@@ -16,7 +16,7 @@ from .data_pipeline import (
     prepare_quad_modality_data,
 )
 from .models import get_model
-from shared.cv_splits import fold_indices, outer_splits, rethreshold
+from shared.cv_splits import fold_indices, outer_splits, rethreshold, current_seed
 
 logger = logging.getLogger("exp7")
 
@@ -329,7 +329,7 @@ def train_fold(
         batch_sampler = StratifiedASMBatchSampler(
             train_asm_labels,
             batch_size=config["batch_size"],
-            seed=fold,
+            seed=current_seed(0) + fold,
         )
         logger.info(f"  Stratified ASM batch sampler: {len(batch_sampler)} batches, batch_size={config['batch_size']}, ASMs={len(batch_sampler.unique_asms)}")
         train_loader = DataLoader(
@@ -708,7 +708,7 @@ def train_fold_with_predictions(
         batch_sampler = StratifiedASMBatchSampler(
             train_asm_labels,
             batch_size=config["batch_size"],
-            seed=fold,
+            seed=current_seed(0) + fold,
         )
         logger.info(f"  Stratified ASM batch sampler: {len(batch_sampler)} batches, ASMs={len(batch_sampler.unique_asms)}")
         train_loader_for_loss = DataLoader(

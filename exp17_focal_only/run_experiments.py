@@ -17,7 +17,7 @@ from typing import Dict, List
 import numpy as np
 import torch
 
-from shared.cv_splits import add_cv_args, cv_suffix, fold_indices, outer_splits
+from shared.cv_splits import add_cv_args, current_seed, cv_suffix, fold_indices, outer_splits
 from shared.cv_splits import set_repeat_seed  # noqa: E402
 from shared.prediction_logger import run_provenance
 
@@ -147,7 +147,7 @@ def run_exp17_with_predictions(output_dir: Path, top_n_asms: int, device, asm_ba
         "text_model": cfg["text_model"],
         "smiles_model": cfg["smiles_model"],
         "asms": asms_used,
-        "cv_random_state": CV_CONFIG["random_state"],
+        "cv_random_state": current_seed(CV_CONFIG["random_state"]),
         "n_splits": CV_CONFIG["n_splits"],
         "folds": folds_payload,
         "metadata": {
@@ -166,7 +166,8 @@ def run_exp17_with_predictions(output_dir: Path, top_n_asms: int, device, asm_ba
 def main():
     parser = argparse.ArgumentParser(description="Exp17: focal-only quad-modal fusion")
     parser.add_argument("--mode", choices=["predictions"], default="predictions")
-    parser.add_argument("--seed", type=int, default=42)
+    parser.add_argument("--seed", type=int, default=None,
+                        help="Random seed for determinism (default: --cv-seed if given, else 42).")
     parser.add_argument("--output-dir", "--output_dir", type=str, default=None)
     parser.add_argument("--asm-balance", choices=["none", "weighted", "stratified_batch"], default="none")
     parser.add_argument("--top-n-asms", type=int, default=5)
@@ -175,6 +176,8 @@ def main():
     add_cv_args(parser)
     args = parser.parse_args()
     set_repeat_seed(args.cv_seed)  # repeated-CV seed; None keeps the original seeds
+    if args.seed is None:
+        args.seed = 42 if args.cv_seed is None else args.cv_seed
 
     logging.basicConfig(level=logging.INFO,
                         format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")

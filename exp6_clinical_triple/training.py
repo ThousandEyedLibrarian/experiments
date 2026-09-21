@@ -10,7 +10,7 @@ import torch.nn as nn
 from sklearn.metrics import accuracy_score, balanced_accuracy_score, f1_score, roc_auc_score, roc_curve
 from torch.utils.data import DataLoader
 
-from shared.cv_splits import fold_indices, outer_splits, rethreshold
+from shared.cv_splits import fold_indices, outer_splits, rethreshold, current_seed
 
 from .config import CV_CONFIG, TRAINING_CONFIG
 from .data_pipeline import (
@@ -273,7 +273,7 @@ def train_fold(
         batch_sampler = StratifiedASMBatchSampler(
             train_asm_labels,
             batch_size=batch_size,
-            seed=fold,
+            seed=current_seed(0) + fold,
         )
         logger.info(f"  Stratified ASM batch sampler: {len(batch_sampler)} batches, ASMs={len(batch_sampler.unique_asms)}")
         train_loader = DataLoader(

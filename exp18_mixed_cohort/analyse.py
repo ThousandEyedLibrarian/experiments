@@ -14,7 +14,12 @@ Metrics (docs/analysis_plan_clean_rerun_exp18.md, section 6):
     test patients, next to the cohort-only floor (score = the training fold's
     seizure-free rate of the patient's cohort);
   - calibration per cohort: Brier, calibration-in-the-large (mean predicted
-    minus observed) and calibration slope.
+    minus observed, not the logistic-offset intercept) and calibration slope.
+
+Primary tests use the deduplicated cohort (variant "_dedup") when that run
+exists, otherwise the unmodified one. The Nadeau-Bengio variance inflation
+uses n_test / n_train of the outer folds (about 0.25); each arm's model is
+fitted on 80% of its share of the outer training fold.
 
     python -m exp18_mixed_cohort.analyse
 """
@@ -140,21 +145,30 @@ def holm(p: list[float]) -> list[float]:
     return adj.tolist()
 
 
+def primary_variant(preds: pd.DataFrame) -> str:
+    """The deduplicated cohort once confirmed duplicates were excluded, else the unmodified one."""
+    exp4a = preds.loc[preds["config"] == "Exp4a", "variant"]
+    return "_dedup" if (exp4a == "_dedup").any() else ""
+
+
 def primary_tests(preds: pd.DataFrame, folds: pd.DataFrame) -> list[dict]:
-    """Exp4a, unmodified cohort: mixed vs own-cohort training, per test cohort."""
-    g = preds[(preds["config"] == "Exp4a") & (preds["variant"] == "") & (preds["draw"] == -1)]
+    """Exp4a: mixed vs own-cohort training, per test cohort."""
+    var = primary_variant(preds)
+    g = preds[(preds["config"] == "Exp4a") & (preds["variant"] == var) & (preds["draw"] == -1)]
     if g.empty:
         return []
-    fd = folds[(folds["config"] == "Exp4a") & (folds["variant"] == "")]
+    fd = folds[(folds["config"] == "Exp4a") & (folds["variant"] == var)]
     ratio = float((fd["n_test"] / fd["n_train"]).mean())
     rows = []
     for c in COHORTS:
         gc = g[g["cohort"] == c]
-        per = gc.groupby(["seed", "fold", "arm"]).apply(
-            lambda f: auc_or_nan(f["y_true"], f["y_prob"]), include_groups=False).unstack("arm")
+        per = pd.DataFrame(
+            [{"seed": s, "fold": k, "arm": a, "auc": auc_or_nan(f["y_true"], f["y_prob"])}
+             for (s, k, a), f in gc.groupby(["seed", "fold", "arm"])]
+        ).pivot_table(index=["seed", "fold"], columns="arm", values="auc", dropna=False)
         d = (per["mixed"] - per[OWN[c]]).to_numpy()
         mean_d, t, p = nadeau_bengio(d, ratio)
-        rows.append({"kind": "primary", "config": "Exp4a", "variant": "", "cohort": c,
+        rows.append({"kind": "primary", "config": "Exp4a", "variant": var, "cohort": c,
                      "contrast": f"mixed - {OWN[c]}", "estimate": mean_d, "stat": t, "p": p,
                      "n_resamples": int(np.isfinite(d).sum())})
     for row, p_adj in zip(rows, holm([r["p"] for r in rows])):
@@ -176,6 +190,20 @@ def exploratory_tests(preds: pd.DataFrame) -> list[dict]:
                     rows.append({"kind": "exploratory", "config": cfg, "variant": var, "seed": seed,
                                  "cohort": c, "contrast": f"{a} - {b}", "estimate": diff,
                                  "stat": z, "p": p, "auc_a": auc_a, "auc_b": auc_b})
+    # Size-matched draws score only their own test cohort's patients, the same
+    # patients as the own-cohort and mixed arms, so they pair per draw.
+    sm = preds[preds["arm"].str.startswith("sizematched_")]
+    for (cfg, var, seed, arm, draw), g in sm.groupby(["config", "variant", "seed", "arm", "draw"]):
+        c = arm.split("_")[1]
+        ref = main[(main["config"] == cfg) & (main["variant"] == var) & (main["seed"] == seed)
+                   & (main["cohort"] == c)].pivot_table(index=["pid", "y_true"], columns="arm", values="y_prob")
+        w = g.set_index("pid")["y_prob"].rename(arm).to_frame().join(ref.reset_index("y_true"), how="inner")
+        for b in (OWN[c], "mixed"):
+            if b in w.columns and len(w):
+                auc_a, auc_b, diff, z, p = delong_test(w["y_true"].to_numpy(), w[arm].to_numpy(), w[b].to_numpy())
+                rows.append({"kind": "exploratory", "config": cfg, "variant": var, "seed": seed, "draw": draw,
+                             "cohort": c, "contrast": f"{arm} - {b}", "estimate": diff,
+                             "stat": z, "p": p, "auc_a": auc_a, "auc_b": auc_b})
     return rows
 
 
