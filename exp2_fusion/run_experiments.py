@@ -184,7 +184,8 @@ def run_all_experiments(
         "n_experiments": len(all_results),
         "experiments": all_results,
     }
-    summary_file = output_dir / f"summary{results_suffix}.json"
+    encoders = "".join(f"_{e}" for e in sorted({exp["eeg_model"] for exp in experiments})) if results_suffix else ""
+    summary_file = output_dir / f"summary{encoders}{results_suffix}.json"
     with open(summary_file, "w") as f:
         json.dump(summary, f, indent=2)
     if failed:

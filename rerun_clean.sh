@@ -17,7 +17,9 @@
 # outputs/exp18_mixed_cohort/confirmed_duplicates.txt exists (HEP1 pids the
 # data custodian confirmed as Melbourne patients; patient-level, so it lives
 # in the gitignored outputs), exp18 excludes them and writes the _dedup
-# variant, which the analysis then treats as primary. A finished item writes
+# variant, which the analysis then treats as primary; adding the file after a
+# first run makes those exp18 items not-done again, so resubmitting the array
+# (or `verify`) picks them up without FORCE. A finished item writes
 # outputs/_clean_rerun/<task>_s<seed>.done; rerunning a done item is a no-op
 # unless FORCE=1 (which also makes exp18 overwrite its outputs). Set
 # ASM_EXPERIMENTS_DIR if thesisStandalone is not cloned inside this repo.
@@ -33,11 +35,26 @@ SEEDS=(42 43 44 45 46)
 EXP18_EEG_SEEDS=" 42 43 44 "
 EXP18_DUPLICATES="$OUT/exp18_mixed_cohort/confirmed_duplicates.txt"
 
+# The variant an exp18 item must have written for the current duplicates file.
+exp18_ready () {
+    local task="$1" seed="$2" cfgs variant=""
+    [[ -f "$EXP18_DUPLICATES" ]] || return 0
+    case "$task" in
+        exp18_noRMH) cfgs="Exp4a Exp5a Exp5b"; variant="_noRMH" ;;
+        exp18_*) cfgs="${task#exp18_}" ;;
+        *) return 0 ;;
+    esac
+    for cfg in $cfgs; do
+        [[ -f "$OUT/exp18_mixed_cohort/predictions_${cfg}${variant}_dedup_seed${seed}.csv" ]] || return 1
+    done
+}
+
 exp18 () {
     local extra=()
     [[ "${FORCE:-0}" == 1 ]] && extra+=(--force)
     [[ -f "$EXP18_DUPLICATES" ]] && extra+=(--exclude-hep-pids "$EXP18_DUPLICATES")
-    "$PY" -m exp18_mixed_cohort.run_experiments "$@" "${extra[@]}"
+    # ${extra[@]+...}: expanding an empty array trips `set -u` on bash < 4.4.
+    "$PY" -m exp18_mixed_cohort.run_experiments "$@" ${extra[@]+"${extra[@]}"}
 }
 export ASM_EXPERIMENTS_DIR="${ASM_EXPERIMENTS_DIR:-$REPO_DIR}"
 
@@ -129,7 +146,8 @@ verify () {
     echo "== task completion =="
     local n_done=0
     for item in $(items); do
-        if [[ -f "$DONE/${item%%:*}_s${item##*:}.done" ]]; then n_done=$((n_done + 1))
+        if [[ -f "$DONE/${item%%:*}_s${item##*:}.done" ]] && exp18_ready "${item%%:*}" "${item##*:}"; then
+            n_done=$((n_done + 1))
         else echo "MISSING $item"; rc=1; fi
     done
     echo "$n_done/$(items | wc -l) work items done"
@@ -178,6 +196,7 @@ preflight () {
     fi
     check "thesisStandalone clone" "[[ -f '$THESIS/analysis/hep_external_validation.py' ]]"
     check "expected-files manifest" "[[ -f clean_rerun_expected.txt ]]"
+    echo "versions: bash ${BASH_VERSION}; $("$PY" -c 'import sklearn, pandas, torch; print(f"sklearn {sklearn.__version__}, pandas {pandas.__version__}, torch {torch.__version__}")' 2>/dev/null)"
     echo "experiments $(git rev-parse --short HEAD)  thesisStandalone $(git -C "$THESIS" rev-parse --short HEAD 2>/dev/null)"
     echo "(compare both commits with the laptop before submitting)"
     return $rc
@@ -212,7 +231,7 @@ case "${1:-}" in
         task="${1%%:*}"; seed="${1##*:}"
         marker="$DONE/${task}_s${seed}.done"
         mkdir -p "$DONE"
-        if [[ -f "$marker" && "${FORCE:-0}" != 1 ]]; then
+        if [[ -f "$marker" && "${FORCE:-0}" != 1 ]] && exp18_ready "$task" "$seed"; then
             echo "== $task seed $seed already done ($marker); FORCE=1 to rerun =="; exit 0
         fi
         echo "== $task seed $seed  (host $(hostname), $(date -Is)) =="

@@ -186,7 +186,9 @@ def finite_threshold(threshold: float, fallback: float = 0.5) -> float:
     early-stopping set), which would classify every test patient negative.
     """
     threshold = float(threshold)
-    return threshold if np.isfinite(threshold) else fallback
+    # Scores are probabilities, so a cut-off above 1 is the same degenerate
+    # "all negative" point (scikit-learn < 1.3 reports it as max(score) + 1).
+    return threshold if np.isfinite(threshold) and threshold <= 1.0 else fallback
 
 
 def youden_threshold(y_true, y_prob) -> float:

@@ -38,7 +38,7 @@ from exp7_all_modalities.training import (  # noqa: E402
     log_cv_summary,
     train_epoch_mlp,
 )
-from shared.cv_splits import fold_indices, outer_splits  # noqa: E402
+from shared.cv_splits import current_seed, fold_indices, outer_splits  # noqa: E402
 
 logger = logging.getLogger("exp15")
 
@@ -86,7 +86,7 @@ def train_fold(
         batch_sampler = StratifiedASMBatchSampler(
             train_asm_labels,
             batch_size=config["batch_size"],
-            seed=fold,
+            seed=current_seed(0) + fold,
         )
         logger.info(
             f"  Stratified ASM batch sampler: {len(batch_sampler)} batches, "
@@ -315,7 +315,7 @@ def train_fold_with_predictions(
         batch_sampler = StratifiedASMBatchSampler(
             train_asm_labels,
             batch_size=config["batch_size"],
-            seed=fold,
+            seed=current_seed(0) + fold,
         )
         train_loader_for_loss = DataLoader(
             train_no_pid, batch_sampler=batch_sampler, num_workers=0,

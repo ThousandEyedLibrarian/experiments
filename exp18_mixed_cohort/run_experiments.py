@@ -199,7 +199,7 @@ def main() -> None:
             (args.out_dir / f"run_{stem}.json").write_text(json.dumps({
                 "config": cfg, "seed": seed, "arms": args.arms, "variant": variant,
                 "exclude_rmh": args.exclude_rmh, "excluded_hep_pids": len(excluded),
-                "n_pooled": len(pooled.df), "inner_frac": INNER_FRAC, "provenance": run_provenance(),
+                "n_pooled": len(pooled.df), "inner_frac": INNER_FRAC, "provenance": {**run_provenance(), "cv_seed": seed},
             }, indent=2))
             logger.info(f"wrote predictions_{stem}.csv ({len(preds)} rows)")
 
