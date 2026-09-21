@@ -16,7 +16,9 @@ from typing import Dict, List, Optional
 
 import numpy as np
 import torch
-from sklearn.model_selection import StratifiedKFold
+
+from shared.cv_splits import add_cv_args, cv_suffix, fold_indices, outer_splits
+from shared.prediction_logger import run_provenance
 
 from .config import ASM_NAME_MAPPING, CV_CONFIG, EXPERIMENTS, RESULTS_DIR
 from .data_pipeline import create_quad_modality_datasets, prepare_quad_modality_data
@@ -39,6 +41,8 @@ def run_experiment(
     exp_config: Dict,
     device: torch.device,
     asm_balance_mode: str = "none",
+    splitter: str = "legacy",
+    inner_val: float = 0.0,
 ) -> Dict:
     """Run a single experiment configuration."""
     exp_name = exp_config["name"]
@@ -56,6 +60,8 @@ def run_experiment(
         smiles_model=smiles_model,
         device=device,
         asm_balance_mode=asm_balance_mode,
+        splitter=splitter,
+        inner_val=inner_val,
     )
 
     # Compute summary statistics
@@ -67,6 +73,7 @@ def run_experiment(
         "config": exp_config,
         "fold_metrics": fold_metrics,
         "summary": summary,
+        "metadata": {"splitter": splitter, "inner_val": inner_val, "asm_balance": asm_balance_mode},
     }
 
 
@@ -74,6 +81,8 @@ def run_all_experiments(
     experiments: Optional[List[Dict]] = None,
     device: torch.device = None,
     asm_balance_mode: str = "none",
+    splitter: str = "legacy",
+    inner_val: float = 0.0,
 ) -> Dict[str, Dict]:
     """Run all experiments and collect results."""
     if experiments is None:
@@ -86,7 +95,10 @@ def run_all_experiments(
 
     for exp_config in experiments:
         exp_name = exp_config["name"]
-        results = run_experiment(exp_config, device, asm_balance_mode=asm_balance_mode)
+        results = run_experiment(
+            exp_config, device, asm_balance_mode=asm_balance_mode,
+            splitter=splitter, inner_val=inner_val,
+        )
         all_results[exp_name] = results
 
     return all_results
@@ -239,6 +251,8 @@ def run_exp7a_with_predictions(
     asm_balance_mode: str = "none",
     output_suffix: str = "",
     fusion: str = "mlp",
+    splitter: str = "legacy",
+    inner_val: float = 0.0,
 ) -> Dict[str, Path]:
     """Run Exp7a with per-patient and ASM-swap prediction logging.
 
@@ -248,8 +262,14 @@ def run_exp7a_with_predictions(
     model on the full cohort using a 10% random early-stopping split and
     predicts for all patients across the same top-n ASMs (in-sample).
 
+    ``splitter``/``inner_val`` set the CV protocol. Legacy (the default)
+    early-stops on the held-out fold. Clean runs (e.g. multilabel, 0.2)
+    early-stop on an inner split of the training folds and predict the
+    held-out fold once with the restored weights. The all-data refit is
+    unaffected.
+
     Writes ``predictions_oof.json`` and ``predictions_in_sample.json``
-    inside ``output_dir``.
+    inside ``output_dir`` (plus the protocol suffix for non-legacy runs).
     """
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -274,26 +294,42 @@ def run_exp7a_with_predictions(
     # ------------------------------------------------------------------
     # 5-fold CV with prediction logging.
     # ------------------------------------------------------------------
-    kfold = StratifiedKFold(
-        n_splits=CV_CONFIG["n_splits"],
-        shuffle=CV_CONFIG["shuffle"],
-        random_state=CV_CONFIG["random_state"],
+    splits = outer_splits(
+        df, mode=splitter, n_splits=CV_CONFIG["n_splits"], seed=CV_CONFIG["random_state"],
     )
 
     folds_payload: List[Dict] = []
-    for fold, (train_idx, val_idx) in enumerate(kfold.split(np.zeros(len(outcomes)), outcomes)):
+    for fold, (train_idx, val_idx) in enumerate(splits):
         logger.info(f"Fold {fold + 1}/{CV_CONFIG['n_splits']}")
+        # Clinical preprocessor is fitted on the fit set only. Clean runs
+        # early-stop on an inner split and predict the outer fold separately.
+        fit_idx, es_idx, test_idx = fold_indices(outcomes, train_idx, val_idx, fold, inner_val)
         train_ds, val_ds, _ = create_quad_modality_datasets(
             df,
             smiles_embeddings,
             smiles_indices,
             text_embeddings,
             eeg_data,
-            train_idx,
-            val_idx,
+            fit_idx,
+            es_idx,
             return_pid=True,
         )
-        logger.info(f"  Train: {len(train_ds)}, Val: {len(val_ds)}")
+        test_ds = None
+        if test_idx is not None:
+            test_ds = create_quad_modality_datasets(
+                df,
+                smiles_embeddings,
+                smiles_indices,
+                text_embeddings,
+                eeg_data,
+                fit_idx,
+                test_idx,
+                return_pid=True,
+            )[1]
+        logger.info(
+            f"  Train: {len(train_ds)}, Early-stop: {len(val_ds)}"
+            + (f", Test: {len(test_ds)}" if test_ds is not None else "")
+        )
 
         result = train_fold_with_predictions(
             train_ds,
@@ -305,6 +341,7 @@ def run_exp7a_with_predictions(
             fold=fold,
             candidate_smiles=candidate_smiles,
             asm_balance_mode=asm_balance_mode,
+            test_dataset=test_ds,
         )
 
         # Skip non-scalar metric entries (y_prob, y_true added in Stage A).
@@ -327,6 +364,15 @@ def run_exp7a_with_predictions(
 
     exp_name = "exp7b" if fusion == "moe" else "exp7a"
     fusion_part = "_7b" if fusion == "moe" else ""
+    # Protocol suffix goes after the fusion/balance suffixes; it is empty for
+    # the legacy protocol so archived filenames are unchanged.
+    suffix_part = (f"_{output_suffix}" if output_suffix else "") + cv_suffix(splitter, inner_val)
+    metadata = {
+        "splitter": splitter,
+        "inner_val": inner_val,
+        "asm_balance": asm_balance_mode,
+        "provenance": run_provenance(),
+    }
     oof_payload = {
         "experiment": exp_name + (f"_{output_suffix}" if output_suffix else ""),
         "asm_balance_mode": asm_balance_mode,
@@ -336,8 +382,8 @@ def run_exp7a_with_predictions(
         "cv_random_state": CV_CONFIG["random_state"],
         "n_splits": CV_CONFIG["n_splits"],
         "folds": folds_payload,
+        "metadata": metadata,
     }
-    suffix_part = f"_{output_suffix}" if output_suffix else ""
     oof_path = output_dir / f"predictions_oof{fusion_part}{suffix_part}.json"
     _save_predictions_json(oof_payload, oof_path)
 
@@ -441,6 +487,7 @@ def run_exp7a_with_predictions(
         "y_true": y_true_full,
         "y_prob": y_prob_full,
         "y_prob_per_asm": y_prob_per_asm_full,
+        "metadata": metadata,
     }
     in_sample_path = output_dir / f"predictions_in_sample{fusion_part}{suffix_part}.json"
     _save_predictions_json(in_sample_payload, in_sample_path)
@@ -506,6 +553,7 @@ def main():
         default="none",
         help="ASM-balancing mode (Stage B): 'weighted' applies inverse-sqrt sample weights, 'stratified_batch' uses a per-batch sampler that includes every ASM.",
     )
+    add_cv_args(parser)
     args = parser.parse_args()
 
     if args.deterministic:
@@ -539,6 +587,8 @@ def main():
             asm_balance_mode=args.asm_balance,
             output_suffix=suffix,
             fusion="moe" if args.exp == "7b" else "mlp",
+            splitter=args.splitter,
+            inner_val=args.inner_val,
         )
         return
 
@@ -559,6 +609,8 @@ def main():
         experiments=experiments,
         device=device,
         asm_balance_mode=args.asm_balance,
+        splitter=args.splitter,
+        inner_val=args.inner_val,
     )
 
     # Print results

@@ -16,7 +16,9 @@ from typing import Dict, List
 
 import numpy as np
 import torch
-from sklearn.model_selection import StratifiedKFold
+
+from shared.cv_splits import add_cv_args, cv_suffix, fold_indices, outer_splits
+from shared.prediction_logger import run_provenance
 
 from .config import ASM_NAME_MAPPING, CV_CONFIG, EXPERIMENTS
 from .data_pipeline import create_quad_modality_datasets, prepare_focal_quad_data
@@ -73,7 +75,13 @@ def _build_candidate_smiles(top_asms, smiles_embeddings, smiles_indices) -> Dict
 
 
 def run_exp17_with_predictions(output_dir: Path, top_n_asms: int, device, asm_balance_mode: str,
-                               seed: int, output_suffix: str = "") -> None:
+                               seed: int, output_suffix: str = "", splitter: str = "legacy",
+                               inner_val: float = 0.0) -> None:
+    """``splitter``/``inner_val`` set the CV protocol: legacy (the default)
+    early-stops on the held-out fold; clean runs early-stop on an inner split
+    of the training folds and predict the held-out fold once. On this cohort
+    'focal' is constant, so the multilabel splitter effectively balances
+    outcome and sex."""
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
     cfg = EXPERIMENTS[0]
@@ -88,25 +96,34 @@ def run_exp17_with_predictions(output_dir: Path, top_n_asms: int, device, asm_ba
     candidate_smiles = _build_candidate_smiles(top_asms, smiles_embeddings, smiles_indices)
     asms_used = list(candidate_smiles.keys())
 
-    kfold = StratifiedKFold(
-        n_splits=CV_CONFIG["n_splits"], shuffle=CV_CONFIG["shuffle"],
-        random_state=CV_CONFIG["random_state"],
+    splits = outer_splits(
+        df, mode=splitter, n_splits=CV_CONFIG["n_splits"], seed=CV_CONFIG["random_state"],
     )
 
     folds_payload: List[Dict] = []
-    for fold, (train_idx, val_idx) in enumerate(kfold.split(np.zeros(len(outcomes)), outcomes)):
+    for fold, (train_idx, val_idx) in enumerate(splits):
         from shared.determinism import enable_determinism
         enable_determinism(seed + fold)
 
+        # Clinical preprocessor is fitted on the fit set only. Clean runs
+        # early-stop on an inner split and predict the outer fold separately.
+        fit_idx, es_idx, test_idx = fold_indices(outcomes, train_idx, val_idx, fold, inner_val)
         train_ds, val_ds, _ = create_quad_modality_datasets(
             df, smiles_embeddings, smiles_indices, text_embeddings, eeg_data,
-            train_idx, val_idx, return_pid=True,
+            fit_idx, es_idx, return_pid=True,
         )
+        test_ds = None
+        if test_idx is not None:
+            test_ds = create_quad_modality_datasets(
+                df, smiles_embeddings, smiles_indices, text_embeddings, eeg_data,
+                fit_idx, test_idx, return_pid=True,
+            )[1]
         result = train_fold_with_predictions(
             train_ds, val_ds,
             fusion=cfg["fusion"], text_model=cfg["text_model"], smiles_model=cfg["smiles_model"],
             device=device, fold=fold,
             candidate_smiles=candidate_smiles, asm_balance_mode=asm_balance_mode,
+            test_dataset=test_ds,
         )
         scalar_metrics = {
             k: float(v) for k, v in result["metrics"].items()
@@ -132,8 +149,16 @@ def run_exp17_with_predictions(output_dir: Path, top_n_asms: int, device, asm_ba
         "cv_random_state": CV_CONFIG["random_state"],
         "n_splits": CV_CONFIG["n_splits"],
         "folds": folds_payload,
+        "metadata": {
+            "splitter": splitter,
+            "inner_val": inner_val,
+            "asm_balance": asm_balance_mode,
+            "provenance": run_provenance(),
+        },
     }
-    oof_path = output_dir / f"predictions_oof_{cfg['name']}{output_suffix}.json"
+    # Protocol suffix after the balance suffix; empty for the legacy protocol.
+    file_suffix = output_suffix + cv_suffix(splitter, inner_val)
+    oof_path = output_dir / f"predictions_oof_{cfg['name']}{file_suffix}.json"
     _save_predictions_json(oof_payload, oof_path)
 
 
@@ -146,6 +171,7 @@ def main():
     parser.add_argument("--top-n-asms", type=int, default=5)
     parser.add_argument("--deterministic", action="store_true")
     parser.add_argument("--device", type=str, default=None)
+    add_cv_args(parser)
     args = parser.parse_args()
 
     logging.basicConfig(level=logging.INFO,
@@ -167,6 +193,7 @@ def main():
     run_exp17_with_predictions(
         output_dir=out_dir, top_n_asms=args.top_n_asms, device=device,
         asm_balance_mode=args.asm_balance, seed=args.seed, output_suffix=suffix,
+        splitter=args.splitter, inner_val=args.inner_val,
     )
 
 

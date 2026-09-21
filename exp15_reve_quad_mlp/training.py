@@ -19,7 +19,6 @@ from typing import Any, Dict, List
 
 import numpy as np
 import torch
-from sklearn.model_selection import StratifiedKFold
 
 from .config import CV_CONFIG, MLP_CONFIG
 from .data_pipeline import (
@@ -33,11 +32,13 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 from exp7_all_modalities.training import (  # noqa: E402
     _DropPidWrapper,
     _predict_with_smiles_override,
+    _score_outer_fold,
     compute_metrics,
     evaluate_mlp,
     log_cv_summary,
     train_epoch_mlp,
 )
+from shared.cv_splits import fold_indices, outer_splits  # noqa: E402
 
 logger = logging.getLogger("exp15")
 
@@ -48,8 +49,15 @@ def train_fold(
     device: torch.device,
     fold: int = 0,
     asm_balance_mode: str = "none",
+    test_dataset=None,
 ) -> Dict[str, float]:
-    """Train and evaluate a single fold (MLP-only for exp15)."""
+    """Train and evaluate a single fold (MLP-only for exp15).
+
+    ``val_dataset`` is the early-stopping set. ``test_dataset`` (clean runs
+    only) is the untouched outer fold, scored once with the best
+    early-stopping weights at the early-stopping threshold; None keeps the
+    legacy behaviour (report the best epoch's metrics on ``val_dataset``).
+    """
     import copy
     import torch.nn as nn
     from torch.utils.data import DataLoader
@@ -121,6 +129,7 @@ def train_fold(
 
     best_val_auc = 0.0
     best_metrics: Dict[str, float] = {}
+    best_state = None
     patience_counter = 0
 
     for epoch in range(config["epochs"]):
@@ -132,6 +141,8 @@ def train_fold(
         if val_metrics["auc"] > best_val_auc:
             best_val_auc = val_metrics["auc"]
             best_metrics = val_metrics.copy()
+            if test_dataset is not None:
+                best_state = copy.deepcopy(model.state_dict())
             patience_counter = 0
         else:
             patience_counter += 1
@@ -144,7 +155,17 @@ def train_fold(
             logger.info(f"    Early stopping at epoch {epoch + 1}")
             break
 
-    return best_metrics
+    if test_dataset is None:
+        return best_metrics
+
+    # Clean protocol: restore the early-stopping-best weights and score the
+    # outer fold once, at the threshold chosen on the early-stopping set.
+    if best_state is not None:
+        model.load_state_dict(best_state)
+    return _score_outer_fold(
+        model, test_dataset, evaluate_mlp, criterion, device,
+        config["batch_size"], best_metrics, best_val_auc,
+    )
 
 
 def run_cross_validation(
@@ -152,8 +173,15 @@ def run_cross_validation(
     smiles_model: str = "chemberta",
     device: torch.device = None,
     asm_balance_mode: str = "none",
+    splitter: str = "legacy",
+    inner_val: float = 0.0,
 ) -> Dict[str, List[float]]:
-    """Run 5-fold CV for exp15 quad-modal REVE."""
+    """Run 5-fold CV for exp15 quad-modal REVE.
+
+    ``splitter`` picks the outer folds ('legacy' = outcome-only
+    StratifiedKFold); ``inner_val`` is the inner early-stopping fraction
+    (0 = legacy protocol, early-stop on the outer fold).
+    """
     if device is None:
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     logger.info(f"Running exp15 CV (REVE, {text_model}, {smiles_model})")
@@ -163,10 +191,8 @@ def run_cross_validation(
     )
     outcomes = df["outcome"].values
 
-    kfold = StratifiedKFold(
-        n_splits=CV_CONFIG["n_splits"],
-        shuffle=CV_CONFIG["shuffle"],
-        random_state=CV_CONFIG["random_state"],
+    splits = outer_splits(
+        df, mode=splitter, n_splits=CV_CONFIG["n_splits"], seed=CV_CONFIG["random_state"],
     )
 
     fold_metrics: Dict[str, List[float]] = {
@@ -174,19 +200,29 @@ def run_cross_validation(
         "f1_tuned": [], "balanced_acc_tuned": [],
     }
 
-    for fold, (train_idx, val_idx) in enumerate(
-        kfold.split(np.zeros(len(outcomes)), outcomes)
-    ):
+    for fold, (train_idx, val_idx) in enumerate(splits):
         logger.info(f"Fold {fold + 1}/{CV_CONFIG['n_splits']}")
+        # Clinical preprocessor is fitted on the fit set only. Clean runs
+        # early-stop on an inner split and score the outer fold separately.
+        fit_idx, es_idx, test_idx = fold_indices(outcomes, train_idx, val_idx, fold, inner_val)
         train_ds, val_ds, _ = create_reve_quad_datasets(
             df, smiles_embeddings, smiles_indices, text_embeddings, reve_data,
-            train_idx, val_idx,
+            fit_idx, es_idx,
         )
-        logger.info(f"  Train: {len(train_ds)}, Val: {len(val_ds)}")
+        test_ds = None
+        if test_idx is not None:
+            test_ds = create_reve_quad_datasets(
+                df, smiles_embeddings, smiles_indices, text_embeddings, reve_data,
+                fit_idx, test_idx,
+            )[1]
+        logger.info(
+            f"  Train: {len(train_ds)}, Early-stop: {len(val_ds)}"
+            + (f", Test: {len(test_ds)}" if test_ds is not None else "")
+        )
 
         metrics = train_fold(
             train_ds, val_ds, device=device, fold=fold,
-            asm_balance_mode=asm_balance_mode,
+            asm_balance_mode=asm_balance_mode, test_dataset=test_ds,
         )
         for key in fold_metrics:
             fold_metrics[key].append(metrics[key])
@@ -210,11 +246,16 @@ def train_fold_with_predictions(
     fold: int = 0,
     candidate_smiles: Dict[str, np.ndarray] = None,
     asm_balance_mode: str = "none",
+    test_dataset=None,
 ) -> Dict[str, Any]:
     """Train one fold and return per-patient predictions plus ASM-swap predictions.
 
     Mirrors exp7's train_fold_with_predictions but uses the exp15 model
-    factory. The val_dataset must have been built with return_pid=True.
+    factory. ``val_dataset`` is the early-stopping set; with ``test_dataset``
+    (clean runs) the predictions, counterfactuals and metrics are reported on
+    that untouched outer fold instead, with the restored weights and the
+    early-stopping threshold. The reported dataset must have been built with
+    return_pid=True.
     """
     import copy
     import torch.nn as nn
@@ -226,8 +267,9 @@ def train_fold_with_predictions(
         compute_asm_sample_weights,
     )
 
-    if not getattr(val_dataset, "return_pid", False):
-        raise ValueError("val_dataset must be built with return_pid=True for prediction logging.")
+    report_dataset = test_dataset if test_dataset is not None else val_dataset
+    if not getattr(report_dataset, "return_pid", False):
+        raise ValueError("val_dataset/test_dataset must be built with return_pid=True for prediction logging.")
 
     config = MLP_CONFIG
 
@@ -324,6 +366,21 @@ def train_fold_with_predictions(
 
     if best_state_dict is not None:
         model.load_state_dict(best_state_dict)
+
+    # Clean protocol: everything below is reported on the untouched outer
+    # fold; legacy runs report the early-stopping fold itself.
+    if test_dataset is not None:
+        best_metrics = _score_outer_fold(
+            model, test_dataset, evaluate_mlp, criterion, device,
+            config["batch_size"], best_metrics, best_val_auc,
+        )
+        val_loader = DataLoader(
+            test_dataset,
+            batch_size=config["batch_size"],
+            shuffle=False,
+            drop_last=False,
+            num_workers=0,
+        )
 
     val_pids, val_y_true, val_y_prob = _predict_with_smiles_override(
         model, val_loader, device, fusion="mlp", smiles_override=None,

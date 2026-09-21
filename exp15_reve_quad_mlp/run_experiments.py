@@ -15,7 +15,9 @@ from typing import Dict, List
 
 import numpy as np
 import torch
-from sklearn.model_selection import StratifiedKFold
+
+from shared.cv_splits import add_cv_args, cv_suffix, fold_indices, outer_splits
+from shared.prediction_logger import run_provenance
 
 from .config import ASM_NAME_MAPPING, CV_CONFIG, RESULTS_DIR
 from .data_pipeline import (
@@ -99,8 +101,15 @@ def run_exp15_with_predictions(
     asm_balance_mode: str = "none",
     seed: int = 42,
     output_suffix: str = "",
+    splitter: str = "legacy",
+    inner_val: float = 0.0,
 ) -> Dict[str, Path]:
-    """Run exp15 with per-patient and ASM-swap prediction logging."""
+    """Run exp15 with per-patient and ASM-swap prediction logging.
+
+    ``splitter``/``inner_val`` set the CV protocol: legacy (the default)
+    early-stops on the held-out fold; clean runs early-stop on an inner split
+    of the training folds and predict the held-out fold once.
+    """
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
 
@@ -119,27 +128,36 @@ def run_exp15_with_predictions(
     candidate_smiles = _build_candidate_smiles(top_asms, smiles_embeddings, smiles_indices)
     asms_used = list(candidate_smiles.keys())
 
-    kfold = StratifiedKFold(
-        n_splits=CV_CONFIG["n_splits"],
-        shuffle=CV_CONFIG["shuffle"],
-        random_state=CV_CONFIG["random_state"],
+    splits = outer_splits(
+        df, mode=splitter, n_splits=CV_CONFIG["n_splits"], seed=CV_CONFIG["random_state"],
     )
 
     folds_payload: List[Dict] = []
-    for fold, (train_idx, val_idx) in enumerate(
-        kfold.split(np.zeros(len(outcomes)), outcomes)
-    ):
+    for fold, (train_idx, val_idx) in enumerate(splits):
         logger.info(f"Fold {fold + 1}/{CV_CONFIG['n_splits']}")
         # Re-seed determinism per fold so seed param actually varies init
         from shared.determinism import enable_determinism
         enable_determinism(seed + fold)
 
+        # Clinical preprocessor is fitted on the fit set only. Clean runs
+        # early-stop on an inner split and predict the outer fold separately.
+        fit_idx, es_idx, test_idx = fold_indices(outcomes, train_idx, val_idx, fold, inner_val)
         train_ds, val_ds, _ = create_reve_quad_datasets(
             df, smiles_embeddings, smiles_indices, text_embeddings, reve_data,
-            train_idx, val_idx,
+            fit_idx, es_idx,
             return_pid=True,
         )
-        logger.info(f"  Train: {len(train_ds)}, Val: {len(val_ds)}")
+        test_ds = None
+        if test_idx is not None:
+            test_ds = create_reve_quad_datasets(
+                df, smiles_embeddings, smiles_indices, text_embeddings, reve_data,
+                fit_idx, test_idx,
+                return_pid=True,
+            )[1]
+        logger.info(
+            f"  Train: {len(train_ds)}, Early-stop: {len(val_ds)}"
+            + (f", Test: {len(test_ds)}" if test_ds is not None else "")
+        )
 
         result = train_fold_with_predictions(
             train_ds, val_ds,
@@ -147,6 +165,7 @@ def run_exp15_with_predictions(
             fold=fold,
             candidate_smiles=candidate_smiles,
             asm_balance_mode=asm_balance_mode,
+            test_dataset=test_ds,
         )
 
         scalar_metrics = {
@@ -176,8 +195,15 @@ def run_exp15_with_predictions(
         "cv_random_state": CV_CONFIG["random_state"],
         "n_splits": CV_CONFIG["n_splits"],
         "folds": folds_payload,
+        "metadata": {
+            "splitter": splitter,
+            "inner_val": inner_val,
+            "asm_balance": asm_balance_mode,
+            "provenance": run_provenance(),
+        },
     }
-    suffix_part = f"_{output_suffix}" if output_suffix else ""
+    # Protocol suffix after the balance suffix; empty for the legacy protocol.
+    suffix_part = (f"_{output_suffix}" if output_suffix else "") + cv_suffix(splitter, inner_val)
     oof_path = output_dir / f"predictions_oof{suffix_part}.json"
     _save_predictions_json(oof_payload, oof_path)
 
@@ -217,6 +243,7 @@ def main():
         "--device", type=str, default=None,
         help="Device override (default: auto-detect).",
     )
+    add_cv_args(parser)
     args = parser.parse_args()
 
     logging.basicConfig(
@@ -250,9 +277,14 @@ def main():
             asm_balance_mode=args.asm_balance,
             seed=args.seed,
             output_suffix=suffix,
+            splitter=args.splitter,
+            inner_val=args.inner_val,
         )
     else:
-        run_cross_validation(device=device, asm_balance_mode=args.asm_balance)
+        run_cross_validation(
+            device=device, asm_balance_mode=args.asm_balance,
+            splitter=args.splitter, inner_val=args.inner_val,
+        )
 
 
 if __name__ == "__main__":

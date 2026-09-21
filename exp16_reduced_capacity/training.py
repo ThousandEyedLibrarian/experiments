@@ -24,6 +24,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 from exp7_all_modalities.training import (  # noqa: E402
     _DropPidWrapper,
     _predict_with_smiles_override,
+    _score_outer_fold,
     evaluate_mlp,
     train_epoch_mlp,
 )
@@ -44,12 +45,19 @@ def train_fold_with_predictions(
     fold: int = 0,
     candidate_smiles: Dict[str, np.ndarray] = None,
     asm_balance_mode: str = "none",
+    test_dataset=None,
 ) -> Dict[str, Any]:
     """Train one fold of a reduced-capacity variant and return per-patient
-    predictions plus ASM-swap predictions. ``val_dataset`` must have
+    predictions plus ASM-swap predictions.
+
+    ``val_dataset`` is the early-stopping set. With ``test_dataset`` (clean
+    runs) the predictions, counterfactuals and metrics are reported on that
+    untouched outer fold instead, with the restored weights and the
+    early-stopping threshold. The reported dataset must have
     ``return_pid=True``."""
-    if not getattr(val_dataset, "return_pid", False):
-        raise ValueError("val_dataset must be built with return_pid=True for prediction logging.")
+    report_dataset = test_dataset if test_dataset is not None else val_dataset
+    if not getattr(report_dataset, "return_pid", False):
+        raise ValueError("val_dataset/test_dataset must be built with return_pid=True for prediction logging.")
 
     config = MLP_CONFIG
 
@@ -120,6 +128,18 @@ def train_fold_with_predictions(
 
     if best_state_dict is not None:
         model.load_state_dict(best_state_dict)
+
+    # Clean protocol: everything below is reported on the untouched outer
+    # fold; legacy runs report the early-stopping fold itself.
+    if test_dataset is not None:
+        best_metrics = _score_outer_fold(
+            model, test_dataset, evaluate_mlp, criterion, device,
+            config["batch_size"], best_metrics, best_val_auc,
+        )
+        val_loader = DataLoader(
+            test_dataset, batch_size=config["batch_size"], shuffle=False,
+            drop_last=False, num_workers=0,
+        )
 
     val_pids, val_y_true, val_y_prob = _predict_with_smiles_override(
         model, val_loader, device, fusion="mlp", smiles_override=None,
