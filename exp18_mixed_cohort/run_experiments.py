@@ -45,6 +45,7 @@ from .config import (
     INNER_FRAC,
     N_SPLITS,
     OUT_DIR,
+    PORTABLE_MODEL,
     SEEDS,
     SIZEMATCH_CONFIGS,
     SIZEMATCH_DRAWS,
@@ -57,7 +58,7 @@ logger = logging.getLogger("exp18")
 
 def train_predict(pooled: PooledCohort, fit_idx, es_idx, test_idx, device) -> tuple[np.ndarray, float]:
     """Train on ``fit_idx``, early-stop on ``es_idx``; return (test probs, es threshold)."""
-    cfg, y = pooled.config, pooled.labels
+    cfg, y = PORTABLE_MODEL[pooled.config], pooled.labels
     mods = dict(pooled.modalities)
     mods["clinical"] = clinical_features(pooled, fit_idx)
     if cfg in portable.EEG_CONFIGS:

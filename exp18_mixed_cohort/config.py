@@ -23,6 +23,11 @@ MODALITIES = {
     "Exp7a": ("text", "smiles", "eeg"),
 }
 
+# Portable model per configuration (shared/portable_models.py). Exp6b uses the
+# pre-specified EEG2Vec encoder rather than the published SimpleCNN one.
+PORTABLE_MODEL = {cfg: cfg for cfg in CONFIGS}
+PORTABLE_MODEL["Exp6b"] = "Exp6b_eeg2vec"
+
 SEEDS = {cfg: (42, 43, 44, 45, 46) for cfg in CONFIGS_NON_EEG}
 SEEDS.update({cfg: (42, 43, 44) for cfg in CONFIGS_EEG})
 

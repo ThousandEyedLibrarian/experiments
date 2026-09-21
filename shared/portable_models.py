@@ -39,7 +39,7 @@ N_CHANNELS = 19
 N_TIMES = 2000
 MAX_WINDOWS = 120
 
-EEG_CONFIGS = ("Exp5c", "Exp6b", "Exp7a", "Exp16_tiny")
+EEG_CONFIGS = ("Exp5c", "Exp6b", "Exp6b_eeg2vec", "Exp7a", "Exp16_tiny")
 
 
 # -----------------------------------------------------------------------
@@ -59,9 +59,13 @@ def build_model(config: str, device: torch.device) -> nn.Module:
     if config == "Exp5c":
         from exp5_clinical_fusion.models import ClinicalEEGFusion
         return ClinicalEEGFusion(n_channels=N_CHANNELS, n_times=N_TIMES, max_windows=MAX_WINDOWS).to(device)
-    if config == "Exp6b":
+    if config in ("Exp6b", "Exp6b_eeg2vec"):
+        # Exp6b is the original SimpleCNN model the published HEP1 table used;
+        # the clean protocol pre-specifies EEG2Vec for every EEG configuration.
         from exp6_clinical_triple.models import ClinicalSMILESEEGFusion
-        return ClinicalSMILESEEGFusion(n_channels=N_CHANNELS, n_times=N_TIMES, max_windows=MAX_WINDOWS).to(device)
+        encoder = "eeg2vec" if config == "Exp6b_eeg2vec" else "simplecnn"
+        return ClinicalSMILESEEGFusion(n_channels=N_CHANNELS, n_times=N_TIMES, max_windows=MAX_WINDOWS,
+                                       eeg_encoder_type=encoder).to(device)
     if config == "Exp7a":
         from exp7_all_modalities.models import QuadFusionMLP
         return QuadFusionMLP(n_channels=N_CHANNELS, n_times=N_TIMES, max_windows=MAX_WINDOWS).to(device)
@@ -213,7 +217,7 @@ def stack_eeg_for_pids(eeg_cache: dict, pids: list[str]) -> tuple[torch.Tensor, 
 def model_forward(model: nn.Module, batch: dict, config: str) -> torch.Tensor:
     if config == "Exp5c":
         return model(batch["clinical"], batch["eeg_windows"], batch["eeg_mask"])
-    if config == "Exp6b":
+    if config in ("Exp6b", "Exp6b_eeg2vec"):
         return model(batch["clinical"], batch["smiles"], batch["eeg_windows"], batch["eeg_mask"])
     if config in ("Exp7a", "Exp16_tiny"):
         return model(batch["clinical"], batch["text"], batch["eeg_windows"], batch["eeg_mask"], batch["smiles"])
