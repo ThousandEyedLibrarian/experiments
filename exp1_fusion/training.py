@@ -10,7 +10,6 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from sklearn.metrics import accuracy_score, balanced_accuracy_score, f1_score, roc_auc_score, roc_curve
-from sklearn.model_selection import StratifiedKFold
 from torch.utils.data import DataLoader, Subset
 
 from .config import (
@@ -19,6 +18,7 @@ from .config import (
 )
 from .data_pipeline import get_full_dataset, load_csv_data
 from shared.asm_balancing import WeightedASMDataset, compute_asm_sample_weights, weighted_cross_entropy
+from shared.cv_splits import fold_indices, outer_splits, rethreshold
 from .models import ConcatMLPClassifier, SimplifiedFuseMoE
 
 
@@ -184,6 +184,8 @@ def run_experiment(
     verbose: bool = True,
     prediction_logger=None,
     asm_balance_mode: str = "none",
+    splitter: str = "legacy",
+    inner_val: float = 0.0,
 ) -> Dict:
     """
     Run a single experiment with 5-fold cross-validation.
@@ -194,6 +196,9 @@ def run_experiment(
         smiles_model: 'chemberta' or 'smilestrf'
         fusion_type: 'mlp' or 'fusemoe'
         verbose: Whether to print progress
+        splitter: Outer splitter ('legacy' = outcome-only StratifiedKFold).
+        inner_val: Inner early-stopping fraction (0 = legacy protocol: early
+            stopping, LR scheduling and the threshold use the outer fold).
 
     Returns:
         Dictionary with results
@@ -219,10 +224,9 @@ def run_experiment(
         print(f"Class distribution: {np.bincount(outcomes)}")
 
     # Set up cross-validation
-    skf = StratifiedKFold(
-        n_splits=CV_CONFIG['n_splits'],
-        shuffle=CV_CONFIG['shuffle'],
-        random_state=CV_CONFIG['random_state'],
+    splits = outer_splits(
+        dataset.cohort_df, mode=splitter,
+        n_splits=CV_CONFIG['n_splits'], seed=CV_CONFIG['random_state'],
     )
 
     # Results storage
@@ -242,18 +246,22 @@ def run_experiment(
     }
 
     # Run cross-validation
-    for fold, (train_idx, val_idx) in enumerate(skf.split(range(len(dataset)), outcomes)):
+    for fold, (train_idx, val_idx) in enumerate(splits):
         if verbose:
             print(f"\n--- Fold {fold + 1}/{CV_CONFIG['n_splits']} ---")
 
+        # Clean runs early-stop (and step the LR scheduler) on an inner split
+        # of the outer training fold and score the outer fold separately.
+        fit_idx, es_idx, test_idx = fold_indices(outcomes, train_idx, val_idx, fold, inner_val)
+
         # Create dataloaders (ASM-weighting wraps the train subset so each
-        # sample carries an inverse-sqrt weight, aligned with train_idx order).
-        train_subset = Subset(dataset, train_idx)
-        val_subset = Subset(dataset, val_idx)
+        # sample carries an inverse-sqrt weight, aligned with fit_idx order).
+        train_subset = Subset(dataset, fit_idx)
+        val_subset = Subset(dataset, es_idx)
 
         asm_weighted = asm_balance_mode == "weighted"
         if asm_weighted:
-            fold_weights = compute_asm_sample_weights([dataset.asm_drugs[i] for i in train_idx])
+            fold_weights = compute_asm_sample_weights([dataset.asm_drugs[i] for i in fit_idx])
             train_subset = WeightedASMDataset(train_subset, fold_weights)
 
         train_loader = DataLoader(
@@ -266,6 +274,15 @@ def run_experiment(
             batch_size=config['batch_size'],
             shuffle=False,
         )
+        test_loader = None
+        if test_idx is not None:
+            test_loader = DataLoader(
+                Subset(dataset, test_idx),
+                batch_size=config['batch_size'],
+                shuffle=False,
+            )
+            if verbose:
+                print(f"  Train: {len(fit_idx)}, Early-stop: {len(es_idx)}, Test: {len(test_idx)}")
 
         # Create model
         model = create_model(fusion_type, TEXT_DIM, smiles_dim, config)
@@ -288,13 +305,14 @@ def run_experiment(
         )
 
         # Loss function with class weights
-        class_counts = np.bincount(outcomes[train_idx])
+        class_counts = np.bincount(outcomes[fit_idx])
         class_weights = torch.FloatTensor([1.0 / c for c in class_counts])
         class_weights = class_weights / class_weights.sum()
         criterion = nn.CrossEntropyLoss(weight=class_weights.to(device))
 
         # Training loop with early stopping
         best_val_auc = 0.0
+        best_es_metrics = {}
         patience_counter = 0
         best_model_state = None
         global_step = 0
@@ -319,6 +337,7 @@ def run_experiment(
             # Early stopping
             if val_auc > best_val_auc:
                 best_val_auc = val_auc
+                best_es_metrics = val_metrics
                 best_model_state = {k: v.cpu().clone() for k, v in model.state_dict().items()}
                 patience_counter = 0
             else:
@@ -337,7 +356,14 @@ def run_experiment(
         model.load_state_dict(best_model_state)
         model.to(device)
 
-        final_metrics = evaluate(model, val_loader, device, use_aux_loss=use_aux_loss)
+        if test_loader is None:
+            final_metrics = evaluate(model, val_loader, device, use_aux_loss=use_aux_loss)
+        else:
+            # Clean protocol: score the outer fold once with the early-stopping-
+            # best weights, at the threshold chosen on the early-stopping set.
+            final_metrics = evaluate(model, test_loader, device, use_aux_loss=use_aux_loss)
+            final_metrics = rethreshold(final_metrics, best_es_metrics.get('optimal_threshold', 0.5))
+            final_metrics['es_auc'] = best_val_auc
 
         if prediction_logger is not None:
             prediction_logger.log_fold(

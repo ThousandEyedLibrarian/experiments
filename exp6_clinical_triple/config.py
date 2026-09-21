@@ -70,7 +70,8 @@ EEG_CONFIG = {
 
 MAX_WINDOWS = int(EEG_CONFIG["use_duration_sec"] / EEG_CONFIG["window_sec"])  # 120
 
-# EEG encoder config (reuse SimpleCNN from exp2)
+# EEG encoder config (reuse SimpleCNN from exp2). encoder_type is the default;
+# each EEG config's "eeg_model" selects the window encoder (simplecnn/eeg2vec).
 EEG_ENCODER_CONFIG = {
     "encoder_type": "simplecnn",
     "n_channels": 27,
@@ -146,5 +147,13 @@ EXPERIMENTS = [
         "modality": "eeg",
         "eeg_model": "simplecnn",
         "smiles_model": "smilestrf",
+    },
+    # Pre-specified Clinical + EEG table row (analysis plan section 3): EEG2Vec
+    # 256-d windows + the same two-layer transformer aggregator as exp5c.
+    {
+        "name": "exp6b_eeg2vec_chemberta",
+        "modality": "eeg",
+        "eeg_model": "eeg2vec",
+        "smiles_model": "chemberta",
     },
 ]

@@ -21,7 +21,7 @@ from .config import (
 import sys
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent))
-from exp2_fusion.models.eeg_encoders import SimpleCNNEncoder
+from exp2_fusion.models.eeg_encoders import SimpleCNNEncoder, get_eeg_encoder
 from exp2_fusion.models.eeg_transformer import EEGWindowTransformer
 
 
@@ -140,7 +140,7 @@ class ClinicalSMILESEEGFusion(nn.Module):
     Architecture:
         Clinical (20D) -> Encoder -> 64D
         SMILES (768/256D) -> Encoder -> 64D
-        EEG (num_windows, 27, 2000) -> SimpleCNN -> Aggregator -> 64D
+        EEG (num_windows, 27, 2000) -> SimpleCNN/EEG2Vec -> Aggregator -> 64D
         Concatenate -> 192D -> Classifier -> 2 classes
     """
 
@@ -155,6 +155,7 @@ class ClinicalSMILESEEGFusion(nn.Module):
         dropout: float = 0.3,
         max_windows: int = 120,
         window_chunk_size: int = 32,
+        eeg_encoder_type: str = "simplecnn",
     ):
         super().__init__()
 
@@ -166,13 +167,23 @@ class ClinicalSMILESEEGFusion(nn.Module):
         # SMILES encoder
         self.smiles_encoder = ModalityEncoder(smiles_dim, hidden_dim, dropout)
 
-        # EEG window encoder (SimpleCNN)
-        self.window_encoder = SimpleCNNEncoder(
-            n_channels=n_channels,
-            n_times=n_times,
-            emb_size=256,
-            dropout=dropout,
-        )
+        # EEG window encoder. SimpleCNN is the original exp6b encoder (built
+        # directly so its dropout matches); other types come from the exp2
+        # factory exactly as exp5c builds them (EEG2Vec, 256-d).
+        if eeg_encoder_type == "simplecnn":
+            self.window_encoder = SimpleCNNEncoder(
+                n_channels=n_channels,
+                n_times=n_times,
+                emb_size=256,
+                dropout=dropout,
+            )
+        else:
+            self.window_encoder = get_eeg_encoder(
+                encoder_type=eeg_encoder_type,
+                n_channels=n_channels,
+                n_times=n_times,
+                emb_size=256,
+            )
 
         # EEG window aggregator
         self.aggregator = EEGWindowTransformer(
@@ -265,7 +276,7 @@ def get_model(
         modality: 'text' or 'eeg' (for third modality)
         smiles_model: 'chemberta' or 'smilestrf'
         text_model: 'clinicalbert' or 'pubmedbert' (for text modality)
-        eeg_model: 'simplecnn' (for eeg modality)
+        eeg_model: 'simplecnn' or 'eeg2vec' (for eeg modality; default simplecnn)
         device: Device to place model on.
 
     Returns:
@@ -295,6 +306,7 @@ def get_model(
             dropout=dropout,
             max_windows=EEG_ENCODER_CONFIG["max_windows"],
             window_chunk_size=EEG_ENCODER_CONFIG["window_chunk_size"],
+            eeg_encoder_type=eeg_model or EEG_ENCODER_CONFIG["encoder_type"],
         )
     else:
         raise ValueError(f"Unknown modality: {modality}")

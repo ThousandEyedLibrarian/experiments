@@ -266,6 +266,16 @@ def get_full_dataset(
         drug_names=drug_names,
     )
 
+    # Row-aligned stratification columns for the outer CV splitter
+    # (shared.cv_splits.outer_splits: 'legacy' reads outcome only,
+    # 'multilabel' outcome + focal + sex).
+    dataset.cohort_df = pd.DataFrame({
+        'pid': pids,
+        'outcome': outcomes,
+        'focal': df['focal'].to_numpy()[keep],
+        'sex': df['sex'].to_numpy()[keep],
+    })
+
     return dataset, outcomes, pids
 
 

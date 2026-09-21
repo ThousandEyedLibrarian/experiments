@@ -18,6 +18,8 @@ from typing import List, Dict
 
 import numpy as np
 
+from shared.cv_splits import add_cv_args, cv_suffix
+
 from .config import EXPERIMENTS, RESULTS_DIR
 from .data_pipeline import get_full_dataset, load_csv_data
 from .training import run_experiment, save_results
@@ -106,8 +108,14 @@ def run_all_experiments(
     log_predictions: bool = False,
     predictions_dir: str = None,
     asm_balance_mode: str = "none",
+    splitter: str = "legacy",
+    inner_val: float = 0.0,
 ) -> List[Dict]:
-    """Run all specified experiments."""
+    """Run all specified experiments.
+
+    ``splitter``/``inner_val`` select the CV protocol (see shared/cv_splits.py);
+    the defaults reproduce the original outer-fold early stopping.
+    """
     from shared.prediction_logger import PredictionLogger
     all_results = []
 
@@ -124,8 +132,12 @@ def run_all_experiments(
         pred_logger = None
         if log_predictions:
             suffix = {"weighted": "_asmweighted", "stratified_batch": "_asmstratbatch"}.get(asm_balance_mode, "")
-            pred_logger = PredictionLogger(exp_id=exp['name'], output_dir=predictions_dir,
-                                            filename=f"predictions_oof_{exp['name']}{suffix}.json")
+            suffix += cv_suffix(splitter, inner_val)
+            pred_logger = PredictionLogger(
+                exp_id=exp['name'], output_dir=predictions_dir,
+                filename=f"predictions_oof_{exp['name']}{suffix}.json",
+                metadata={"splitter": splitter, "inner_val": inner_val, "asm_balance": asm_balance_mode},
+            )
 
         results = run_experiment(
             experiment_name=exp['name'],
@@ -135,13 +147,17 @@ def run_all_experiments(
             verbose=verbose,
             prediction_logger=pred_logger,
             asm_balance_mode=asm_balance_mode,
+            splitter=splitter,
+            inner_val=inner_val,
         )
 
         if pred_logger is not None:
             saved = pred_logger.save()
             print(f"  Per-fold predictions written to {saved}")
 
-        save_results(results)
+        # Clean-protocol results get the CV suffix so they do not overwrite the
+        # archived legacy per-experiment files (the suffix is empty for legacy).
+        save_results(results, f"{exp['name']}{cv_suffix(splitter, inner_val)}.json")
         all_results.append(results)
 
     return all_results
@@ -213,6 +229,9 @@ def main():
     parser.add_argument('--asm-balance', type=str, default='none',
                         choices=['none', 'weighted'],
                         help='ASM class-balancing mode (weighted = inverse-sqrt sample weighting).')
+    parser.add_argument('--predictions-dir', type=str, default=None,
+                        help='Directory for OOF prediction files (default: outputs/exp1_predictions).')
+    add_cv_args(parser)
 
     args = parser.parse_args()
 
@@ -236,12 +255,15 @@ def main():
         experiments,
         verbose=not args.quiet,
         log_predictions=args.log_predictions,
+        predictions_dir=args.predictions_dir,
         asm_balance_mode=args.asm_balance,
+        splitter=args.splitter,
+        inner_val=args.inner_val,
     )
 
     # Print and save summary
     print_summary(results)
-    save_summary(results)
+    save_summary(results, f"summary{cv_suffix(args.splitter, args.inner_val)}.json")
 
 
 if __name__ == '__main__':

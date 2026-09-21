@@ -1,20 +1,22 @@
 """Training utilities for Experiment 5: Clinical + Single Modality Fusion."""
 
+import copy
 import logging
 import sys
 from pathlib import Path
 from typing import Dict, List, Tuple
 
 import numpy as np
+import pandas as pd
 import torch
 import torch.nn as nn
 from sklearn.metrics import accuracy_score, balanced_accuracy_score, f1_score, roc_auc_score, roc_curve
-from sklearn.model_selection import StratifiedKFold
 from torch.utils.data import DataLoader
 
 # Add parent directory for exp8_stratification import
 sys.path.insert(0, str(Path(__file__).parent.parent))
 from exp8_stratification.stratified_cv import get_multilabel_splits, get_outcome_only_splits
+from shared.cv_splits import fold_indices, outer_splits, rethreshold
 
 from .config import CV_CONFIG, TRAINING_CONFIG
 from .data_pipeline import (
@@ -321,8 +323,16 @@ def train_fold(
     device: torch.device = None,
     fold: int = 0,
     asm_balance_mode: str = "none",
+    test_dataset=None,
 ) -> Dict[str, float]:
-    """Train and evaluate a single fold."""
+    """Train and evaluate a single fold.
+
+    ``val_dataset`` is the early-stopping set: the outer fold in legacy runs,
+    the inner split in clean runs. ``test_dataset`` (clean runs only) is the
+    untouched outer fold, scored once with the best early-stopping weights at
+    the early-stopping threshold. None keeps the legacy behaviour (report the
+    best epoch's metrics on ``val_dataset``).
+    """
     from shared.asm_balancing import (
         WeightedASMDataset,
         StratifiedASMBatchSampler,
@@ -422,6 +432,7 @@ def train_fold(
     # Training loop with early stopping
     best_val_auc = 0.0
     best_metrics = {}
+    best_state = None
     patience_counter = 0
 
     for epoch in range(config["epochs"]):
@@ -434,6 +445,8 @@ def train_fold(
         if val_metrics["auc"] > best_val_auc:
             best_val_auc = val_metrics["auc"]
             best_metrics = val_metrics.copy()
+            if test_dataset is not None:
+                best_state = copy.deepcopy(model.state_dict())
             patience_counter = 0
         else:
             patience_counter += 1
@@ -448,7 +461,49 @@ def train_fold(
             logger.info(f"    Early stopping at epoch {epoch + 1}")
             break
 
-    return best_metrics
+    if test_dataset is None:
+        return best_metrics
+
+    # Clean protocol: score the outer fold once with the early-stopping-best
+    # weights, at the threshold chosen on the early-stopping set.
+    if best_state is not None:
+        model.load_state_dict(best_state)
+    test_loader = DataLoader(
+        test_dataset, batch_size=config["batch_size"], shuffle=False, drop_last=False, num_workers=0,
+    )
+    _, test_metrics = eval_fn(model, test_loader, criterion, device)
+    test_metrics = rethreshold(test_metrics, best_metrics.get("optimal_threshold", 0.5))
+    test_metrics["es_auc"] = best_val_auc
+    return test_metrics
+
+
+def _outer_splits(
+    df: pd.DataFrame,
+    splitter: str,
+    use_multilabel_stratification: bool,
+) -> List[Tuple[np.ndarray, np.ndarray]]:
+    """Outer CV folds. 'legacy' is exp5's original splitter, unchanged
+    (multi-label on outcome + focal + sex, or outcome-only when
+    ``use_multilabel_stratification`` is False); 'multilabel' is the shared
+    clean-rerun splitter (shared.cv_splits.outer_splits)."""
+    if splitter != "legacy":
+        return outer_splits(
+            df, mode=splitter, n_splits=CV_CONFIG["n_splits"], seed=CV_CONFIG["random_state"],
+        )
+    if use_multilabel_stratification:
+        return list(get_multilabel_splits(
+            df,
+            stratify_cols=["outcome", "focal", "sex"],
+            n_splits=CV_CONFIG["n_splits"],
+            shuffle=CV_CONFIG["shuffle"],
+            random_state=CV_CONFIG["random_state"],
+        ))
+    return list(get_outcome_only_splits(
+        df,
+        n_splits=CV_CONFIG["n_splits"],
+        shuffle=CV_CONFIG["shuffle"],
+        random_state=CV_CONFIG["random_state"],
+    ))
 
 
 def run_cross_validation_smiles(
@@ -457,6 +512,8 @@ def run_cross_validation_smiles(
     use_multilabel_stratification: bool = True,
     prediction_logger=None,
     asm_balance_mode: str = "none",
+    splitter: str = "legacy",
+    inner_val: float = 0.0,
 ) -> Dict[str, List[float]]:
     """Run 5-fold CV for Clinical + SMILES.
 
@@ -464,33 +521,25 @@ def run_cross_validation_smiles(
         smiles_model: Type of SMILES encoder.
         device: Device to use.
         use_multilabel_stratification: Whether to use multi-label stratification
-            on outcome + focal + sex (reduces fold variance by 5-8x).
+            on outcome + focal + sex (reduces fold variance by 5-8x). Legacy
+            splitter only.
+        splitter: Outer splitter ('legacy' = exp5's original splitter).
+        inner_val: Inner early-stopping fraction (0 = legacy protocol).
     """
     if device is None:
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     strat_type = "multilabel" if use_multilabel_stratification else "outcome-only"
+    if splitter != "legacy":
+        strat_type = f"shared {splitter}"
     logger.info(f"Running CV: Clinical + SMILES ({smiles_model}) with {strat_type} stratification")
 
     # Prepare data
     df, smiles_embeddings, smiles_indices = prepare_clinical_smiles_data(smiles_model)
 
     # Cross-validation with stratification
-    if use_multilabel_stratification:
-        splits = list(get_multilabel_splits(
-            df,
-            stratify_cols=["outcome", "focal", "sex"],
-            n_splits=CV_CONFIG["n_splits"],
-            shuffle=CV_CONFIG["shuffle"],
-            random_state=CV_CONFIG["random_state"],
-        ))
-    else:
-        splits = list(get_outcome_only_splits(
-            df,
-            n_splits=CV_CONFIG["n_splits"],
-            shuffle=CV_CONFIG["shuffle"],
-            random_state=CV_CONFIG["random_state"],
-        ))
+    splits = _outer_splits(df, splitter, use_multilabel_stratification)
+    outcomes = df["outcome"].values
 
     fold_metrics = {
         "auc": [],
@@ -503,10 +552,21 @@ def run_cross_validation_smiles(
     for fold, (train_idx, val_idx) in enumerate(splits):
         logger.info(f"Fold {fold + 1}/{CV_CONFIG['n_splits']}")
 
+        # Preprocessor fit on the fit set only. Clean runs early-stop on an
+        # inner split and score the outer fold separately.
+        fit_idx, es_idx, test_idx = fold_indices(outcomes, train_idx, val_idx, fold, inner_val)
         train_ds, val_ds, _ = create_clinical_smiles_datasets(
-            df, smiles_embeddings, smiles_indices, train_idx, val_idx
+            df, smiles_embeddings, smiles_indices, fit_idx, es_idx
         )
-        logger.info(f"  Train: {len(train_ds)}, Val: {len(val_ds)}")
+        test_ds = None
+        if test_idx is not None:
+            test_ds = create_clinical_smiles_datasets(
+                df, smiles_embeddings, smiles_indices, fit_idx, test_idx
+            )[1]
+        logger.info(
+            f"  Train: {len(train_ds)}, Early-stop: {len(val_ds)}"
+            + (f", Test: {len(test_ds)}" if test_ds is not None else "")
+        )
 
         metrics = train_fold(
             train_ds, val_ds,
@@ -515,6 +575,7 @@ def run_cross_validation_smiles(
             device=device,
             fold=fold,
             asm_balance_mode=asm_balance_mode,
+            test_dataset=test_ds,
         )
 
         if prediction_logger is not None and "y_prob" in metrics:
@@ -545,6 +606,8 @@ def run_cross_validation_text(
     use_multilabel_stratification: bool = True,
     prediction_logger=None,
     asm_balance_mode: str = "none",
+    splitter: str = "legacy",
+    inner_val: float = 0.0,
 ) -> Dict[str, List[float]]:
     """Run 5-fold CV for Clinical + Text.
 
@@ -552,33 +615,25 @@ def run_cross_validation_text(
         text_model: Type of text encoder.
         device: Device to use.
         use_multilabel_stratification: Whether to use multi-label stratification
-            on outcome + focal + sex (reduces fold variance by 5-8x).
+            on outcome + focal + sex (reduces fold variance by 5-8x). Legacy
+            splitter only.
+        splitter: Outer splitter ('legacy' = exp5's original splitter).
+        inner_val: Inner early-stopping fraction (0 = legacy protocol).
     """
     if device is None:
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     strat_type = "multilabel" if use_multilabel_stratification else "outcome-only"
+    if splitter != "legacy":
+        strat_type = f"shared {splitter}"
     logger.info(f"Running CV: Clinical + Text ({text_model}) with {strat_type} stratification")
 
     # Prepare data
     df, text_embeddings = prepare_clinical_text_data(text_model)
 
     # Cross-validation with stratification
-    if use_multilabel_stratification:
-        splits = list(get_multilabel_splits(
-            df,
-            stratify_cols=["outcome", "focal", "sex"],
-            n_splits=CV_CONFIG["n_splits"],
-            shuffle=CV_CONFIG["shuffle"],
-            random_state=CV_CONFIG["random_state"],
-        ))
-    else:
-        splits = list(get_outcome_only_splits(
-            df,
-            n_splits=CV_CONFIG["n_splits"],
-            shuffle=CV_CONFIG["shuffle"],
-            random_state=CV_CONFIG["random_state"],
-        ))
+    splits = _outer_splits(df, splitter, use_multilabel_stratification)
+    outcomes = df["outcome"].values
 
     fold_metrics = {
         "auc": [],
@@ -591,10 +646,21 @@ def run_cross_validation_text(
     for fold, (train_idx, val_idx) in enumerate(splits):
         logger.info(f"Fold {fold + 1}/{CV_CONFIG['n_splits']}")
 
+        # Preprocessor fit on the fit set only. Clean runs early-stop on an
+        # inner split and score the outer fold separately.
+        fit_idx, es_idx, test_idx = fold_indices(outcomes, train_idx, val_idx, fold, inner_val)
         train_ds, val_ds, _ = create_clinical_text_datasets(
-            df, text_embeddings, train_idx, val_idx
+            df, text_embeddings, fit_idx, es_idx
         )
-        logger.info(f"  Train: {len(train_ds)}, Val: {len(val_ds)}")
+        test_ds = None
+        if test_idx is not None:
+            test_ds = create_clinical_text_datasets(
+                df, text_embeddings, fit_idx, test_idx
+            )[1]
+        logger.info(
+            f"  Train: {len(train_ds)}, Early-stop: {len(val_ds)}"
+            + (f", Test: {len(test_ds)}" if test_ds is not None else "")
+        )
 
         metrics = train_fold(
             train_ds, val_ds,
@@ -603,6 +669,7 @@ def run_cross_validation_text(
             device=device,
             fold=fold,
             asm_balance_mode=asm_balance_mode,
+            test_dataset=test_ds,
         )
 
         if prediction_logger is not None and "y_prob" in metrics:
@@ -633,6 +700,8 @@ def run_cross_validation_eeg(
     use_multilabel_stratification: bool = True,
     prediction_logger=None,
     asm_balance_mode: str = "none",
+    splitter: str = "legacy",
+    inner_val: float = 0.0,
 ) -> Dict[str, List[float]]:
     """Run 5-fold CV for Clinical + EEG.
 
@@ -640,35 +709,25 @@ def run_cross_validation_eeg(
         eeg_model: Type of EEG encoder.
         device: Device to use.
         use_multilabel_stratification: Whether to use multi-label stratification
-            on outcome + focal + sex (reduces fold variance by 5-8x).
+            on outcome + focal + sex (reduces fold variance by 5-8x). Legacy
+            splitter only.
+        splitter: Outer splitter ('legacy' = exp5's original splitter).
+        inner_val: Inner early-stopping fraction (0 = legacy protocol).
     """
     if device is None:
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     strat_type = "multilabel" if use_multilabel_stratification else "outcome-only"
+    if splitter != "legacy":
+        strat_type = f"shared {splitter}"
     logger.info(f"Running CV: Clinical + EEG ({eeg_model}) with {strat_type} stratification")
 
     # Prepare data
     df, eeg_data = prepare_clinical_eeg_data()
 
     # Cross-validation with stratification
-    if use_multilabel_stratification:
-        # Use multi-label stratification on outcome + focal + sex
-        splits = list(get_multilabel_splits(
-            df,
-            stratify_cols=["outcome", "focal", "sex"],
-            n_splits=CV_CONFIG["n_splits"],
-            shuffle=CV_CONFIG["shuffle"],
-            random_state=CV_CONFIG["random_state"],
-        ))
-    else:
-        # Outcome-only stratification (baseline)
-        splits = list(get_outcome_only_splits(
-            df,
-            n_splits=CV_CONFIG["n_splits"],
-            shuffle=CV_CONFIG["shuffle"],
-            random_state=CV_CONFIG["random_state"],
-        ))
+    splits = _outer_splits(df, splitter, use_multilabel_stratification)
+    outcomes = df["outcome"].values
 
     fold_metrics = {
         "auc": [],
@@ -681,10 +740,21 @@ def run_cross_validation_eeg(
     for fold, (train_idx, val_idx) in enumerate(splits):
         logger.info(f"Fold {fold + 1}/{CV_CONFIG['n_splits']}")
 
+        # Preprocessor fit on the fit set only. Clean runs early-stop on an
+        # inner split and score the outer fold separately.
+        fit_idx, es_idx, test_idx = fold_indices(outcomes, train_idx, val_idx, fold, inner_val)
         train_ds, val_ds, _ = create_clinical_eeg_datasets(
-            df, eeg_data, train_idx, val_idx
+            df, eeg_data, fit_idx, es_idx
         )
-        logger.info(f"  Train: {len(train_ds)}, Val: {len(val_ds)}")
+        test_ds = None
+        if test_idx is not None:
+            test_ds = create_clinical_eeg_datasets(
+                df, eeg_data, fit_idx, test_idx
+            )[1]
+        logger.info(
+            f"  Train: {len(train_ds)}, Early-stop: {len(val_ds)}"
+            + (f", Test: {len(test_ds)}" if test_ds is not None else "")
+        )
 
         metrics = train_fold(
             train_ds, val_ds,
@@ -693,6 +763,7 @@ def run_cross_validation_eeg(
             device=device,
             fold=fold,
             asm_balance_mode=asm_balance_mode,
+            test_dataset=test_ds,
         )
 
         if prediction_logger is not None and "y_prob" in metrics:
