@@ -4,7 +4,9 @@ import pandas as pd
 import pytest
 from sklearn.model_selection import StratifiedKFold
 
-from shared.cv_splits import cv_suffix, inner_val_split, joint_key, outer_splits
+from shared.cv_splits import (
+    current_seed, cv_suffix, fold_indices, inner_val_split, joint_key, outer_splits, set_repeat_seed,
+)
 
 
 def _cohort(n=200, seed=0):
@@ -75,3 +77,32 @@ def test_cv_suffix():
     assert cv_suffix("multilabel", 0.2) == "_sp-multilabel_iv20"
     assert cv_suffix("legacy", 0.2) == "_sp-legacy_iv20"
     assert cv_suffix("multilabel", 0.0) == "_sp-multilabel_iv0"
+    assert cv_suffix("multilabel", 0.2, 43) == "_sp-multilabel_iv20_s43"
+    assert cv_suffix("legacy", 0.0, 42) == "_s42"
+
+
+def test_repeat_seed_overrides_split_seeds_and_suffix():
+    df = _cohort()
+    try:
+        set_repeat_seed(43)
+        want = list(StratifiedKFold(5, shuffle=True, random_state=43).split(
+            np.zeros(len(df)), df["outcome"].values))
+        got = outer_splits(df, mode="legacy", seed=42)  # explicit 42 is overridden
+        assert all(np.array_equal(w[1], g[1]) for w, g in zip(want, got))
+        assert cv_suffix("multilabel", 0.2) == "_sp-multilabel_iv20_s43"
+        assert current_seed() == 43
+        y = df["outcome"].to_numpy()
+        tr, te = got[0]
+        fit43, _, _ = fold_indices(y, tr, te, 0, 0.2)
+        set_repeat_seed(None)
+        fit42, _, _ = fold_indices(y, tr, te, 0, 0.2)
+        assert not np.array_equal(fit42, fit43)
+    finally:
+        set_repeat_seed(None)
+    assert current_seed() == 42 and cv_suffix("legacy", 0) == ""
+
+
+def test_multilabel_refuses_missing_columns():
+    df = _cohort().drop(columns=["sex"])
+    with pytest.raises(ValueError, match="sex"):
+        outer_splits(df, mode="multilabel")

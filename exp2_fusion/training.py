@@ -21,7 +21,7 @@ from .config import BATCH_SIZE_BY_ENCODER, CHUNK_SIZE_BY_ENCODER, EMBED_DIM_BY_E
 from .data_pipeline import EEGSMILESDataset, create_datasets, get_max_channels, prepare_data
 from .eeg_pipeline import add_stratification_columns
 from shared.asm_balancing import WeightedASMDataset, compute_asm_sample_weights, weighted_cross_entropy
-from shared.cv_splits import fold_indices, outer_splits, rethreshold
+from shared.cv_splits import fold_indices, outer_splits, rethreshold, current_seed
 from .models.fusion import get_fusion_model
 
 logger = logging.getLogger("exp2")
@@ -377,9 +377,9 @@ def run_cross_validation(
     Returns:
         Results dictionary with metrics.
     """
-    # Set seed
-    np.random.seed(config["seed"])
-    torch.manual_seed(config["seed"])
+    # Set seed (the repeated-CV seed when one is active)
+    np.random.seed(current_seed(config["seed"]))
+    torch.manual_seed(current_seed(config["seed"]))
 
     # Adjust batch size based on encoder type
     config = config.copy()

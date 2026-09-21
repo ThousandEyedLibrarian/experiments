@@ -26,6 +26,22 @@ DEFAULT_SEED = 42
 DEFAULT_N_SPLITS = 5
 CLEAN_INNER_FRAC = 0.2
 
+# Repeated-CV seed (analysis plan deviation, 2026-09-21). A runner sets it once
+# from --cv-seed; while set it replaces the seed of every outer and inner split,
+# the default determinism seed and the filename suffix, so no call site can
+# silently keep 42. None (the default) leaves every original seed untouched.
+_REPEAT_SEED: int | None = None
+
+
+def set_repeat_seed(seed: int | None) -> None:
+    global _REPEAT_SEED
+    _REPEAT_SEED = seed
+
+
+def current_seed(default: int = DEFAULT_SEED) -> int:
+    """The active repeated-CV seed, or ``default`` when none is set."""
+    return default if _REPEAT_SEED is None else _REPEAT_SEED
+
 
 def joint_key(df: pd.DataFrame, cols: Sequence[str]) -> np.ndarray:
     """Composite stratification key, e.g. outcome x cohort -> '1|HEP'."""
@@ -46,8 +62,10 @@ def outer_splits(
     """Return the outer CV folds as (train_idx, test_idx) positional arrays.
 
     ``df`` must be indexed positionally the same way the caller indexes its
-    datasets (callers pass ``df.iloc[idx]``-style positions).
+    datasets (callers pass ``df.iloc[idx]``-style positions). An active
+    repeated-CV seed (``set_repeat_seed``) replaces ``seed``.
     """
+    seed = current_seed(seed)
     if mode == "legacy":
         # Identical construction to the original run_cross_validation loops:
         # StratifiedKFold(5, shuffle=True, 42).split(np.zeros(n), outcome).
@@ -56,6 +74,13 @@ def outer_splits(
         return list(skf.split(np.zeros(len(y)), y))
     if mode == "multilabel":
         from exp8_stratification.stratified_cv import get_multilabel_splits
+
+        # get_multilabel_splits skips absent columns with only a warning, which
+        # silently degrades to outcome-only stratification (the EEG cohort
+        # frames lacked focal/sex); refuse instead.
+        missing = [c for c in MULTILABEL_COLS if c not in df.columns]
+        if missing:
+            raise ValueError(f"multilabel splitter needs columns {missing}; add them to the frame")
 
         return list(get_multilabel_splits(
             df, stratify_cols=list(MULTILABEL_COLS), n_splits=n_splits,
@@ -107,14 +132,28 @@ def add_cv_args(parser: argparse.ArgumentParser, default_splitter: str = "legacy
         help="Fraction of each outer training fold held out for early stopping "
              "and the threshold (0 = legacy: select on the outer fold).",
     )
+    parser.add_argument(
+        "--cv-seed", type=int, default=None, dest="cv_seed",
+        help="Repeated-CV seed: outer split seed s, inner split seed s + fold, "
+             "determinism seed s (default: the experiment's original seed, 42).",
+    )
 
 
-def cv_suffix(splitter: str, inner_val: float) -> str:
+def cv_suffix(splitter: str, inner_val: float, cv_seed: int | None = None) -> str:
     """Filename suffix for a CV protocol: empty for the legacy protocol (so its
-    files keep the archived names), otherwise e.g. ``_sp-multilabel_iv20``."""
+    files keep the archived names), otherwise e.g. ``_sp-multilabel_iv20``,
+    plus ``_s<seed>`` for an explicit repeated-CV seed."""
+    if cv_seed is None:
+        cv_seed = _REPEAT_SEED
+    seed = "" if cv_seed is None else f"_s{cv_seed}"
     if splitter == "legacy" and inner_val == 0:
-        return ""
-    return f"_sp-{splitter}_iv{int(round(inner_val * 100))}"
+        return seed
+    return f"_sp-{splitter}_iv{int(round(inner_val * 100))}{seed}"
+
+
+def base_seed(cv_seed: int | None, default: int = DEFAULT_SEED) -> int:
+    """The seed for outer splits, inner splits (+ fold) and determinism."""
+    return default if cv_seed is None else cv_seed
 
 
 def fold_indices(
@@ -135,7 +174,7 @@ def fold_indices(
     """
     if inner_val == 0:
         return np.asarray(train_idx), np.asarray(test_idx), None
-    fit_idx, es_idx = inner_val_split(strat_labels, train_idx, inner_val, seed + fold)
+    fit_idx, es_idx = inner_val_split(strat_labels, train_idx, inner_val, current_seed(seed) + fold)
     return fit_idx, es_idx, np.asarray(test_idx)
 
 

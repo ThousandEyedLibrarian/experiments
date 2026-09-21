@@ -17,6 +17,7 @@ import numpy as np
 import torch
 
 from shared.cv_splits import add_cv_args, cv_suffix
+from shared.cv_splits import set_repeat_seed  # noqa: E402
 
 from .config import EXPERIMENTS, RESULTS_DIR
 from .training import (
@@ -273,6 +274,7 @@ def main():
     )
     add_cv_args(parser)
     args = parser.parse_args()
+    set_repeat_seed(args.cv_seed)  # repeated-CV seed; None keeps the original seeds
 
     if args.deterministic:
         from shared.determinism import enable_determinism

@@ -26,7 +26,11 @@ import os
 import random
 
 
-def enable_determinism(seed: int = 42) -> None:
+def enable_determinism(seed: int | None = None) -> None:
+    # Default: the active repeated-CV seed (shared.cv_splits), else 42.
+    if seed is None:
+        from shared.cv_splits import current_seed
+        seed = current_seed(42)
     os.environ.setdefault("CUBLAS_WORKSPACE_CONFIG", ":4096:8")
     os.environ["PYTHONHASHSEED"] = str(seed)
 

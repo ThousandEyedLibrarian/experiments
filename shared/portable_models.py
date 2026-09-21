@@ -21,6 +21,8 @@ import torch.nn as nn
 from sklearn.metrics import balanced_accuracy_score, roc_auc_score, roc_curve
 from torch.utils.data import DataLoader, TensorDataset
 
+from shared.cv_splits import current_seed
+
 CV_SEED = 42
 
 # Non-EEG configurations (Exp4a / Exp5a / Exp5b).
@@ -256,7 +258,7 @@ def train_fold_eeg(
     cw = torch.tensor(1.0 / np.maximum(class_counts, 1), dtype=torch.float32)
     cw = cw / cw.sum()
     criterion = nn.CrossEntropyLoss(weight=cw.to(device))
-    rng = np.random.default_rng(CV_SEED)
+    rng = np.random.default_rng(current_seed(CV_SEED))
     best_val_auc = 0.0
     best_state = None
     patience_counter = 0

@@ -18,6 +18,7 @@ import numpy as np
 import torch
 
 from shared.cv_splits import add_cv_args, cv_suffix, fold_indices, outer_splits
+from shared.cv_splits import set_repeat_seed  # noqa: E402
 from shared.prediction_logger import run_provenance
 
 from .config import ASM_NAME_MAPPING, CV_CONFIG, EXPERIMENTS, RESULTS_DIR
@@ -555,6 +556,7 @@ def main():
     )
     add_cv_args(parser)
     args = parser.parse_args()
+    set_repeat_seed(args.cv_seed)  # repeated-CV seed; None keeps the original seeds
 
     if args.deterministic:
         from shared.determinism import enable_determinism

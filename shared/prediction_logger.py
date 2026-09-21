@@ -69,8 +69,11 @@ def _git_head(repo: Path) -> str | None:
 
 def run_provenance() -> dict:
     """Where and from which code a prediction file was produced."""
+    from shared.cv_splits import _REPEAT_SEED
+
     thesis = _EXPERIMENTS_ROOT / "thesisStandalone"
     return {
+        "cv_seed": _REPEAT_SEED,
         "experiments_commit": _git_head(_EXPERIMENTS_ROOT),
         "thesis_commit": _git_head(thesis) if (thesis / ".git").exists() else None,
         "host": socket.gethostname(),
